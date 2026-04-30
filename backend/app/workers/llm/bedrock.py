@@ -29,6 +29,48 @@ def _json_from_text(text: str) -> dict[str, Any]:
     return json.loads(cleaned)
 
 
+def _string_value(value: Any, fallback: str) -> str:
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or fallback
+    if isinstance(value, dict):
+        parts = []
+        for key, nested_value in value.items():
+            if nested_value is None:
+                continue
+            label = str(key).replace("_", " ").strip().capitalize()
+            if isinstance(nested_value, (dict, list)):
+                rendered = json.dumps(nested_value, ensure_ascii=False)
+            else:
+                rendered = str(nested_value)
+            parts.append(f"{label}: {rendered}")
+        return ". ".join(parts) or fallback
+    if isinstance(value, list):
+        parts = [
+            json.dumps(item, ensure_ascii=False) if isinstance(item, (dict, list)) else str(item)
+            for item in value
+            if item is not None
+        ]
+        return "; ".join(parts) or fallback
+    return str(value).strip() or fallback
+
+
+def _list_of_strings(value: Any, fallback: list[str]) -> list[str]:
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else fallback
+    if isinstance(value, list):
+        actions = [_string_value(item, "") for item in value]
+        actions = [action for action in actions if action]
+        return actions or fallback
+    rendered = _string_value(value, "")
+    return [rendered] if rendered else fallback
+
+
 def _bedrock_client():
     settings = get_settings()
     session_kwargs: dict[str, str] = {}
@@ -90,11 +132,11 @@ async def analyze_with_bedrock(contract: dict[str, Any]) -> LLMResult:
 
     return LLMResult(
         incident_id=contract["incident"]["incident_id"],
-        plain_summary=data.get("plain_summary") or fallback.plain_summary,
-        attack_intent=data.get("attack_intent") or fallback.attack_intent,
-        kill_chain_analysis=data.get("kill_chain_analysis") or fallback.kill_chain_analysis,
-        recommended_actions=data.get("recommended_actions") or fallback.recommended_actions,
-        confidence_note=data.get("confidence_note") or fallback.confidence_note,
+        plain_summary=_string_value(data.get("plain_summary"), fallback.plain_summary),
+        attack_intent=_string_value(data.get("attack_intent"), fallback.attack_intent),
+        kill_chain_analysis=_string_value(data.get("kill_chain_analysis"), fallback.kill_chain_analysis),
+        recommended_actions=_list_of_strings(data.get("recommended_actions"), fallback.recommended_actions),
+        confidence_note=_string_value(data.get("confidence_note"), fallback.confidence_note),
         model=settings.bedrock_model_id,
         cached=False,
         generated_at=fallback.generated_at,
