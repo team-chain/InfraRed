@@ -75,4 +75,3 @@ Docker Agent
 1. A: 실제 운영 서버의 `/var/log/auth.log` 마운트 방식과 JWT 발급/회전 정책 확정
 2. B: AUTH-001~005 임계값, Incident merge 정책, GeoIP/CTI Provider 교체
 3. C: Dashboard 인증 적용, Bedrock 프롬프트 고도화, Slack/Email 템플릿 확정
->>>>>>> e0f66ce (Initial InfraRed MVP scaffold)
