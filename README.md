@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# InfraRed
-=======
 # InfraRed
 
 InfraRed는 `auth.log` 기반 SSH 이상 행위를 수집하고, Redis Streams와 Worker 파이프라인을 거쳐 Incident로 묶은 뒤 LLM 요약과 알림, 대시보드까지 연결하는 MVP입니다.
