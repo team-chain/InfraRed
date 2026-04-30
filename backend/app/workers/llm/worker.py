@@ -9,27 +9,34 @@ from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
 from app.db.repositories import save_llm_result
 from app.dispatcher.service import dispatch_incident_alert
+from app.iam.security import create_token
 from app.redis_kv import streams
 from app.redis_kv.client import ensure_group, get_redis
-from app.workers.llm.bedrock import analyze_with_bedrock
+from app.workers.llm.service import analyze_contract_with_cache
 
 
 configure_logging()
 log = get_logger(__name__)
 
 
-async def fetch_incident_contract(incident_id: str) -> dict:
+async def fetch_incident_contract(incident_id: str, tenant_id: str) -> dict:
     settings = get_settings()
     url = f"{settings.internal_api_base_url.rstrip('/')}/incidents/{incident_id}"
+    token = create_token(
+        subject="llm-worker",
+        tenant_id=tenant_id,
+        role="analyst",
+        ttl_seconds=300,
+    )
     async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(url)
+        response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
         response.raise_for_status()
         return response.json()
 
 
 async def process_incident(incident_id: str, tenant_id: str) -> None:
-    contract = await fetch_incident_contract(incident_id)
-    result = await analyze_with_bedrock(contract)
+    contract = await fetch_incident_contract(incident_id, tenant_id)
+    result = await analyze_contract_with_cache(contract)
     await save_llm_result(result, tenant_id=tenant_id)
     await dispatch_incident_alert(tenant_id, result)
 

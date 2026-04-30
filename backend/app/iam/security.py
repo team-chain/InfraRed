@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from app.config import get_settings
+from app.iam.rbac import has_permission
 
 
 bearer = HTTPBearer(auto_error=True)
@@ -65,3 +66,18 @@ async def verify_agent_token(claims: dict[str, Any] = Depends(verify_token)) -> 
     if claims.get("role") != "agent":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="agent_role_required")
     return claims
+
+
+async def verify_user_token(claims: dict[str, Any] = Depends(verify_token)) -> dict[str, Any]:
+    if claims.get("role") == "agent":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user_role_required")
+    return claims
+
+
+def require_permission(permission: str):
+    async def dependency(claims: dict[str, Any] = Depends(verify_user_token)) -> dict[str, Any]:
+        if not has_permission(str(claims.get("role")), permission):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission_denied")
+        return claims
+
+    return dependency

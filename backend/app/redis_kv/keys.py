@@ -49,3 +49,7 @@ def incident_dedup(
 
 def llm_cache(rule_id: str, severity: str, signal_type: str) -> str:
     return f"llm:cache:{rule_id}:{severity}:{signal_type}"
+
+
+def llm_incident_cache(incident_id: str) -> str:
+    return f"llm:cache:incident:{incident_id}"

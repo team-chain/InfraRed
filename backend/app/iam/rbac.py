@@ -3,8 +3,15 @@ from __future__ import annotations
 
 
 ROLE_PERMISSIONS: dict[str, set[str]] = {
-    "admin": {"incident:read", "incident:write", "rule:write", "user:write"},
-    "analyst": {"incident:read", "incident:write"},
+    "admin": {
+        "incident:read",
+        "incident:write",
+        "rule:read",
+        "rule:write",
+        "audit:read",
+        "user:write",
+    },
+    "analyst": {"incident:read", "incident:write", "rule:read"},
     "viewer": {"incident:read"},
     "agent": {"event:write", "heartbeat:write"},
 }

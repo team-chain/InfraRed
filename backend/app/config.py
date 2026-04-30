@@ -38,10 +38,13 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://infrared:infrared-dev-pw@postgres:5432/infrared"
     )
 
+    llm_provider: Literal["auto", "static", "bedrock"] = "auto"
     bedrock_region: str = "us-east-1"
     bedrock_model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
+    aws_session_token: str = ""
+    aws_profile: str = ""
     llm_cache_ttl_seconds: int = 3600
 
     slack_webhook_url: str = ""
@@ -66,7 +69,14 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.aws_access_key_id and self.aws_secret_access_key)
+        if self.llm_provider == "static":
+            return False
+        if self.llm_provider == "bedrock":
+            return True
+        return bool(
+            (self.aws_access_key_id and self.aws_secret_access_key)
+            or self.aws_profile
+        )
 
 
 @lru_cache(maxsize=1)

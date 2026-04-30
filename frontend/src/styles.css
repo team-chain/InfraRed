@@ -18,9 +18,53 @@ button {
   font: inherit;
 }
 
+input,
+select {
+  font: inherit;
+}
+
 .shell {
   min-height: 100vh;
   padding: 24px;
+}
+
+.login-shell {
+  align-items: center;
+  background: #f5f7f8;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.login-panel {
+  background: #ffffff;
+  border: 1px solid #dfe5e9;
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+  padding: 28px;
+  width: 100%;
+}
+
+.login-panel label {
+  color: #263840;
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.login-panel input,
+.command-row select {
+  background: #ffffff;
+  border: 1px solid #cfd8dd;
+  border-radius: 8px;
+  color: #182126;
+  min-height: 40px;
+  padding: 0 12px;
+  width: 100%;
 }
 
 .topbar {
@@ -72,9 +116,66 @@ h2 {
   width: 40px;
 }
 
+.top-actions,
+.command-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.user-chip {
+  background: #edf3f5;
+  border: 1px solid #d6e0e5;
+  border-radius: 999px;
+  color: #31505c;
+  font-size: 13px;
+  font-weight: 700;
+  max-width: 240px;
+  overflow: hidden;
+  padding: 8px 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .icon-button:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+.icon-button.muted {
+  background: #6b7f88;
+}
+
+.primary-button,
+.secondary-button {
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+.primary-button {
+  background: #17333f;
+  color: #fff;
+  width: 100%;
+}
+
+.secondary-button {
+  background: #e8f0ed;
+  color: #17333f;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .layout {
@@ -130,6 +231,15 @@ h2 {
   font-size: 15px;
   line-height: 1.6;
   padding: 18px 0;
+}
+
+.command-row {
+  border-top: 1px solid #e7ecef;
+  padding: 14px 0 0;
+}
+
+.command-row select {
+  max-width: 180px;
 }
 
 .incident-table {
@@ -274,6 +384,26 @@ h2 {
   margin-top: 10px;
 }
 
+.cti-panel {
+  background: #f6f8f9;
+  border: 1px solid #e2e8eb;
+  border-radius: 8px;
+  margin-top: 18px;
+  padding: 14px;
+}
+
+.cti-panel strong {
+  display: block;
+  margin-top: 8px;
+}
+
+.cti-panel p {
+  color: #60737d;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
 .alert {
   background: #fff1f1;
   border: 1px solid #f0b8b8;
@@ -307,5 +437,14 @@ h2 {
   .columns,
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .top-actions {
+    justify-content: flex-start;
   }
 }

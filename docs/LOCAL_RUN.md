@@ -30,6 +30,13 @@ Invoke-RestMethod http://localhost:8000/incidents
 
 대시보드는 http://localhost:3000 에서 확인합니다.
 
+데모 로그인:
+
+```text
+admin@infrared.local
+infrared123
+```
+
 ## 문제 해결
 
 - `.env`가 없으면 Compose의 `env_file: .env` 때문에 서비스가 뜨지 않습니다.

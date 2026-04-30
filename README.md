@@ -39,6 +39,15 @@ docker compose up --build
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
+Dashboard demo login:
+
+```text
+admin@infrared.local
+infrared123
+```
+
+For real Claude analysis through AWS Bedrock, see [docs/AWS_BEDROCK_SETUP.md](docs/AWS_BEDROCK_SETUP.md).
+
 Agent를 기다리지 않고 샘플 이벤트를 넣으려면:
 
 ```powershell

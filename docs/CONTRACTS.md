@@ -67,6 +67,12 @@ Endpoint:
 GET /incidents/{incident_id}
 ```
 
+Dashboard and analyst APIs require a user JWT from:
+
+```text
+POST /auth/login
+```
+
 응답 구조:
 
 ```json
@@ -78,3 +84,13 @@ GET /incidents/{incident_id}
 ```
 
 C 영역의 LLM Worker와 Dashboard는 이 API를 기준으로 Incident를 소비합니다.
+
+Related C endpoints:
+
+```text
+POST /incidents/{incident_id}/analyze
+POST /incidents/{incident_id}/dispatch
+PATCH /incidents/{incident_id}/status
+GET /detection-rules
+GET /audit-logs
+```

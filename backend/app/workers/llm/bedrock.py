@@ -1,4 +1,4 @@
-"""Optional AWS Bedrock Claude integration."""
+"""AWS Bedrock Claude integration with Static Playbook fallback."""
 from __future__ import annotations
 
 import asyncio
@@ -7,20 +7,56 @@ from typing import Any
 
 import boto3
 
+from app.common.logging import get_logger
 from app.config import get_settings
 from app.models.llm import LLMResult
 from app.workers.llm.playbook import summarize_with_playbook
 
 
+log = get_logger(__name__)
+
+
+def _json_from_text(text: str) -> dict[str, Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:].strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end >= start:
+        cleaned = cleaned[start : end + 1]
+    return json.loads(cleaned)
+
+
+def _bedrock_client():
+    settings = get_settings()
+    session_kwargs: dict[str, str] = {}
+    if settings.aws_profile:
+        session_kwargs["profile_name"] = settings.aws_profile
+
+    session = boto3.Session(**session_kwargs)
+    client_kwargs: dict[str, str] = {"region_name": settings.bedrock_region}
+    if settings.aws_access_key_id and settings.aws_secret_access_key:
+        client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+        client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+    if settings.aws_session_token:
+        client_kwargs["aws_session_token"] = settings.aws_session_token
+    return session.client("bedrock-runtime", **client_kwargs)
+
+
 def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
-    client = boto3.client("bedrock-runtime", region_name=settings.bedrock_region)
+    client = _bedrock_client()
     prompt = {
         "role": "user",
         "content": (
-            "You are a SOC analyst. Return strict JSON with keys plain_summary, "
-            "attack_intent, kill_chain_analysis, recommended_actions, confidence_note. "
-            "Use exactly three concise sentences in plain_summary. Do not include raw logs.\n\n"
+            "You are a SOC analyst for an SSH security product. "
+            "Return strict JSON only with keys: plain_summary, attack_intent, "
+            "kill_chain_analysis, recommended_actions, confidence_note. "
+            "plain_summary must be exactly three concise sentences for an executive. "
+            "recommended_actions must be an array of 3 to 5 concrete actions. "
+            "Do not include raw logs, credentials, or secrets.\n\n"
             f"Incident contract:\n{json.dumps(contract, default=str)}"
         ),
     }
@@ -29,7 +65,7 @@ def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
         body=json.dumps(
             {
                 "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 800,
+                "max_tokens": 900,
                 "temperature": 0.1,
                 "messages": [prompt],
             }
@@ -37,19 +73,21 @@ def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
     )
     body = json.loads(response["body"].read())
     text = body["content"][0]["text"]
-    return json.loads(text)
+    return _json_from_text(text)
 
 
 async def analyze_with_bedrock(contract: dict[str, Any]) -> LLMResult:
     settings = get_settings()
+    fallback = summarize_with_playbook(contract)
     if not settings.llm_enabled:
-        return summarize_with_playbook(contract)
+        return fallback
+
     try:
         data = await asyncio.to_thread(_invoke_bedrock, contract)
-    except Exception:
-        return summarize_with_playbook(contract)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("bedrock_analysis_failed", error=str(exc))
+        return fallback
 
-    fallback = summarize_with_playbook(contract)
     return LLMResult(
         incident_id=contract["incident"]["incident_id"],
         plain_summary=data.get("plain_summary") or fallback.plain_summary,

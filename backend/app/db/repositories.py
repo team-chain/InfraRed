@@ -208,6 +208,85 @@ async def save_llm_result(result: LLMResult, tenant_id: str) -> None:
         )
 
 
+async def authenticate_user(
+    *,
+    tenant_id: str,
+    email: str,
+    password: str,
+) -> dict[str, Any] | None:
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT user_id::text, tenant_id, email, role
+                FROM users
+                WHERE tenant_id = :tenant_id
+                  AND email = :email
+                  AND password_hash = crypt(:password, password_hash)
+                """
+            ),
+            {"tenant_id": tenant_id, "email": email, "password": password},
+        )
+        row = result.mappings().first()
+        return _row(row) if row else None
+
+
+async def list_detection_rules(tenant_id: str | None = None) -> list[dict[str, Any]]:
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT rule_id, name, source, mitre_tactic, mitre_technique,
+                       enabled, config, created_at
+                FROM detection_rules
+                ORDER BY rule_id ASC
+                """
+            )
+        )
+        return [_row(row) for row in result.mappings().all()]
+
+
+async def list_audit_logs(tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT id, tenant_id, actor, action, resource, ip, timestamp, metadata
+                FROM audit_logs
+                WHERE tenant_id = :tenant_id
+                ORDER BY timestamp DESC
+                LIMIT :limit
+                """
+            ),
+            {"tenant_id": tenant_id, "limit": limit},
+        )
+        return [_row(row) for row in result.mappings().all()]
+
+
+async def update_incident_status(
+    *,
+    tenant_id: str,
+    incident_id: str,
+    status: str,
+) -> dict[str, Any] | None:
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                UPDATE incidents
+                SET status = :status,
+                    updated_at = NOW()
+                WHERE tenant_id = :tenant_id
+                  AND incident_id = :incident_id
+                RETURNING *
+                """
+            ),
+            {"tenant_id": tenant_id, "incident_id": incident_id, "status": status},
+        )
+        row = result.mappings().first()
+        return _row(row) if row else None
+
+
 async def list_incidents(tenant_id: str, limit: int = 50) -> list[dict[str, Any]]:
     async with get_session() as session:
         result = await session.execute(
