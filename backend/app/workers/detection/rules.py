@@ -45,7 +45,29 @@ RULE_META = {
 }
 
 
-def _signal(rule_id: RuleId, event: NormalizedEvent, count: int = 1, note: str | None = None) -> Signal:
+def _event_id(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode()
+    return str(value)
+
+
+async def _window_event_ids(
+    redis: Redis,
+    key: str,
+    window_start: float,
+    window_end: float,
+) -> list[str]:
+    event_ids = await redis.zrangebyscore(key, window_start, window_end)
+    return [_event_id(event_id) for event_id in event_ids]
+
+
+def _signal(
+    rule_id: RuleId,
+    event: NormalizedEvent,
+    count: int = 1,
+    note: str | None = None,
+    triggering_event_ids: list[str] | None = None,
+) -> Signal:
     meta = RULE_META[rule_id]
     return Signal(
         tenant_id=event.tenant_id,
@@ -61,7 +83,7 @@ def _signal(rule_id: RuleId, event: NormalizedEvent, count: int = 1, note: str |
         detected_at=event.timestamp,
         window_start=event.timestamp - timedelta(minutes=5),
         window_end=event.timestamp,
-        triggering_event_ids=[event.event_id],
+        triggering_event_ids=triggering_event_ids or [event.event_id],
         notes=note,
     )
 
@@ -81,12 +103,16 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
         await redis.expire(fail_ip_key, 600)
         failed_count = await redis.zcard(fail_ip_key)
         if failed_count >= 3:
+            triggering_event_ids = await _window_event_ids(
+                redis, fail_ip_key, now_score - 300, now_score
+            )
             signals.append(
                 _signal(
                     RuleId.AUTH_BRUTE_FORCE,
                     event,
                     int(failed_count),
                     "Three or more SSH failures from one IP within five minutes.",
+                    triggering_event_ids,
                 )
             )
 
@@ -96,12 +122,16 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
         await redis.expire(invalid_key, 600)
         invalid_count = await redis.zcard(invalid_key)
         if invalid_count >= 2:
+            triggering_event_ids = await _window_event_ids(
+                redis, invalid_key, now_score - 300, now_score
+            )
             signals.append(
                 _signal(
                     RuleId.AUTH_INVALID_USER,
                     event,
                     int(invalid_count),
                     "Two or more invalid-user probes from one IP within five minutes.",
+                    triggering_event_ids,
                 )
             )
 
@@ -117,12 +147,17 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
         )
         failure_count = await redis.zcard(fail_user_key)
         if failure_count:
+            triggering_event_ids = await _window_event_ids(
+                redis, fail_user_key, now_score - 600, now_score
+            )
+            triggering_event_ids.append(event.event_id)
             signals.append(
                 _signal(
                     RuleId.AUTH_FAILED_THEN_SUCCESS,
                     event,
                     int(failure_count) + 1,
                     "Successful SSH login after prior failures from the same user/IP.",
+                    triggering_event_ids,
                 )
             )
 

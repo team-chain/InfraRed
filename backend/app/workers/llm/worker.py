@@ -19,6 +19,14 @@ configure_logging()
 log = get_logger(__name__)
 
 
+def _truthy(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bytes):
+        value = value.decode()
+    return str(value).lower() in {"1", "true", "yes"}
+
+
 async def fetch_incident_contract(incident_id: str, tenant_id: str) -> dict:
     settings = get_settings()
     url = f"{settings.internal_api_base_url.rstrip('/')}/incidents/{incident_id}"
@@ -34,9 +42,14 @@ async def fetch_incident_contract(incident_id: str, tenant_id: str) -> dict:
         return response.json()
 
 
-async def process_incident(incident_id: str, tenant_id: str) -> None:
+async def process_incident(
+    incident_id: str,
+    tenant_id: str,
+    *,
+    refresh: bool = False,
+) -> None:
     contract = await fetch_incident_contract(incident_id, tenant_id)
-    result = await analyze_contract_with_cache(contract)
+    result = await analyze_contract_with_cache(contract, refresh=refresh)
     await save_llm_result(result, tenant_id=tenant_id)
     await dispatch_incident_alert(tenant_id, result)
 
@@ -62,9 +75,18 @@ async def main() -> None:
         for _, entries in messages:
             for stream_id, fields in entries:
                 try:
-                    await process_incident(fields["incident_id"], fields["tenant_id"])
+                    refresh = _truthy(fields.get("refresh"))
+                    await process_incident(
+                        fields["incident_id"],
+                        fields["tenant_id"],
+                        refresh=refresh,
+                    )
                     await redis.xack(stream, streams.GROUP_LLM, stream_id)
-                    log.info("llm_result_saved", incident_id=fields["incident_id"])
+                    log.info(
+                        "llm_result_saved",
+                        incident_id=fields["incident_id"],
+                        refresh=refresh,
+                    )
                 except Exception as exc:  # noqa: BLE001
                     log.exception("llm_worker_failed", stream_id=stream_id, error=str(exc))
                     await redis.xack(stream, streams.GROUP_LLM, stream_id)

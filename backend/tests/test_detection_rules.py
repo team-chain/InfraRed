@@ -36,14 +36,21 @@ def _event(
 @pytest.mark.asyncio
 async def test_brute_force_fires_after_three_failures(fake_redis) -> None:
     seen_rules: set[RuleId] = set()
+    brute_force_signal = None
     for i in range(3):
         signals = await evaluate_rules(
             fake_redis,
             _event(event_id=f"evt-{i}", username=f"user{i}"),
         )
         seen_rules.update(s.rule_id for s in signals)
+        brute_force_signal = next(
+            (s for s in signals if s.rule_id == RuleId.AUTH_BRUTE_FORCE),
+            brute_force_signal,
+        )
 
     assert RuleId.AUTH_BRUTE_FORCE in seen_rules
+    assert brute_force_signal is not None
+    assert brute_force_signal.triggering_event_ids == ["evt-0", "evt-1", "evt-2"]
 
 
 @pytest.mark.asyncio
@@ -99,6 +106,8 @@ async def test_failed_then_success_fires_when_failure_precedes_success(fake_redi
     )
     rule_ids = {s.rule_id for s in signals}
     assert RuleId.AUTH_FAILED_THEN_SUCCESS in rule_ids
+    signal = next(s for s in signals if s.rule_id == RuleId.AUTH_FAILED_THEN_SUCCESS)
+    assert signal.triggering_event_ids == ["fail-0", "fail-1", "ok-1"]
 
 
 @pytest.mark.asyncio

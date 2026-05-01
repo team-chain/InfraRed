@@ -105,6 +105,12 @@ def _merge_signal_ids(existing: Any, incoming: list[str]) -> list[str]:
     return merged
 
 
+def _incident_anchor_time(incident: Incident) -> datetime:
+    if not incident.evidence_timeline:
+        return incident.created_at
+    return min(item.timestamp for item in incident.evidence_timeline)
+
+
 def _merge_cti(existing: Any, incoming: CtiEnrichment | None) -> dict[str, Any] | None:
     existing_cti = _json_dict(existing)
     incoming_cti = incoming.model_dump(mode="json") if incoming else {}
@@ -136,6 +142,36 @@ def _merge_cti(existing: Any, incoming: CtiEnrichment | None) -> dict[str, Any] 
 
 async def _insert_incident_evidence(session: Any, incident: Incident, incident_id: str) -> None:
     for item in incident.evidence_timeline:
+        params = {
+            "incident_id": incident_id,
+            "tenant_id": incident.tenant_id,
+            "timestamp": item.timestamp,
+            "description": item.description,
+            "signal_id": item.signal_id,
+            "rule_id": item.rule_id,
+        }
+        if item.signal_id:
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO incident_evidence (
+                        incident_id, tenant_id, timestamp, description, signal_id, rule_id
+                    )
+                    SELECT
+                        :incident_id, :tenant_id, :timestamp, :description,
+                        CAST(:signal_id AS TEXT), CAST(:rule_id AS TEXT)
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM incident_evidence
+                        WHERE incident_id = :incident_id
+                          AND signal_id = :signal_id
+                    )
+                    """
+                ),
+                params,
+            )
+            continue
+
         await session.execute(
             text(
                 """
@@ -143,26 +179,17 @@ async def _insert_incident_evidence(session: Any, incident: Incident, incident_i
                     incident_id, tenant_id, timestamp, description, signal_id, rule_id
                 )
                 SELECT
-                    :incident_id, :tenant_id, :timestamp, :description, :signal_id, :rule_id
+                    :incident_id, :tenant_id, :timestamp, :description,
+                    CAST(:signal_id AS TEXT), CAST(:rule_id AS TEXT)
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM incident_evidence
                     WHERE incident_id = :incident_id
-                      AND (
-                        (:signal_id IS NOT NULL AND signal_id = :signal_id)
-                        OR (:signal_id IS NULL AND description = :description)
-                      )
+                      AND description = :description
                 )
                 """
             ),
-            {
-                "incident_id": incident_id,
-                "tenant_id": incident.tenant_id,
-                "timestamp": item.timestamp,
-                "description": item.description,
-                "signal_id": item.signal_id,
-                "rule_id": item.rule_id,
-            },
+            params,
         )
 
 
@@ -300,38 +327,63 @@ async def save_or_merge_incident(incident: Incident) -> tuple[str, bool]:
     """
 
     cti = incident.cti_enrichment.model_dump(mode="json") if incident.cti_enrichment else None
-    window_start = incident.created_at - INCIDENT_MERGE_WINDOW
+    anchor_at = _incident_anchor_time(incident)
+    window_start = anchor_at - INCIDENT_MERGE_WINDOW
+    window_end = anchor_at + INCIDENT_MERGE_WINDOW
     async with get_session() as session:
-        existing_result = await session.execute(
-            text(
-                """
-                SELECT *
-                FROM incidents
-                WHERE tenant_id = :tenant_id
-                  AND asset_id = :asset_id
-                  AND status IN ('open', 'acknowledged')
-                  AND created_at >= :window_start
-                  AND (
-                    (:source_ip IS NOT NULL AND source_ip = CAST(:source_ip AS INET))
-                    OR (
-                      :source_ip IS NULL
-                      AND source_ip IS NULL
-                      AND COALESCE(username, '') = COALESCE(:username, '')
-                    )
-                  )
-                ORDER BY created_at DESC
-                LIMIT 1
-                FOR UPDATE
-                """
-            ),
-            {
-                "tenant_id": incident.tenant_id,
-                "asset_id": incident.asset_id,
-                "source_ip": incident.source_ip,
-                "username": incident.username,
-                "window_start": window_start,
-            },
-        )
+        existing_params = {
+            "tenant_id": incident.tenant_id,
+            "asset_id": incident.asset_id,
+            "window_start": window_start,
+            "window_end": window_end,
+        }
+        if incident.source_ip:
+            existing_result = await session.execute(
+                text(
+                    """
+                    SELECT i.*
+                    FROM incidents i
+                    WHERE i.tenant_id = :tenant_id
+                      AND i.asset_id = :asset_id
+                      AND i.status IN ('open', 'acknowledged')
+                      AND i.source_ip = CAST(:source_ip AS INET)
+                      AND EXISTS (
+                          SELECT 1
+                          FROM incident_evidence e
+                          WHERE e.incident_id = i.incident_id
+                            AND e.timestamp BETWEEN :window_start AND :window_end
+                      )
+                    ORDER BY i.updated_at DESC
+                    LIMIT 1
+                    FOR UPDATE OF i
+                    """
+                ),
+                {**existing_params, "source_ip": incident.source_ip},
+            )
+        else:
+            existing_result = await session.execute(
+                text(
+                    """
+                    SELECT i.*
+                    FROM incidents i
+                    WHERE i.tenant_id = :tenant_id
+                      AND i.asset_id = :asset_id
+                      AND i.status IN ('open', 'acknowledged')
+                      AND i.source_ip IS NULL
+                      AND COALESCE(i.username, '') = COALESCE(:username, '')
+                      AND EXISTS (
+                          SELECT 1
+                          FROM incident_evidence e
+                          WHERE e.incident_id = i.incident_id
+                            AND e.timestamp BETWEEN :window_start AND :window_end
+                      )
+                    ORDER BY i.updated_at DESC
+                    LIMIT 1
+                    FOR UPDATE OF i
+                    """
+                ),
+                {**existing_params, "username": incident.username},
+            )
         existing = existing_result.mappings().first()
         if existing is None:
             await session.execute(

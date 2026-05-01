@@ -89,17 +89,19 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple[str, 
     advanced_from = await _track_kill_chain(redis, signal)
     incident = build_incident(signal, cti, advanced_from=advanced_from)
     incident_id, created = await save_or_merge_incident(incident)
+    await redis.xadd(
+        streams.incidents_new(incident.tenant_id),
+        {
+            "incident_id": incident_id,
+            "tenant_id": incident.tenant_id,
+            "signal_ids": ",".join(incident.signal_ids),
+            "event_type": "incident_created" if created else "incident_updated",
+            "refresh": "false" if created else "true",
+        },
+        maxlen=settings.redis_stream_maxlen,
+        approximate=True,
+    )
     if created:
-        await redis.xadd(
-            streams.incidents_new(incident.tenant_id),
-            {
-                "incident_id": incident_id,
-                "tenant_id": incident.tenant_id,
-                "signal_ids": ",".join(incident.signal_ids),
-            },
-            maxlen=settings.redis_stream_maxlen,
-            approximate=True,
-        )
         CORRELATION_EVENTS.labels(outcome="incident_created").inc()
     else:
         CORRELATION_EVENTS.labels(outcome="incident_merged").inc()
