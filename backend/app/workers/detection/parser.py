@@ -1,4 +1,13 @@
-"""auth.log parser for the MVP detection worker."""
+"""auth.log parser for the MVP detection worker.
+
+Responsibilities:
+    1. Pull host/timestamp out of the syslog prefix.
+    2. Classify the SSH message into one of the EventType variants we care about.
+    3. Build a NormalizedEvent that downstream rules can reason over.
+
+The parser is intentionally tolerant: if a line cannot be classified it returns
+``None`` so the detection worker can drop it instead of crashing the pipeline.
+"""
 from __future__ import annotations
 
 import re

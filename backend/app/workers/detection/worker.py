@@ -1,8 +1,21 @@
-"""Redis raw-envelope consumer for detection."""
+"""Redis raw-envelope consumer for detection.
+
+Pipeline stage (B):
+    raw envelope (events:raw)
+        -> dedup (event_id)
+        -> parse auth.log
+        -> persist normalized_event
+        -> evaluate AUTH-001..005
+        -> emit Signal(s) onto signals:matched
+
+Failures are pushed to events:failed so the message is never silently lost.
+"""
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+
+from prometheus_client import Counter
 
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
@@ -18,6 +31,18 @@ configure_logging()
 log = get_logger(__name__)
 
 
+DETECTION_EVENTS = Counter(
+    "infrared_detection_events_total",
+    "Detection worker outcomes per raw envelope.",
+    ["outcome"],
+)
+DETECTION_SIGNALS = Counter(
+    "infrared_detection_signals_total",
+    "Signals emitted by the detection worker.",
+    ["rule_id"],
+)
+
+
 async def process_payload(stream_id: str, payload: str) -> None:
     settings = get_settings()
     redis = get_redis()
@@ -26,14 +51,26 @@ async def process_payload(stream_id: str, payload: str) -> None:
     is_new = await redis.set(dedup_key, "1", nx=True, ex=settings.dedup_ttl_seconds)
     if not is_new:
         log.info("event_duplicate_skipped", event_id=envelope.event_id)
+        DETECTION_EVENTS.labels(outcome="duplicate").inc()
         return
 
     event = parse_auth_log(envelope)
     if event is None:
         log.info("event_unparsed", event_id=envelope.event_id)
+        DETECTION_EVENTS.labels(outcome="unparsed").inc()
         return
 
     await save_normalized_event(event)
+    if event.late_event:
+        log.info(
+            "event_late_processed",
+            event_id=event.event_id,
+            timestamp=event.timestamp.isoformat(),
+        )
+        DETECTION_EVENTS.labels(outcome="late_processed").inc()
+    else:
+        DETECTION_EVENTS.labels(outcome="parsed").inc()
+
     signals = await evaluate_rules(redis, event)
     for signal in signals:
         await save_signal(signal)
@@ -43,6 +80,7 @@ async def process_payload(stream_id: str, payload: str) -> None:
             maxlen=settings.redis_stream_maxlen,
             approximate=True,
         )
+        DETECTION_SIGNALS.labels(rule_id=signal.rule_id.value).inc()
         log.info("signal_matched", signal_id=signal.signal_id, rule_id=signal.rule_id.value)
 
 

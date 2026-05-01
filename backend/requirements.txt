@@ -29,3 +29,8 @@ prometheus-client==0.21.0
 # Util
 python-dotenv==1.0.1
 orjson==3.10.11
+
+# Test (B 영역 단위 테스트용)
+pytest==8.3.3
+pytest-asyncio==0.24.0
+fakeredis==2.26.1

@@ -2,17 +2,48 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
 
+from app.common.constants import Confidence, KillChainStage, Priority, Severity
 from app.db.connection import get_session
 from app.models.envelope import NormalizedEvent
 from app.models.heartbeat import Heartbeat
-from app.models.incident import Incident
+from app.models.incident import CtiEnrichment, Incident
 from app.models.llm import LLMResult
 from app.models.signal import Signal
+
+
+INCIDENT_MERGE_WINDOW = timedelta(minutes=5)
+
+_SEVERITY_RANK = {
+    Severity.INFO.value: 0,
+    Severity.MEDIUM.value: 1,
+    Severity.HIGH.value: 2,
+    Severity.CRITICAL.value: 3,
+}
+_CONFIDENCE_RANK = {
+    Confidence.LOW.value: 0,
+    Confidence.MEDIUM.value: 1,
+    Confidence.HIGH.value: 2,
+}
+_PRIORITY_RANK = {
+    Priority.LOW.value: 0,
+    Priority.NORMAL.value: 1,
+    Priority.HIGH.value: 2,
+    Priority.URGENT.value: 3,
+}
+_STAGE_RANK = {
+    KillChainStage.RECONNAISSANCE.value: 0,
+    KillChainStage.CREDENTIAL_ACCESS.value: 1,
+    KillChainStage.INITIAL_ACCESS.value: 2,
+    KillChainStage.EXECUTION.value: 3,
+    KillChainStage.PRIVILEGE_ESCALATION.value: 4,
+    KillChainStage.DEFENSE_EVASION.value: 5,
+    KillChainStage.EXFILTRATION.value: 6,
+}
 
 
 def _json(data: Any) -> str:
@@ -29,6 +60,110 @@ def _scalar(value: Any) -> Any:
 
 def _row(row: Any) -> dict[str, Any]:
     return {key: _scalar(value) for key, value in dict(row).items()}
+
+
+def _json_value(value: Any, fallback: Any) -> Any:
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return fallback
+    return value
+
+
+def _json_list(value: Any) -> list[str]:
+    parsed = _json_value(value, [])
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed]
+
+
+def _json_dict(value: Any) -> dict[str, Any]:
+    parsed = _json_value(value, {})
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _string_list(value: Any) -> list[str]:
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _max_ranked(existing: str | None, incoming: str | None, rank: dict[str, int]) -> str:
+    if not existing:
+        return incoming or ""
+    if not incoming:
+        return existing
+    return incoming if rank.get(incoming, -1) > rank.get(existing, -1) else existing
+
+
+def _merge_signal_ids(existing: Any, incoming: list[str]) -> list[str]:
+    merged = _json_list(existing)
+    for signal_id in incoming:
+        if signal_id not in merged:
+            merged.append(signal_id)
+    return merged
+
+
+def _merge_cti(existing: Any, incoming: CtiEnrichment | None) -> dict[str, Any] | None:
+    existing_cti = _json_dict(existing)
+    incoming_cti = incoming.model_dump(mode="json") if incoming else {}
+    if not existing_cti and not incoming_cti:
+        return None
+
+    abuse_score = max(
+        int(existing_cti.get("abuse_score") or 0),
+        int(incoming_cti.get("abuse_score") or 0),
+    )
+    tags = sorted(
+        {*_string_list(existing_cti.get("tags")), *_string_list(incoming_cti.get("tags"))}
+    )
+    sources = sorted(
+        {*_string_list(existing_cti.get("sources")), *_string_list(incoming_cti.get("sources"))}
+    )
+    prefer_incoming = int(incoming_cti.get("abuse_score") or 0) >= int(
+        existing_cti.get("abuse_score") or 0
+    )
+    preferred = incoming_cti if prefer_incoming else existing_cti
+    return {
+        "abuse_score": abuse_score,
+        "country": preferred.get("country"),
+        "tags": tags,
+        "sources": sources,
+        "note": preferred.get("note") or existing_cti.get("note") or incoming_cti.get("note"),
+    }
+
+
+async def _insert_incident_evidence(session: Any, incident: Incident, incident_id: str) -> None:
+    for item in incident.evidence_timeline:
+        await session.execute(
+            text(
+                """
+                INSERT INTO incident_evidence (
+                    incident_id, tenant_id, timestamp, description, signal_id, rule_id
+                )
+                SELECT
+                    :incident_id, :tenant_id, :timestamp, :description, :signal_id, :rule_id
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM incident_evidence
+                    WHERE incident_id = :incident_id
+                      AND (
+                        (:signal_id IS NOT NULL AND signal_id = :signal_id)
+                        OR (:signal_id IS NULL AND description = :description)
+                      )
+                )
+                """
+            ),
+            {
+                "incident_id": incident_id,
+                "tenant_id": incident.tenant_id,
+                "timestamp": item.timestamp,
+                "description": item.description,
+                "signal_id": item.signal_id,
+                "rule_id": item.rule_id,
+            },
+        )
 
 
 async def save_normalized_event(event: NormalizedEvent) -> None:
@@ -153,27 +288,161 @@ async def save_incident(incident: Incident) -> None:
                 "updated_at": incident.updated_at,
             },
         )
-        for item in incident.evidence_timeline:
+        await _insert_incident_evidence(session, incident, incident.incident_id)
+
+
+async def save_or_merge_incident(incident: Incident) -> tuple[str, bool]:
+    """Persist a new incident or merge the signal into an active correlated incident.
+
+    B MVP correlation groups SSH activity by tenant, asset, and source IP. This keeps
+    reconnaissance, brute-force, root-account, and failed-then-success signals in one
+    investigation timeline instead of creating one incident per rule hit.
+    """
+
+    cti = incident.cti_enrichment.model_dump(mode="json") if incident.cti_enrichment else None
+    window_start = incident.created_at - INCIDENT_MERGE_WINDOW
+    async with get_session() as session:
+        existing_result = await session.execute(
+            text(
+                """
+                SELECT *
+                FROM incidents
+                WHERE tenant_id = :tenant_id
+                  AND asset_id = :asset_id
+                  AND status IN ('open', 'acknowledged')
+                  AND created_at >= :window_start
+                  AND (
+                    (:source_ip IS NOT NULL AND source_ip = CAST(:source_ip AS INET))
+                    OR (
+                      :source_ip IS NULL
+                      AND source_ip IS NULL
+                      AND COALESCE(username, '') = COALESCE(:username, '')
+                    )
+                  )
+                ORDER BY created_at DESC
+                LIMIT 1
+                FOR UPDATE
+                """
+            ),
+            {
+                "tenant_id": incident.tenant_id,
+                "asset_id": incident.asset_id,
+                "source_ip": incident.source_ip,
+                "username": incident.username,
+                "window_start": window_start,
+            },
+        )
+        existing = existing_result.mappings().first()
+        if existing is None:
             await session.execute(
                 text(
                     """
-                    INSERT INTO incident_evidence (
-                        incident_id, tenant_id, timestamp, description, signal_id, rule_id
+                    INSERT INTO incidents (
+                        incident_id, tenant_id, asset_id, severity, confidence, priority,
+                        kill_chain_stage, mitre_tactic, mitre_technique, cti_enrichment,
+                        source_ip, username, signal_ids, status, created_at, updated_at
                     )
                     VALUES (
-                        :incident_id, :tenant_id, :timestamp, :description, :signal_id, :rule_id
+                        :incident_id, :tenant_id, :asset_id, :severity, :confidence, :priority,
+                        :kill_chain_stage, :mitre_tactic, :mitre_technique,
+                        CAST(:cti_enrichment AS JSONB), :source_ip, :username,
+                        CAST(:signal_ids AS JSONB), 'open', :created_at, :updated_at
                     )
+                    ON CONFLICT (incident_id) DO NOTHING
                     """
                 ),
                 {
                     "incident_id": incident.incident_id,
                     "tenant_id": incident.tenant_id,
-                    "timestamp": item.timestamp,
-                    "description": item.description,
-                    "signal_id": item.signal_id,
-                    "rule_id": item.rule_id,
+                    "asset_id": incident.asset_id,
+                    "severity": incident.severity.value,
+                    "confidence": incident.confidence.value,
+                    "priority": incident.priority.value,
+                    "kill_chain_stage": incident.kill_chain_stage.value,
+                    "mitre_tactic": incident.mitre_attack.tactic,
+                    "mitre_technique": incident.mitre_attack.technique,
+                    "cti_enrichment": _json(cti),
+                    "source_ip": incident.source_ip,
+                    "username": incident.username,
+                    "signal_ids": _json(incident.signal_ids),
+                    "created_at": incident.created_at,
+                    "updated_at": incident.updated_at,
                 },
             )
+            await _insert_incident_evidence(session, incident, incident.incident_id)
+            return incident.incident_id, True
+
+        existing_id = existing["incident_id"]
+        merged_stage = _max_ranked(
+            existing["kill_chain_stage"],
+            incident.kill_chain_stage.value,
+            _STAGE_RANK,
+        )
+        incoming_drives_mitre = (
+            _STAGE_RANK.get(incident.kill_chain_stage.value, -1)
+            >= _STAGE_RANK.get(existing["kill_chain_stage"], -1)
+        )
+        username = existing["username"]
+        if not username or incident.username == "root":
+            username = incident.username or username
+
+        await session.execute(
+            text(
+                """
+                UPDATE incidents
+                SET severity = :severity,
+                    confidence = :confidence,
+                    priority = :priority,
+                    kill_chain_stage = :kill_chain_stage,
+                    mitre_tactic = :mitre_tactic,
+                    mitre_technique = :mitre_technique,
+                    cti_enrichment = CAST(:cti_enrichment AS JSONB),
+                    username = :username,
+                    signal_ids = CAST(:signal_ids AS JSONB),
+                    updated_at = :updated_at
+                WHERE incident_id = :incident_id
+                """
+            ),
+            {
+                "incident_id": existing_id,
+                "severity": _max_ranked(
+                    existing["severity"],
+                    incident.severity.value,
+                    _SEVERITY_RANK,
+                ),
+                "confidence": _max_ranked(
+                    existing["confidence"],
+                    incident.confidence.value,
+                    _CONFIDENCE_RANK,
+                ),
+                "priority": _max_ranked(
+                    existing["priority"],
+                    incident.priority.value,
+                    _PRIORITY_RANK,
+                ),
+                "kill_chain_stage": merged_stage,
+                "mitre_tactic": (
+                    incident.mitre_attack.tactic
+                    if incoming_drives_mitre
+                    else existing["mitre_tactic"]
+                ),
+                "mitre_technique": (
+                    incident.mitre_attack.technique
+                    if incoming_drives_mitre
+                    else existing["mitre_technique"]
+                ),
+                "cti_enrichment": _json(
+                    _merge_cti(existing["cti_enrichment"], incident.cti_enrichment)
+                ),
+                "username": username,
+                "signal_ids": _json(
+                    _merge_signal_ids(existing["signal_ids"], incident.signal_ids)
+                ),
+                "updated_at": incident.updated_at,
+            },
+        )
+        await _insert_incident_evidence(session, incident, existing_id)
+        return existing_id, False
 
 
 async def save_llm_result(result: LLMResult, tenant_id: str) -> None:
