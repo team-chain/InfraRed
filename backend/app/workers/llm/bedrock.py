@@ -94,6 +94,7 @@ def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
         "role": "user",
         "content": (
             "You are a SOC analyst for an SSH security product. "
+            "IMPORTANT: Respond entirely in Korean (한국어). "
             "Return strict JSON only with keys: plain_summary, attack_intent, "
             "kill_chain_analysis, recommended_actions, confidence_note. "
             "plain_summary must be exactly three concise sentences for an executive. "

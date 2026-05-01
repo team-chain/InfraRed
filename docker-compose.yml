@@ -1,23 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: infrared-postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-infrared}
-      POSTGRES_USER: ${POSTGRES_USER:-infrared}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infrared-dev-pw}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./backend/app/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./infra/postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infrared} -d ${POSTGRES_DB:-infrared}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     container_name: infrared-redis
@@ -41,8 +22,6 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     env_file: .env
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     ports:
@@ -59,8 +38,6 @@ services:
     env_file: .env
     depends_on:
       redis:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -88,8 +65,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     volumes:
       - ./backend:/app
 
@@ -104,8 +79,6 @@ services:
       ingestion:
         condition: service_started
       redis:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -164,7 +137,6 @@ services:
         condition: service_started
 
 volumes:
-  postgres-data:
   redis-data:
   agent-state:
   grafana-data:

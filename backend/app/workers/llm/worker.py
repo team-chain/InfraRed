@@ -51,7 +51,10 @@ async def process_incident(
     contract = await fetch_incident_contract(incident_id, tenant_id)
     result = await analyze_contract_with_cache(contract, refresh=refresh)
     await save_llm_result(result, tenant_id=tenant_id)
-    await dispatch_incident_alert(tenant_id, result)
+    # Only dispatch alert on new incidents, not on signal merges
+    if not refresh:
+        severity = contract.get("incident", {}).get("severity", "high")
+        await dispatch_incident_alert(tenant_id, result, severity=severity)
 
 
 async def main() -> None:
@@ -86,6 +89,7 @@ async def main() -> None:
                         "llm_result_saved",
                         incident_id=fields["incident_id"],
                         refresh=refresh,
+                        discord_sent=not refresh,
                     )
                 except Exception as exc:  # noqa: BLE001
                     log.exception("llm_worker_failed", stream_id=stream_id, error=str(exc))
