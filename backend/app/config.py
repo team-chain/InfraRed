@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     aws_profile: str = ""
     llm_cache_ttl_seconds: int = 3600
 
-    slack_webhook_url: str = ""
+    discord_webhook_url: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

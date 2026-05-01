@@ -7,7 +7,7 @@ InfraRed는 A/B/C 역할이 같은 저장소에서 동시에 작업하는 구조
 - `main`은 항상 실행 가능한 상태를 유지합니다.
 - 직접 `main`에 커밋하지 않고, 역할별 브랜치에서 작업 후 PR로 합칩니다.
 - 공용 계약 변경은 반드시 다른 역할 담당자에게 공유합니다.
-- `.env`, 토큰, AWS 키, Slack Webhook 같은 비밀값은 절대 커밋하지 않습니다.
+- `.env`, 토큰, AWS 키, Discord Webhook 같은 비밀값은 절대 커밋하지 않습니다.
 - 설계 변경은 코드보다 먼저 `docs/`에 짧게 기록합니다.
 
 ## 브랜치 전략
@@ -88,7 +88,7 @@ docs/github-strategy
 주의:
 
 - Dashboard가 소비하는 API 응답 구조를 바꿀 때는 B와 함께 확인합니다.
-- Bedrock, Slack, SMTP 설정은 `.env.example`에는 이름만 두고 실제 값은 커밋하지 않습니다.
+- Bedrock, Discord, SMTP 설정은 `.env.example`에는 이름만 두고 실제 값은 커밋하지 않습니다.
 
 ## 공용 계약 변경 규칙
 
@@ -198,7 +198,7 @@ PR 본문에 포함할 내용:
 ```text
 [A] Agent heartbeat retry policy
 [B] AUTH-004 failed-then-success correlation
-[C] Slack alert template
+[C] Discord alert template
 [Common] Incident Contract v1 freeze
 ```
 
@@ -262,7 +262,7 @@ docker compose up --build
 ## 금지 사항
 
 - `.env` 커밋 금지
-- JWT, AWS Key, Slack Webhook, SMTP Password 커밋 금지
+- JWT, AWS Key, Discord Webhook, SMTP Password 커밋 금지
 - `main` 강제 push 금지
 - 공용 계약 변경을 말없이 push 금지
 - Docker volume 삭제 명령을 PR 설명 없이 실행 금지

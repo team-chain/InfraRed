@@ -83,7 +83,7 @@ The frontend supports:
 - Recommended actions
 - CTI panel
 - Manual LLM analysis
-- Manual alert dispatch
+- Manual alert dispatch through Discord and/or email
 - Incident status update
 
 ## Local Verification

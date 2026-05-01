@@ -84,7 +84,7 @@
 - Bedrock Claude 연동
 - Static Playbook fallback
 - LLM 결과 캐싱
-- Slack Webhook 발송
+- Discord Webhook 발송
 - Email 발송
 - 고객용 웹 대시보드
 - IAM/RBAC
@@ -95,4 +95,4 @@
 
 - Incident 생성 후 LLM 결과가 `llm_results`에 저장된다.
 - Dashboard에서 Incident 목록, LLM 요약, Evidence Timeline을 볼 수 있다.
-- 알림 채널이 설정된 경우 Slack/Email로 발송된다.
+- 알림 채널이 설정된 경우 Discord/Email로 발송된다.
