@@ -1,0 +1,50 @@
+# ============================================================
+# InfraRed Terraform 변수 예시
+# cp terraform.tfvars.example terraform.tfvars 후 값을 채우세요.
+# terraform.tfvars 는 .gitignore에 추가해야 합니다 (민감 정보 포함).
+# ============================================================
+
+# ── 기본 ────────────────────────────────────────────────────
+project = "infrared"
+env     = "dev"
+region  = "ap-northeast-2"
+
+# ── 네트워크 ─────────────────────────────────────────────────
+vpc_cidr            = "10.0.0.0/16"
+public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
+availability_zones  = ["ap-northeast-2a", "ap-northeast-2b"]
+
+# ── RDS ─────────────────────────────────────────────────────
+db_instance_class    = "db.t3.micro"
+db_name              = "infrared"
+db_username          = "infrared"
+db_password          = "change-me-strong-password-here"  # 최소 8자
+db_allocated_storage = 20
+
+# ── ElastiCache ──────────────────────────────────────────────
+redis_node_type = "cache.t3.micro"
+
+# ── JWT 보안 ──────────────────────────────────────────────────
+jwt_secret   = "change-me-at-least-32-chars-long-secret-key"
+jwt_issuer   = "infrared"
+jwt_audience = "infrared-ingest"
+
+# ── 애플리케이션 ──────────────────────────────────────────────
+tenant_id    = "company-a"
+agent_id     = "agent-001"
+asset_id     = "asset-001"
+cors_origins = "*"
+
+# ── Bedrock (LLM) ────────────────────────────────────────────
+bedrock_region   = "us-east-1"
+bedrock_model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+
+# ── 선택 사항 ────────────────────────────────────────────────
+slack_webhook_url   = ""         # Slack 알림 URL (비워두면 비활성)
+log_retention_days  = 30
+
+# ── ECS 태스크 크기 (dev 최소 사양) ──────────────────────────
+ingestion_cpu    = 512
+ingestion_memory = 1024
+worker_cpu       = 256
+worker_memory    = 512

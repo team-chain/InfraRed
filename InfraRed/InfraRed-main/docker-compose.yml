@@ -1,0 +1,209 @@
+services:
+
+  # ──────────────────────────────────────────────────────────
+  # 인프라 (Postgres, Redis)
+  # ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: infrared-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-infrared}
+      POSTGRES_USER: ${POSTGRES_USER:-infrared}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infrared-dev-pw}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/app/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./infra/postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infrared} -d ${POSTGRES_DB:-infrared}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: infrared-redis
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - redis-data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────────────────
+  # Ingestion API  [역할 A]
+  # ──────────────────────────────────────────────────────────
+  ingestion:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-ingestion
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────
+  # Agent — auth.log 수집  [역할 A]
+  # ──────────────────────────────────────────────────────────
+  agent:
+    build:
+      context: ./agent
+      dockerfile: ../infra/docker/agent.Dockerfile
+    container_name: infrared-agent
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      ingestion:
+        condition: service_healthy   # Ingestion이 완전히 뜬 뒤 시작
+    volumes:
+      - ./infra/sample-logs:/host/var/log:ro   # 로그 파일 읽기 전용 마운트
+      - agent-state:/var/lib/infrared          # offset SQLite 영속화
+
+  # ──────────────────────────────────────────────────────────
+  # Workers  [역할 B]
+  # ──────────────────────────────────────────────────────────
+  detection-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-detection
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.detection.worker"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  enrichment-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-enrichment
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.enrichment.worker"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  correlation-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-correlation
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.correlation.worker"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  # ──────────────────────────────────────────────────────────
+  # LLM / Dispatcher  [역할 C]
+  # ──────────────────────────────────────────────────────────
+  llm-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-llm
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.llm.worker"]
+    env_file: .env
+    depends_on:
+      ingestion:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  # ──────────────────────────────────────────────────────────
+  # Frontend  [역할 C]
+  # ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/docker/frontend.Dockerfile
+    container_name: infrared-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      ingestion:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  # ──────────────────────────────────────────────────────────
+  # 모니터링  [역할 C]
+  # ──────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: infrared-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      ingestion:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: infrared-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
+  agent-state:
+  grafana-data:

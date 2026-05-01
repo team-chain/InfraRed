@@ -1,0 +1,78 @@
+# ----------------------------------------------------------
+# [Wave 1] 03:12 — 185.12.34.56 무차별 대입 + 루트 공격
+#   AUTH-003: Invalid user 열거 (4회)
+#   AUTH-002: root 계정 직접 시도
+#   AUTH-001: Failed password 6회 → Brute Force
+#   AUTH-004: 실패 후 같은 IP에서 성공
+#   AUTH-005: 공격 이력 IP에서 로그인 성공
+# ----------------------------------------------------------
+Apr 30 03:12:01 web-01 sshd[1001]: Invalid user admin from 185.12.34.56 port 51234
+Apr 30 03:12:02 web-01 sshd[1001]: Connection closed by invalid user admin 185.12.34.56 port 51234 [preauth]
+Apr 30 03:12:03 web-01 sshd[1002]: Invalid user test from 185.12.34.56 port 51235
+Apr 30 03:12:04 web-01 sshd[1002]: Connection closed by invalid user test 185.12.34.56 port 51235 [preauth]
+Apr 30 03:12:05 web-01 sshd[1003]: Invalid user oracle from 185.12.34.56 port 51236
+Apr 30 03:12:06 web-01 sshd[1003]: Connection closed by invalid user oracle 185.12.34.56 port 51236 [preauth]
+Apr 30 03:12:07 web-01 sshd[1004]: Invalid user ubuntu from 185.12.34.56 port 51237
+Apr 30 03:12:08 web-01 sshd[1004]: Failed password for invalid user ubuntu from 185.12.34.56 port 51237 ssh2
+Apr 30 03:12:09 web-01 sshd[1005]: Failed password for root from 185.12.34.56 port 51238 ssh2
+Apr 30 03:12:11 web-01 sshd[1006]: Failed password for root from 185.12.34.56 port 51239 ssh2
+Apr 30 03:12:13 web-01 sshd[1007]: Failed password for root from 185.12.34.56 port 51240 ssh2
+Apr 30 03:12:15 web-01 sshd[1008]: Failed password for root from 185.12.34.56 port 51241 ssh2
+Apr 30 03:12:17 web-01 sshd[1009]: Failed password for root from 185.12.34.56 port 51242 ssh2
+Apr 30 03:12:19 web-01 sshd[1010]: Failed password for root from 185.12.34.56 port 51243 ssh2
+Apr 30 03:14:55 web-01 sshd[1099]: Accepted password for root from 185.12.34.56 port 51299 ssh2
+Apr 30 03:15:01 web-01 sshd[1100]: pam_unix(sshd:session): session opened for user root by (uid=0)
+
+# ----------------------------------------------------------
+# [Wave 2] 08:00 — 103.44.21.89 일반 계정 무차별 대입
+#   AUTH-001: Brute Force (admin 6회)
+#   AUTH-004: 실패 후 ubuntu 계정으로 성공
+# ----------------------------------------------------------
+Apr 30 08:00:11 web-01 sshd[2001]: Failed password for admin from 103.44.21.89 port 44100 ssh2
+Apr 30 08:00:14 web-01 sshd[2002]: Failed password for admin from 103.44.21.89 port 44101 ssh2
+Apr 30 08:00:17 web-01 sshd[2003]: Failed password for admin from 103.44.21.89 port 44102 ssh2
+Apr 30 08:00:20 web-01 sshd[2004]: Failed password for admin from 103.44.21.89 port 44103 ssh2
+Apr 30 08:00:23 web-01 sshd[2005]: Failed password for admin from 103.44.21.89 port 44104 ssh2
+Apr 30 08:00:26 web-01 sshd[2006]: Failed password for admin from 103.44.21.89 port 44105 ssh2
+Apr 30 08:01:03 web-01 sshd[2050]: Accepted password for ubuntu from 103.44.21.89 port 44200 ssh2
+Apr 30 08:01:04 web-01 sshd[2051]: pam_unix(sshd:session): session opened for user ubuntu by (uid=1000)
+
+# ----------------------------------------------------------
+# [Wave 3] 09:30 — 정상 내부 로그인 (알람 없어야 함)
+# ----------------------------------------------------------
+Apr 30 09:30:00 web-01 sshd[3001]: Accepted publickey for deployer from 10.0.1.5 port 52100 ssh2
+Apr 30 09:30:01 web-01 sshd[3002]: pam_unix(sshd:session): session opened for user deployer by (uid=1001)
+Apr 30 09:45:22 web-01 sshd[3100]: Disconnected from user deployer 10.0.1.5 port 52100
+Apr 30 10:00:00 web-01 sshd[3200]: Accepted publickey for ubuntu from 10.0.1.10 port 53000 ssh2
+Apr 30 10:00:01 web-01 sshd[3201]: pam_unix(sshd:session): session opened for user ubuntu by (uid=1000)
+
+# ----------------------------------------------------------
+# [Wave 4] 14:22 — 91.200.12.5 루트 직접 공략
+#   AUTH-003: Invalid user 열거 3회
+#   AUTH-002: root 대상
+#   AUTH-001: Brute Force 5회
+#   AUTH-004 + AUTH-005: 실패 후 성공
+# ----------------------------------------------------------
+Apr 30 14:22:01 web-01 sshd[4001]: Invalid user pi from 91.200.12.5 port 38000
+Apr 30 14:22:03 web-01 sshd[4002]: Invalid user git from 91.200.12.5 port 38001
+Apr 30 14:22:05 web-01 sshd[4003]: Invalid user jenkins from 91.200.12.5 port 38002
+Apr 30 14:22:07 web-01 sshd[4004]: Failed password for root from 91.200.12.5 port 38003 ssh2
+Apr 30 14:22:09 web-01 sshd[4005]: Failed password for root from 91.200.12.5 port 38004 ssh2
+Apr 30 14:22:11 web-01 sshd[4006]: Failed password for root from 91.200.12.5 port 38005 ssh2
+Apr 30 14:22:13 web-01 sshd[4007]: Failed password for root from 91.200.12.5 port 38006 ssh2
+Apr 30 14:22:15 web-01 sshd[4008]: Failed password for root from 91.200.12.5 port 38007 ssh2
+Apr 30 14:22:50 web-01 sshd[4099]: Accepted password for root from 91.200.12.5 port 38099 ssh2
+Apr 30 14:22:51 web-01 sshd[4100]: pam_unix(sshd:session): session opened for user root by (uid=0)
+
+# ----------------------------------------------------------
+# [Wave 5] 23:55 — 45.33.32.156 심야 의심 로그인 (AUTH-005)
+#   AUTH-001: ubuntu 계정 Brute Force 5회
+#   AUTH-004 + AUTH-005: 실패 후 성공
+# ----------------------------------------------------------
+Apr 30 23:55:01 web-01 sshd[5001]: Failed password for ubuntu from 45.33.32.156 port 60001 ssh2
+Apr 30 23:55:03 web-01 sshd[5002]: Failed password for ubuntu from 45.33.32.156 port 60002 ssh2
+Apr 30 23:55:05 web-01 sshd[5003]: Failed password for ubuntu from 45.33.32.156 port 60003 ssh2
+Apr 30 23:55:07 web-01 sshd[5004]: Failed password for ubuntu from 45.33.32.156 port 60004 ssh2
+Apr 30 23:55:09 web-01 sshd[5005]: Failed password for ubuntu from 45.33.32.156 port 60005 ssh2
+Apr 30 23:55:40 web-01 sshd[5099]: Accepted password for ubuntu from 45.33.32.156 port 60099 ssh2
+Apr 30 23:55:41 web-01 sshd[5100]: pam_unix(sshd:session): session opened for user ubuntu by (uid=1000)
