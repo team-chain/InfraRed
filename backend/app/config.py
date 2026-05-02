@@ -1,10 +1,16 @@
 """Central settings shared by the API and all workers."""
 from __future__ import annotations
 
+import logging
+import warnings
 from functools import lru_cache
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_log = logging.getLogger(__name__)
+
+_JWT_DEFAULT = "CHANGE_ME_IN_PRODUCTION"
 
 
 class Settings(BaseSettings):
@@ -23,7 +29,7 @@ class Settings(BaseSettings):
     payload_max_bytes: int = 65536
     internal_api_base_url: str = "http://ingestion:8000"
 
-    jwt_secret: str = "change-me-in-production-please"
+    jwt_secret: str = _JWT_DEFAULT
     jwt_alg: str = "HS256"
     jwt_issuer: str = "infrared"
     jwt_audience: str = "infrared-ingest"
@@ -81,18 +87,38 @@ class Settings(BaseSettings):
     incident_dedup_ttl_seconds: int = 600
 
     # WEB-001~004 thresholds
-    web_admin_scan_threshold: int = 30       # admin/login hits before WEB-002 fires
-    web_admin_scan_window_seconds: int = 300  # sliding window for admin scan
-    web_404_threshold: int = 50              # 404 responses before WEB-004 fires
-    web_404_window_seconds: int = 300        # sliding window for 404 burst
+    web_admin_scan_threshold: int = 30
+    web_admin_scan_window_seconds: int = 300
+    web_404_threshold: int = 50
+    web_404_window_seconds: int = 300
+
+    prometheus_bearer_token: str = ""
 
     cors_origins: str = "http://localhost:3000"
     late_event_threshold_seconds: int = 300
     late_event_max_seconds: int = 86400
 
+    def model_post_init(self, __context: object) -> None:
+        # JWT secret default value warning
+        if self.jwt_secret == _JWT_DEFAULT:
+            msg = (
+                "JWT_SECRET is set to the insecure default value. "
+                "Set a strong random secret in production via the JWT_SECRET env var."
+            )
+            if self.env == "prod":
+                raise ValueError(msg)
+            warnings.warn(msg, stacklevel=2)
+
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        # CORS wildcard defense: refuse * in non-local envs
+        if "*" in origins and self.env != "local":
+            _log.warning(
+                "CORS wildcard (*) is not allowed in env=%s; origin ignored.", self.env
+            )
+            origins = [o for o in origins if o != "*"]
+        return origins
 
     @property
     def llm_enabled(self) -> bool:

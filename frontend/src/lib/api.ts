@@ -72,80 +72,6 @@ export type DispatchResult = {
   email_sent: boolean;
 };
 
-export async function login(
-  tenantId: string,
-  email: string,
-  password: string,
-): Promise<{ access_token: string; user: AuthUser }> {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tenant_id: tenantId, email, password }),
-  });
-  if (!response.ok) throw new Error("Login failed");
-  return response.json();
-}
-
-async function apiFetch<T>(path: string, token: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`${response.status} ${message}`);
-  }
-  return response.json();
-}
-
-export async function fetchIncidents(token: string): Promise<IncidentListItem[]> {
-  const data = await apiFetch<{ items: IncidentListItem[] }>("/incidents", token);
-  return data.items ?? [];
-}
-
-export async function fetchIncident(
-  incidentId: string,
-  token: string,
-): Promise<IncidentContract> {
-  return apiFetch<IncidentContract>(`/incidents/${incidentId}`, token);
-}
-
-export async function analyzeIncident(
-  incidentId: string,
-  token: string,
-  refresh = false,
-): Promise<LlmResult> {
-  return apiFetch<LlmResult>(
-    `/incidents/${incidentId}/analyze?refresh=${String(refresh)}`,
-    token,
-    { method: "POST" },
-  );
-}
-
-export async function dispatchIncident(incidentId: string, token: string): Promise<DispatchResult> {
-  return apiFetch<DispatchResult>(`/incidents/${incidentId}/dispatch`, token, { method: "POST" });
-}
-
-export async function updateIncidentStatus(
-  incidentId: string,
-  status: string,
-  token: string,
-): Promise<void> {
-  await apiFetch(`/incidents/${incidentId}/status`, token, {
-    method: "PATCH",
-    body: JSON.stringify({ status }),
-  });
-}
-
-export async function fetchDetectionRules(token: string): Promise<DetectionRule[]> {
-  const data = await apiFetch<{ items: DetectionRule[] }>("/detection-rules", token);
-  return data.items ?? [];
-}
-
 export type AuditLog = {
   id: number;
   tenant_id: string;
@@ -157,7 +83,77 @@ export type AuditLog = {
   metadata?: Record<string, unknown>;
 };
 
-export async function fetchAuditLogs(token: string): Promise<AuditLog[]> {
-  const data = await apiFetch<{ items: AuditLog[] }>("/audit-logs", token);
+export async function login(
+  tenantId: string,
+  email: string,
+  password: string,
+): Promise<{ user: AuthUser }> {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ tenant_id: tenantId, email, password }),
+  });
+  if (!response.ok) throw new Error("Login failed");
+  return response.json();
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE_URL}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`${response.status} ${message}`);
+  }
+  return response.json();
+}
+
+export async function fetchIncidents(): Promise<IncidentListItem[]> {
+  const data = await apiFetch<{ items: IncidentListItem[] }>("/incidents");
+  return data.items ?? [];
+}
+
+export async function fetchIncident(incidentId: string): Promise<IncidentContract> {
+  return apiFetch<IncidentContract>(`/incidents/${incidentId}`);
+}
+
+export async function analyzeIncident(incidentId: string, refresh = false): Promise<LlmResult> {
+  return apiFetch<LlmResult>(
+    `/incidents/${incidentId}/analyze?refresh=${String(refresh)}`,
+    { method: "POST" },
+  );
+}
+
+export async function dispatchIncident(incidentId: string): Promise<DispatchResult> {
+  return apiFetch<DispatchResult>(`/incidents/${incidentId}/dispatch`, { method: "POST" });
+}
+
+export async function updateIncidentStatus(incidentId: string, status: string): Promise<void> {
+  await apiFetch(`/incidents/${incidentId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function fetchDetectionRules(): Promise<DetectionRule[]> {
+  const data = await apiFetch<{ items: DetectionRule[] }>("/detection-rules");
+  return data.items ?? [];
+}
+
+export async function fetchAuditLogs(): Promise<AuditLog[]> {
+  const data = await apiFetch<{ items: AuditLog[] }>("/audit-logs");
   return data.items ?? [];
 }

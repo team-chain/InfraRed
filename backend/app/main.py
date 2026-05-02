@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
@@ -63,12 +63,17 @@ async def healthz() -> dict[str, str]:
 
 
 @app.get("/metrics")
-async def metrics() -> Response:
+async def metrics(request: Request) -> Response:
+    bearer_token = settings.prometheus_bearer_token
+    if bearer_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header != f"Bearer {bearer_token}":
+            return Response(status_code=401)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/auth/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, request: Request) -> TokenResponse:
+async def login(payload: LoginRequest, request: Request) -> Response:
     user = await authenticate_user(
         tenant_id=payload.tenant_id,
         email=payload.email,
@@ -93,7 +98,27 @@ async def login(payload: LoginRequest, request: Request) -> TokenResponse:
         tenant_id=user["tenant_id"],
         role=user["role"],
     )
-    return TokenResponse(access_token=token, user=user)
+
+    response = JSONResponse(
+        content={"access_token": token, "user": user},
+    )
+    response.set_cookie(
+        key="infrared_token",
+        value=token,
+        httponly=True,
+        secure=(settings.env == "prod"),
+        samesite="lax",
+        max_age=settings.jwt_user_ttl_seconds,
+        path="/",
+    )
+    return response
+
+
+@app.post("/auth/logout")
+async def logout() -> Response:
+    response = JSONResponse(content={"ok": True})
+    response.delete_cookie(key="infrared_token", path="/")
+    return response
 
 
 @app.get("/auth/me")

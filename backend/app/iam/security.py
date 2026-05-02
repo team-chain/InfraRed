@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.iam.rbac import has_permission
 
 
-bearer = HTTPBearer(auto_error=True)
+_bearer = HTTPBearer(auto_error=False)
 
 
 def create_token(
@@ -42,13 +42,11 @@ def create_token(
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_alg)
 
 
-async def verify_token(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer),
-) -> dict[str, Any]:
+def _decode_raw(raw: str) -> dict[str, Any]:
     settings = get_settings()
     try:
-        claims = jwt.decode(
-            credentials.credentials,
+        return jwt.decode(
+            raw,
             settings.jwt_secret,
             algorithms=[settings.jwt_alg],
             audience=settings.jwt_audience,
@@ -59,16 +57,35 @@ async def verify_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid_or_expired_token",
         ) from exc
-    return claims
 
 
-async def verify_agent_token(claims: dict[str, Any] = Depends(verify_token)) -> dict[str, Any]:
+async def verify_token(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+) -> dict[str, Any]:
+    """Accept JWT from Authorization: Bearer header OR infrared_token cookie."""
+    if credentials:
+        return _decode_raw(credentials.credentials)
+    cookie = request.cookies.get("infrared_token")
+    if cookie:
+        return _decode_raw(cookie)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="not_authenticated",
+    )
+
+
+async def verify_agent_token(
+    claims: dict[str, Any] = Depends(verify_token),
+) -> dict[str, Any]:
     if claims.get("role") != "agent":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="agent_role_required")
     return claims
 
 
-async def verify_user_token(claims: dict[str, Any] = Depends(verify_token)) -> dict[str, Any]:
+async def verify_user_token(
+    claims: dict[str, Any] = Depends(verify_token),
+) -> dict[str, Any]:
     if claims.get("role") == "agent":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user_role_required")
     return claims
@@ -79,5 +96,4 @@ def require_permission(permission: str):
         if not has_permission(str(claims.get("role")), permission):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission_denied")
         return claims
-
     return dependency
