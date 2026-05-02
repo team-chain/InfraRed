@@ -59,4 +59,4 @@ infra/terraform/tfplan
 .terraform/
 *.tfstate
 *.tfvars
-tfplan
+tfplan**/.terraform/
