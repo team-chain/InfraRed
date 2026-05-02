@@ -21,6 +21,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libsqlite3-0 \
         curl \
+        procps \
     && rm -rf /var/lib/apt/lists/*
 
 # ── 비루트 유저 생성 ─────────────────────────────────────────

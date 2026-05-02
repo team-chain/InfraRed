@@ -51,9 +51,13 @@ role: admin
 
 ## LLM Behavior
 
-The LLM service tries Bedrock only when AWS credentials are configured.
+The worker follows the design-document severity policy:
 
-If credentials are empty or Bedrock fails, it uses the Static Playbook fallback in:
+- Critical / High: automatic Bedrock analysis and Discord dispatch.
+- Medium: Static Playbook summary by default; the dashboard Analyze button requests detailed AI analysis.
+- Info: stored and shown in the dashboard without automatic LLM analysis.
+
+If credentials are empty or Bedrock fails, detailed analysis uses the Static Playbook fallback in:
 
 ```text
 backend/app/workers/llm/playbook.py

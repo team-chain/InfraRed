@@ -66,6 +66,12 @@ export type DetectionRule = {
   enabled: boolean;
 };
 
+export type DispatchResult = {
+  dispatched: boolean;
+  discord_sent: boolean;
+  email_sent: boolean;
+};
+
 export async function login(
   tenantId: string,
   email: string,
@@ -120,8 +126,8 @@ export async function analyzeIncident(
   );
 }
 
-export async function dispatchIncident(incidentId: string, token: string): Promise<void> {
-  await apiFetch(`/incidents/${incidentId}/dispatch`, token, { method: "POST" });
+export async function dispatchIncident(incidentId: string, token: string): Promise<DispatchResult> {
+  return apiFetch<DispatchResult>(`/incidents/${incidentId}/dispatch`, token, { method: "POST" });
 }
 
 export async function updateIncidentStatus(

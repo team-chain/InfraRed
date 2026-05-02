@@ -675,6 +675,72 @@ async def get_incident_contract(incident_id: str) -> dict[str, Any] | None:
         }
 
 
+async def upsert_known_ip(
+    tenant_id: str, asset_id: str, username: str, source_ip: str
+) -> None:
+    """Insert or update a known IP for the given user. Used by AUTH-005."""
+    async with get_session() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO known_ips (tenant_id, asset_id, username, source_ip, first_seen, last_seen)
+                VALUES (:tenant_id, :asset_id, :username, CAST(:source_ip AS INET), NOW(), NOW())
+                ON CONFLICT (tenant_id, asset_id, username, source_ip)
+                DO UPDATE SET last_seen = NOW()
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "asset_id": asset_id,
+                "username": username,
+                "source_ip": source_ip,
+            },
+        )
+
+
+async def get_known_ip_count(tenant_id: str, asset_id: str, username: str) -> int:
+    """Return how many distinct IPs have been seen for this user."""
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM known_ips
+                WHERE tenant_id = :tenant_id
+                  AND asset_id = :asset_id
+                  AND username = :username
+                """
+            ),
+            {"tenant_id": tenant_id, "asset_id": asset_id, "username": username},
+        )
+        return int(result.scalar() or 0)
+
+
+async def is_known_ip_for_user(
+    tenant_id: str, asset_id: str, username: str, source_ip: str
+) -> bool:
+    """Check if this IP has been seen before for this user."""
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT 1 FROM known_ips
+                WHERE tenant_id = :tenant_id
+                  AND asset_id = :asset_id
+                  AND username = :username
+                  AND source_ip = CAST(:source_ip AS INET)
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "asset_id": asset_id,
+                "username": username,
+                "source_ip": source_ip,
+            },
+        )
+        return result.first() is not None
+
+
 async def touch_heartbeat(heartbeat: Heartbeat) -> None:
     now = datetime.now(timezone.utc)
     async with get_session() as session:

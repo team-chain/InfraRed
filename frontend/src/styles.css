@@ -413,6 +413,15 @@ h2 {
   padding: 12px 14px;
 }
 
+.notice {
+  background: #eef8f2;
+  border: 1px solid #bfe3cc;
+  border-radius: 8px;
+  color: #245b38;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+}
+
 .empty {
   color: #60737d;
   padding: 18px;

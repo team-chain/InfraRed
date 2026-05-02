@@ -176,7 +176,7 @@ async def dispatch_incident(
     )
     if not llm_row:
         await save_llm_result(result, tenant_id=claims["tenant_id"])
-    await dispatch_incident_alert(
+    dispatch_result = await dispatch_incident_alert(
         claims["tenant_id"], result,
         severity=contract["incident"].get("severity", "high"),
     )
@@ -186,9 +186,18 @@ async def dispatch_incident(
         action="incident.dispatch",
         resource=incident_id,
         ip=request.client.host if request.client else None,
-        metadata={"model": result.model},
+        metadata={
+            "model": result.model,
+            "discord_sent": dispatch_result.discord_sent,
+            "email_sent": dispatch_result.email_sent,
+            "errors": list(dispatch_result.errors),
+        },
     )
-    return {"dispatched": True}
+    return {
+        "dispatched": dispatch_result.dispatched,
+        "discord_sent": dispatch_result.discord_sent,
+        "email_sent": dispatch_result.email_sent,
+    }
 
 
 @app.patch("/incidents/{incident_id}/status")

@@ -162,10 +162,42 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
             )
 
         known_ip_key = keys.auth_known_ip(event.tenant_id, event.asset_id, event.username)
+
+        # Fast path: Redis cache
         seen_before = await redis.scard(known_ip_key)
-        is_known = await redis.sismember(known_ip_key, event.source_ip)
+        is_known = bool(await redis.sismember(known_ip_key, event.source_ip))
+
+        # Persistence fallback: if Redis is empty (e.g. after restart), check DB
+        if not seen_before:
+            try:
+                from app.db.repositories import get_known_ip_count, is_known_ip_for_user
+                db_count = await get_known_ip_count(
+                    event.tenant_id, event.asset_id, event.username
+                )
+                if db_count > 0:
+                    seen_before = db_count
+                    is_known = await is_known_ip_for_user(
+                        event.tenant_id, event.asset_id, event.username, event.source_ip
+                    )
+                    # Warm up Redis cache from DB
+                    await redis.sadd(known_ip_key, event.source_ip)
+                    await redis.expire(known_ip_key, 86400)
+            except Exception:
+                pass  # DB unavailable (e.g. unit tests) — use Redis result only
+
+        # Update Redis cache
         await redis.sadd(known_ip_key, event.source_ip)
-        await redis.expire(known_ip_key, 86400 * 90)
+        await redis.expire(known_ip_key, 86400)
+
+        # Persist to DB (survives container restarts)
+        try:
+            from app.db.repositories import upsert_known_ip
+            await upsert_known_ip(
+                event.tenant_id, event.asset_id, event.username, event.source_ip
+            )
+        except Exception:
+            pass  # DB unavailable (e.g. unit tests)
+
         if seen_before and not is_known:
             signals.append(
                 _signal(

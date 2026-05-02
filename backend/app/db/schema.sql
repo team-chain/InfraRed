@@ -140,6 +140,18 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE (tenant_id, email)
 );
 
+CREATE TABLE IF NOT EXISTS known_ips (
+    id          BIGSERIAL PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    asset_id    TEXT NOT NULL,
+    username    TEXT NOT NULL,
+    source_ip   INET NOT NULL,
+    first_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, asset_id, username, source_ip)
+);
+CREATE INDEX IF NOT EXISTS idx_known_ips_lookup ON known_ips(tenant_id, asset_id, username);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id          BIGSERIAL PRIMARY KEY,
     tenant_id   TEXT NOT NULL,

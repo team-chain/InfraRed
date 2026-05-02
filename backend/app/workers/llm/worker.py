@@ -18,6 +18,9 @@ from app.workers.llm.service import analyze_contract_with_cache
 configure_logging()
 log = get_logger(__name__)
 
+AUTO_ANALYZE_SEVERITIES = {"critical", "high"}
+STATIC_PLAYBOOK_SEVERITIES = {"medium"}
+
 
 def _truthy(value: object) -> bool:
     if value is None:
@@ -47,14 +50,45 @@ async def process_incident(
     tenant_id: str,
     *,
     refresh: bool = False,
-) -> None:
+) -> dict[str, object]:
     contract = await fetch_incident_contract(incident_id, tenant_id)
-    result = await analyze_contract_with_cache(contract, refresh=refresh)
+    severity = str(contract.get("incident", {}).get("severity", "info")).lower()
+
+    if severity not in AUTO_ANALYZE_SEVERITIES | STATIC_PLAYBOOK_SEVERITIES:
+        log.info(
+            "llm_skipped_by_policy",
+            incident_id=incident_id,
+            severity=severity,
+            refresh=refresh,
+        )
+        return {
+            "severity": severity,
+            "analysis_mode": "stored_only",
+            "dispatch_attempted": False,
+        }
+
+    force_static = severity in STATIC_PLAYBOOK_SEVERITIES
+    result = await analyze_contract_with_cache(
+        contract,
+        refresh=refresh,
+        force_static=force_static,
+    )
     await save_llm_result(result, tenant_id=tenant_id)
-    # Only dispatch alert on new incidents, not on signal merges
-    if not refresh:
-        severity = contract.get("incident", {}).get("severity", "high")
-        await dispatch_incident_alert(tenant_id, result, severity=severity)
+
+    dispatch_attempted = severity in AUTO_ANALYZE_SEVERITIES and not refresh
+    discord_sent = False
+    email_sent = False
+    if dispatch_attempted:
+        dispatch_result = await dispatch_incident_alert(tenant_id, result, severity=severity)
+        discord_sent = dispatch_result.discord_sent
+        email_sent = dispatch_result.email_sent
+    return {
+        "severity": severity,
+        "analysis_mode": "static_playbook" if force_static else "bedrock",
+        "dispatch_attempted": dispatch_attempted,
+        "discord_sent": discord_sent,
+        "email_sent": email_sent,
+    }
 
 
 async def main() -> None:
@@ -79,17 +113,17 @@ async def main() -> None:
             for stream_id, fields in entries:
                 try:
                     refresh = _truthy(fields.get("refresh"))
-                    await process_incident(
+                    outcome = await process_incident(
                         fields["incident_id"],
                         fields["tenant_id"],
                         refresh=refresh,
                     )
                     await redis.xack(stream, streams.GROUP_LLM, stream_id)
                     log.info(
-                        "llm_result_saved",
+                        "llm_worker_processed",
                         incident_id=fields["incident_id"],
                         refresh=refresh,
-                        discord_sent=not refresh,
+                        **outcome,
                     )
                 except Exception as exc:  # noqa: BLE001
                     log.exception("llm_worker_failed", stream_id=stream_id, error=str(exc))

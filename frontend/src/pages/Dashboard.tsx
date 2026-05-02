@@ -34,6 +34,7 @@ export function Dashboard({ token, user, onLogout }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [notice, setNotice] = useState<string | undefined>();
 
   // Detection Rules
   const [rules, setRules] = useState<DetectionRule[]>([]);
@@ -86,6 +87,7 @@ export function Dashboard({ token, user, onLogout }: Props) {
 
   async function selectIncident(incident: IncidentListItem) {
     setError(undefined);
+    setNotice(undefined);
     try {
       setSelected(await fetchIncident(incident.incident_id, token));
     } catch (err) {
@@ -97,10 +99,12 @@ export function Dashboard({ token, user, onLogout }: Props) {
     if (!selected) return;
     setBusy("analysis");
     setError(undefined);
+    setNotice(undefined);
     try {
       await analyzeIncident(selected.incident.incident_id, token, refresh);
       setSelected(await fetchIncident(selected.incident.incident_id, token));
       await load();
+      setNotice(refresh ? "상세 AI 분석을 갱신했습니다." : "AI 분석을 완료했습니다.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -112,8 +116,18 @@ export function Dashboard({ token, user, onLogout }: Props) {
     if (!selected) return;
     setBusy("dispatch");
     setError(undefined);
+    setNotice(undefined);
     try {
-      await dispatchIncident(selected.incident.incident_id, token);
+      const result = await dispatchIncident(selected.incident.incident_id, token);
+      const channels = [
+        result.discord_sent ? "Discord" : undefined,
+        result.email_sent ? "Email" : undefined,
+      ].filter(Boolean);
+      setNotice(
+        channels.length
+          ? `${channels.join(", ")} 알림을 발송했습니다.`
+          : "설정된 알림 채널이 없어 발송된 알림이 없습니다.",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -125,10 +139,12 @@ export function Dashboard({ token, user, onLogout }: Props) {
     if (!selected) return;
     setBusy("status");
     setError(undefined);
+    setNotice(undefined);
     try {
       await updateIncidentStatus(selected.incident.incident_id, status, token);
       setSelected(await fetchIncident(selected.incident.incident_id, token));
       await load();
+      setNotice(`Incident 상태를 ${status}(으)로 변경했습니다.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -194,6 +210,7 @@ export function Dashboard({ token, user, onLogout }: Props) {
       </nav>
 
       {error && <div className="alert">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
 
       {/* ── Incidents tab ── */}
       {tab === "incidents" && (
@@ -223,7 +240,7 @@ export function Dashboard({ token, user, onLogout }: Props) {
               <button
                 className="secondary-button"
                 disabled={!incident || busy === "analysis"}
-                onClick={() => runAnalysis(false)}
+                onClick={() => runAnalysis(true)}
               >
                 <BrainCircuit size={17} />
                 {busy === "analysis" ? "Analyzing…" : "Analyze"}

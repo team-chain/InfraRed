@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     abuseipdb_api_key: str = ""
     cti_cache_ttl_seconds: int = 86400
 
+    maxmind_license_key: str = ""
+    maxmind_db_path: str = "/app/data/GeoLite2-City.mmdb"
+
     cors_origins: str = "http://localhost:3000"
     late_event_threshold_seconds: int = 300
     late_event_max_seconds: int = 86400
