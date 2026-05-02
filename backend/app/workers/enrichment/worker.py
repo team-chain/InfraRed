@@ -19,6 +19,7 @@ from app.models.incident import CtiEnrichment
 from app.models.signal import Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
+from app.workers.dlq import reclaim_pending
 from app.workers.enrichment.geoip import GeoLocation, lookup_geoip
 from app.workers.enrichment.provider import mock_cti_lookup
 
@@ -89,6 +90,19 @@ async def enrich_signal(payload: str) -> dict[str, str]:
     }
 
 
+async def _handle(stream_id: str, fields: dict) -> None:
+    settings = get_settings()
+    redis = get_redis()
+    output_stream = streams.signals_enriched(settings.tenant_id)
+    enriched = await enrich_signal(fields["payload"])
+    await redis.xadd(
+        output_stream,
+        enriched,
+        maxlen=settings.redis_stream_maxlen,
+        approximate=True,
+    )
+
+
 async def main() -> None:
     settings = get_settings()
     redis = get_redis()
@@ -99,6 +113,7 @@ async def main() -> None:
     log.info("enrichment_worker_started", stream=input_stream)
 
     while True:
+        # ── Process new messages ──────────────────────────────────────────────
         messages = await redis.xreadgroup(
             streams.GROUP_ENRICHMENT,
             consumer,
@@ -106,24 +121,37 @@ async def main() -> None:
             count=10,
             block=5000,
         )
-        if not messages:
-            continue
-        for _, entries in messages:
-            for stream_id, fields in entries:
-                try:
-                    enriched = await enrich_signal(fields["payload"])
-                    await redis.xadd(
-                        output_stream,
-                        enriched,
-                        maxlen=settings.redis_stream_maxlen,
-                        approximate=True,
-                    )
-                    await redis.xack(input_stream, streams.GROUP_ENRICHMENT, stream_id)
-                    log.info("signal_enriched", stream_id=stream_id)
-                except Exception as exc:  # noqa: BLE001
-                    ENRICHMENT_EVENTS.labels(outcome="failed").inc()
-                    log.exception("enrichment_failed", stream_id=stream_id, error=str(exc))
-                    await redis.xack(input_stream, streams.GROUP_ENRICHMENT, stream_id)
+        if messages:
+            for _, entries in messages:
+                for stream_id, fields in entries:
+                    try:
+                        enriched = await enrich_signal(fields["payload"])
+                        await redis.xadd(
+                            output_stream,
+                            enriched,
+                            maxlen=settings.redis_stream_maxlen,
+                            approximate=True,
+                        )
+                        await redis.xack(input_stream, streams.GROUP_ENRICHMENT, stream_id)
+                        log.info("signal_enriched", stream_id=stream_id)
+                        ENRICHMENT_EVENTS.labels(outcome="enriched").inc()
+                    except Exception as exc:  # noqa: BLE001
+                        # Leave in PEL for retry via XAUTOCLAIM
+                        ENRICHMENT_EVENTS.labels(outcome="failed").inc()
+                        log.exception("enrichment_failed", stream_id=stream_id, error=str(exc))
+
+        # ── Reclaim & retry idle PEL messages ────────────────────────────────
+        await reclaim_pending(
+            redis=redis,
+            stream=input_stream,
+            group=streams.GROUP_ENRICHMENT,
+            consumer=consumer,
+            tenant_id=settings.tenant_id,
+            stage="enrichment",
+            idle_ms=settings.dlq_idle_seconds * 1000,
+            max_retries=settings.dlq_max_retries,
+            handler=_handle,
+        )
 
 
 if __name__ == "__main__":

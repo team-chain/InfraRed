@@ -16,7 +16,9 @@ from app.models.llm import LLMResult
 from app.models.signal import Signal
 
 
-INCIDENT_MERGE_WINDOW = timedelta(minutes=5)
+def _incident_merge_window() -> timedelta:
+    from app.config import get_settings
+    return timedelta(minutes=get_settings().incident_merge_window_minutes)
 
 _SEVERITY_RANK = {
     Severity.INFO.value: 0,
@@ -328,8 +330,9 @@ async def save_or_merge_incident(incident: Incident) -> tuple[str, bool]:
 
     cti = incident.cti_enrichment.model_dump(mode="json") if incident.cti_enrichment else None
     anchor_at = _incident_anchor_time(incident)
-    window_start = anchor_at - INCIDENT_MERGE_WINDOW
-    window_end = anchor_at + INCIDENT_MERGE_WINDOW
+    merge_window = _incident_merge_window()
+    window_start = anchor_at - merge_window
+    window_end = anchor_at + merge_window
     async with get_session() as session:
         existing_params = {
             "tenant_id": incident.tenant_id,

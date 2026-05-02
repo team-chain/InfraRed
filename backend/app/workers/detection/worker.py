@@ -8,12 +8,12 @@ Pipeline stage (B):
         -> evaluate AUTH-001..005
         -> emit Signal(s) onto signals:matched
 
-Failures are pushed to events:failed so the message is never silently lost.
+Failures stay in PEL and are retried via XAUTOCLAIM.  After dlq_max_retries
+the message is moved to the dead-letter stream and acknowledged.
 """
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 
 from prometheus_client import Counter
 
@@ -25,6 +25,7 @@ from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.detection.parser import parse_auth_log
 from app.workers.detection.rules import evaluate_rules
+from app.workers.dlq import reclaim_pending
 
 
 configure_logging()
@@ -84,6 +85,10 @@ async def process_payload(stream_id: str, payload: str) -> None:
         log.info("signal_matched", signal_id=signal.signal_id, rule_id=signal.rule_id.value)
 
 
+async def _handle(stream_id: str, fields: dict) -> None:
+    await process_payload(stream_id, fields["payload"])
+
+
 async def main() -> None:
     settings = get_settings()
     redis = get_redis()
@@ -93,6 +98,7 @@ async def main() -> None:
     log.info("detection_worker_started", stream=stream, group=streams.GROUP_DETECTION)
 
     while True:
+        # ── Process new messages ──────────────────────────────────────────────
         messages = await redis.xreadgroup(
             streams.GROUP_DETECTION,
             consumer,
@@ -100,25 +106,30 @@ async def main() -> None:
             count=10,
             block=5000,
         )
-        if not messages:
-            continue
-        for _, entries in messages:
-            for stream_id, fields in entries:
-                try:
-                    await process_payload(stream_id, fields["payload"])
-                    await redis.xack(stream, streams.GROUP_DETECTION, stream_id)
-                except Exception as exc:  # noqa: BLE001
-                    log.exception("detection_failed", stream_id=stream_id, error=str(exc))
-                    await redis.xadd(
-                        streams.events_failed(settings.tenant_id),
-                        {
-                            "failed_at": datetime.now(timezone.utc).isoformat(),
-                            "stage": "detection",
-                            "stream_id": stream_id,
-                            "error": str(exc),
-                        },
-                    )
-                    await redis.xack(stream, streams.GROUP_DETECTION, stream_id)
+        if messages:
+            for _, entries in messages:
+                for stream_id, fields in entries:
+                    try:
+                        await process_payload(stream_id, fields["payload"])
+                        await redis.xack(stream, streams.GROUP_DETECTION, stream_id)
+                        DETECTION_EVENTS.labels(outcome="acked").inc()
+                    except Exception as exc:  # noqa: BLE001
+                        # Leave in PEL for retry via XAUTOCLAIM
+                        log.exception("detection_failed", stream_id=stream_id, error=str(exc))
+                        DETECTION_EVENTS.labels(outcome="failed").inc()
+
+        # ── Reclaim & retry idle PEL messages (DLQ after max_retries) ────────
+        await reclaim_pending(
+            redis=redis,
+            stream=stream,
+            group=streams.GROUP_DETECTION,
+            consumer=consumer,
+            tenant_id=settings.tenant_id,
+            stage="detection",
+            idle_ms=settings.dlq_idle_seconds * 1000,
+            max_retries=settings.dlq_max_retries,
+            handler=_handle,
+        )
 
 
 if __name__ == "__main__":

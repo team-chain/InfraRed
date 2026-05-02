@@ -6,6 +6,7 @@ from datetime import timedelta
 from redis.asyncio import Redis
 
 from app.common.constants import EventType, KillChainStage, RuleId
+from app.config import get_settings
 from app.models.envelope import NormalizedEvent
 from app.models.signal import Signal
 from app.redis_kv import keys
@@ -93,44 +94,51 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
     if not event.source_ip:
         return signals
 
+    cfg = get_settings()
+    bf_window = cfg.auth_brute_force_window_seconds
+    bf_threshold = cfg.auth_brute_force_threshold
+    inv_window = cfg.auth_invalid_user_window_seconds
+    inv_threshold = cfg.auth_invalid_user_threshold
+    fts_window = cfg.auth_fail_then_success_window_seconds
+
     now_score = event.timestamp.timestamp()
     fail_ip_key = keys.auth_fail_ip(event.tenant_id, event.asset_id, event.source_ip)
     invalid_key = keys.auth_invalid_user(event.tenant_id, event.asset_id, event.source_ip)
 
     if event.result == "failed":
         await redis.zadd(fail_ip_key, {event.event_id: now_score})
-        await redis.zremrangebyscore(fail_ip_key, 0, now_score - 300)
-        await redis.expire(fail_ip_key, 600)
+        await redis.zremrangebyscore(fail_ip_key, 0, now_score - bf_window)
+        await redis.expire(fail_ip_key, bf_window * 2)
         failed_count = await redis.zcard(fail_ip_key)
-        if failed_count >= 3:
+        if failed_count >= bf_threshold:
             triggering_event_ids = await _window_event_ids(
-                redis, fail_ip_key, now_score - 300, now_score
+                redis, fail_ip_key, now_score - bf_window, now_score
             )
             signals.append(
                 _signal(
                     RuleId.AUTH_BRUTE_FORCE,
                     event,
                     int(failed_count),
-                    "Three or more SSH failures from one IP within five minutes.",
+                    f"{bf_threshold}+ SSH failures from one IP within {bf_window}s.",
                     triggering_event_ids,
                 )
             )
 
     if event.event_type == EventType.SSH_INVALID_USER:
         await redis.zadd(invalid_key, {event.event_id: now_score})
-        await redis.zremrangebyscore(invalid_key, 0, now_score - 300)
-        await redis.expire(invalid_key, 600)
+        await redis.zremrangebyscore(invalid_key, 0, now_score - inv_window)
+        await redis.expire(invalid_key, inv_window * 2)
         invalid_count = await redis.zcard(invalid_key)
-        if invalid_count >= 2:
+        if invalid_count >= inv_threshold:
             triggering_event_ids = await _window_event_ids(
-                redis, invalid_key, now_score - 300, now_score
+                redis, invalid_key, now_score - inv_window, now_score
             )
             signals.append(
                 _signal(
                     RuleId.AUTH_INVALID_USER,
                     event,
                     int(invalid_count),
-                    "Two or more invalid-user probes from one IP within five minutes.",
+                    f"{inv_threshold}+ invalid-user probes from one IP within {inv_window}s.",
                     triggering_event_ids,
                 )
             )
@@ -148,7 +156,7 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
         failure_count = await redis.zcard(fail_user_key)
         if failure_count:
             triggering_event_ids = await _window_event_ids(
-                redis, fail_user_key, now_score - 600, now_score
+                redis, fail_user_key, now_score - fts_window, now_score
             )
             triggering_event_ids.append(event.event_id)
             signals.append(
@@ -215,7 +223,7 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
             event.source_ip,
         )
         await redis.zadd(fail_user_key, {event.event_id: now_score})
-        await redis.zremrangebyscore(fail_user_key, 0, now_score - 600)
-        await redis.expire(fail_user_key, 900)
+        await redis.zremrangebyscore(fail_user_key, 0, now_score - fts_window)
+        await redis.expire(fail_user_key, fts_window + 300)
 
     return signals

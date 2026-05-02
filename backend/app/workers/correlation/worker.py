@@ -24,6 +24,7 @@ from app.models.signal import Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.correlation.builder import build_incident
+from app.workers.dlq import reclaim_pending
 
 
 configure_logging()
@@ -108,6 +109,14 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple[str, 
     return incident_id, created
 
 
+async def _handle(stream_id: str, fields: dict) -> None:
+    incident_id, created = await process_enriched(fields["signal"], fields["cti"])
+    if created:
+        log.info("incident_created", incident_id=incident_id)
+    else:
+        log.info("incident_merged", incident_id=incident_id)
+
+
 async def main() -> None:
     settings = get_settings()
     redis = get_redis()
@@ -117,6 +126,7 @@ async def main() -> None:
     log.info("correlation_worker_started", stream=stream)
 
     while True:
+        # ── Process new messages ──────────────────────────────────────────────
         messages = await redis.xreadgroup(
             streams.GROUP_CORRELATION,
             consumer,
@@ -124,24 +134,36 @@ async def main() -> None:
             count=10,
             block=5000,
         )
-        if not messages:
-            continue
-        for _, entries in messages:
-            for stream_id, fields in entries:
-                try:
-                    incident_id, created = await process_enriched(
-                        fields["signal"],
-                        fields["cti"],
-                    )
-                    await redis.xack(stream, streams.GROUP_CORRELATION, stream_id)
-                    if created:
-                        log.info("incident_created", incident_id=incident_id)
-                    else:
-                        log.info("incident_merged", incident_id=incident_id)
-                except Exception as exc:  # noqa: BLE001
-                    CORRELATION_EVENTS.labels(outcome="failed").inc()
-                    log.exception("correlation_failed", stream_id=stream_id, error=str(exc))
-                    await redis.xack(stream, streams.GROUP_CORRELATION, stream_id)
+        if messages:
+            for _, entries in messages:
+                for stream_id, fields in entries:
+                    try:
+                        incident_id, created = await process_enriched(
+                            fields["signal"],
+                            fields["cti"],
+                        )
+                        await redis.xack(stream, streams.GROUP_CORRELATION, stream_id)
+                        if created:
+                            CORRELATION_EVENTS.labels(outcome="incident_created").inc()
+                        else:
+                            CORRELATION_EVENTS.labels(outcome="incident_merged").inc()
+                    except Exception as exc:  # noqa: BLE001
+                        # Leave in PEL for retry via XAUTOCLAIM
+                        CORRELATION_EVENTS.labels(outcome="failed").inc()
+                        log.exception("correlation_failed", stream_id=stream_id, error=str(exc))
+
+        # ── Reclaim & retry idle PEL messages ────────────────────────────────
+        await reclaim_pending(
+            redis=redis,
+            stream=stream,
+            group=streams.GROUP_CORRELATION,
+            consumer=consumer,
+            tenant_id=settings.tenant_id,
+            stage="correlation",
+            idle_ms=settings.dlq_idle_seconds * 1000,
+            max_retries=settings.dlq_max_retries,
+            handler=_handle,
+        )
 
 
 if __name__ == "__main__":
