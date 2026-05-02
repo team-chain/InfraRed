@@ -35,10 +35,14 @@ class KillChainStage(str, Enum):
 
 
 class EventType(str, Enum):
+    # SSH (auth.log)
     SSH_LOGIN_FAILED = "ssh_login_failed"
     SSH_LOGIN_SUCCESS = "ssh_login_success"
     SSH_INVALID_USER = "ssh_invalid_user"
+    # Agent heartbeat
     AGENT_HEARTBEAT = "agent_heartbeat"
+    # Web (nginx access.log)
+    WEB_REQUEST = "web_request"          # generic web request
 
 
 class RuleId(str, Enum):

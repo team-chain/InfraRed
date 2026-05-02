@@ -32,13 +32,21 @@ class RawEventEnvelope(BaseModel):
     file_offset: Optional[int] = None
     late_event: bool = False
 
+    # SSH fields
     username: Optional[str] = None
     source_ip: Optional[str] = None
     result: Optional[str] = None
 
+    # Web (nginx) fields
+    request_path: Optional[str] = None
+    request_method: Optional[str] = None
+    status_code: Optional[int] = None
+    user_agent: Optional[str] = None
+    response_bytes: Optional[int] = None
+
 
 class NormalizedEvent(BaseModel):
-    """Parsed auth event written by the detection worker."""
+    """Parsed event written by the detection worker."""
 
     event_id: str
     tenant_id: str
@@ -47,9 +55,19 @@ class NormalizedEvent(BaseModel):
     timestamp: datetime
     event_type: EventType
     host: Optional[str] = None
+
+    # SSH fields
     username: Optional[str] = None
     source_ip: Optional[str] = None
     result: Optional[str] = None
+
+    # Web (nginx) fields
+    request_path: Optional[str] = None
+    request_method: Optional[str] = None
+    status_code: Optional[int] = None
+    user_agent: Optional[str] = None
+    response_bytes: Optional[int] = None
+
     raw_source: str = "auth.log"
     raw_line: Optional[str] = None
     late_event: bool = False

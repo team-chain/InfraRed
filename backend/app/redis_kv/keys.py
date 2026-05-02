@@ -53,3 +53,20 @@ def llm_cache(rule_id: str, severity: str, signal_type: str) -> str:
 
 def llm_incident_cache(incident_id: str) -> str:
     return f"llm:cache:incident:{incident_id}"
+
+
+# ── Web (nginx) rule keys ──────────────────────────────────────────────────────
+
+def web_req_ip(tenant_id: str, asset_id: str, ip: str) -> str:
+    """Sliding window of all web requests from one IP (WEB-002, WEB-003, WEB-004)."""
+    return f"{_ns(tenant_id)}:web:req:ip:{asset_id}:{ip}"
+
+
+def web_admin_req(tenant_id: str, asset_id: str, ip: str) -> str:
+    """Sliding window of admin/login path hits from one IP (WEB-002)."""
+    return f"{_ns(tenant_id)}:web:admin:{asset_id}:{ip}"
+
+
+def web_404(tenant_id: str, asset_id: str, ip: str) -> str:
+    """Sliding window of 404 responses from one IP (WEB-004)."""
+    return f"{_ns(tenant_id)}:web:404:{asset_id}:{ip}"

@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     # Incident dedup
     incident_dedup_ttl_seconds: int = 600
 
+    # WEB-001~004 thresholds
+    web_admin_scan_threshold: int = 30       # admin/login hits before WEB-002 fires
+    web_admin_scan_window_seconds: int = 300  # sliding window for admin scan
+    web_404_threshold: int = 50              # 404 responses before WEB-004 fires
+    web_404_window_seconds: int = 300        # sliding window for 404 burst
+
     cors_origins: str = "http://localhost:3000"
     late_event_threshold_seconds: int = 300
     late_event_max_seconds: int = 86400

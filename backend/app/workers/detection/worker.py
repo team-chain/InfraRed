@@ -3,9 +3,9 @@
 Pipeline stage (B):
     raw envelope (events:raw)
         -> dedup (event_id)
-        -> parse auth.log
+        -> parse (auth.log OR nginx, based on raw_source)
         -> persist normalized_event
-        -> evaluate AUTH-001..005
+        -> evaluate rules (AUTH-001..005 for SSH, WEB-001..004 for nginx)
         -> emit Signal(s) onto signals:matched
 
 Failures stay in PEL and are retried via XAUTOCLAIM.  After dlq_max_retries
@@ -17,14 +17,17 @@ import asyncio
 
 from prometheus_client import Counter
 
+from app.common.constants import EventType
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
 from app.db.repositories import save_normalized_event, save_signal
 from app.models.envelope import RawEventEnvelope
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
+from app.workers.detection.nginx_parser import parse_nginx_log
 from app.workers.detection.parser import parse_auth_log
 from app.workers.detection.rules import evaluate_rules
+from app.workers.detection.web_rules import evaluate_web_rules
 from app.workers.dlq import reclaim_pending
 
 
@@ -44,10 +47,18 @@ DETECTION_SIGNALS = Counter(
 )
 
 
+def _is_nginx_source(envelope: RawEventEnvelope) -> bool:
+    """Return True when the raw envelope originated from an nginx access.log."""
+    source = (envelope.raw_source or "").lower()
+    return source in {"nginx", "nginx_access", "nginx_access_log"}
+
+
 async def process_payload(stream_id: str, payload: str) -> None:
     settings = get_settings()
     redis = get_redis()
     envelope = RawEventEnvelope.model_validate_json(payload)
+
+    # ── Event-level dedup ─────────────────────────────────────────────────────
     dedup_key = keys.event_dedup(envelope.tenant_id, envelope.event_id)
     is_new = await redis.set(dedup_key, "1", nx=True, ex=settings.dedup_ttl_seconds)
     if not is_new:
@@ -55,7 +66,12 @@ async def process_payload(stream_id: str, payload: str) -> None:
         DETECTION_EVENTS.labels(outcome="duplicate").inc()
         return
 
-    event = parse_auth_log(envelope)
+    # ── Parse: route by raw_source ────────────────────────────────────────────
+    if _is_nginx_source(envelope):
+        event = parse_nginx_log(envelope)
+    else:
+        event = parse_auth_log(envelope)
+
     if event is None:
         log.info("event_unparsed", event_id=envelope.event_id)
         DETECTION_EVENTS.labels(outcome="unparsed").inc()
@@ -72,7 +88,12 @@ async def process_payload(stream_id: str, payload: str) -> None:
     else:
         DETECTION_EVENTS.labels(outcome="parsed").inc()
 
-    signals = await evaluate_rules(redis, event)
+    # ── Evaluate rules: SSH vs Web ────────────────────────────────────────────
+    if event.event_type == EventType.WEB_REQUEST:
+        signals = await evaluate_web_rules(redis, event)
+    else:
+        signals = await evaluate_rules(redis, event)
+
     for signal in signals:
         await save_signal(signal)
         await redis.xadd(
