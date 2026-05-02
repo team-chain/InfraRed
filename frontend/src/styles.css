@@ -448,3 +448,152 @@ h2 {
     justify-content: flex-start;
   }
 }
+
+/* LLM metadata bar */
+.llm-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.78rem;
+  color: #6b7c85;
+  margin-bottom: 12px;
+}
+
+.cached-badge {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Attack intent / kill chain analysis sections */
+.llm-section {
+  background: #f0f4f6;
+  border-left: 3px solid #c0cdd4;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.llm-section .label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4a6174;
+  margin-bottom: 4px;
+}
+
+.llm-section p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #2b3d49;
+}
+
+/* ── Tab navigation ── */
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid #dde3e7;
+  margin-bottom: 0;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #6b7c85;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+  color: #182126;
+}
+
+.tab-active {
+  color: #182126;
+  border-bottom-color: #2d7aee;
+}
+
+.tab-badge {
+  background: #e3ecfd;
+  color: #1a57c8;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* ── Tab content wrapper ── */
+.tab-content {
+  padding: 24px;
+}
+
+/* ── Generic data table ── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7c85;
+  border-bottom: 1px solid #dde3e7;
+}
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef1f3;
+  color: #2b3d49;
+  vertical-align: top;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tr:hover td {
+  background: #f5f7f8;
+}
+
+.data-table code {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 0.82rem;
+  background: #eef1f3;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.muted-text {
+  color: #9aafba;
+  font-size: 0.875rem;
+  padding: 16px 0;
+}
+
+.pill-disabled {
+  background: #f0f0f0;
+  color: #9aafba;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}

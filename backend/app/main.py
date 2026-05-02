@@ -176,7 +176,10 @@ async def dispatch_incident(
     )
     if not llm_row:
         await save_llm_result(result, tenant_id=claims["tenant_id"])
-    await dispatch_incident_alert(claims["tenant_id"], result)
+    await dispatch_incident_alert(
+        claims["tenant_id"], result,
+        severity=contract["incident"].get("severity", "high"),
+    )
     await write_audit_log(
         tenant_id=claims["tenant_id"],
         actor=str(claims["sub"]),

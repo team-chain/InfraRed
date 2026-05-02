@@ -139,3 +139,19 @@ export async function fetchDetectionRules(token: string): Promise<DetectionRule[
   const data = await apiFetch<{ items: DetectionRule[] }>("/detection-rules", token);
   return data.items ?? [];
 }
+
+export type AuditLog = {
+  id: number;
+  tenant_id: string;
+  actor: string;
+  action: string;
+  resource?: string;
+  ip?: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+};
+
+export async function fetchAuditLogs(token: string): Promise<AuditLog[]> {
+  const data = await apiFetch<{ items: AuditLog[] }>("/audit-logs", token);
+  return data.items ?? [];
+}
