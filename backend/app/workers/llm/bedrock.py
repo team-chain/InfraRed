@@ -16,6 +16,40 @@ from app.workers.llm.playbook import summarize_with_playbook
 log = get_logger(__name__)
 
 
+def _repair_json(text: str) -> str:
+    """Best-effort repair for truncated JSON: close open strings, arrays, objects."""
+    depth_brace = 0
+    depth_bracket = 0
+    in_string = False
+    escape_next = False
+    last_good = 0
+    for i, ch in enumerate(text):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+        if not in_string:
+            if ch == "{":
+                depth_brace += 1
+            elif ch == "}":
+                depth_brace -= 1
+            elif ch == "[":
+                depth_bracket += 1
+            elif ch == "]":
+                depth_bracket -= 1
+            last_good = i
+    result = text[: last_good + 1].rstrip().rstrip(",")
+    if in_string:
+        result += '"'
+    result += "]" * depth_bracket
+    result += "}" * depth_brace
+    return result
+
+
 def _json_from_text(text: str) -> dict[str, Any]:
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -26,7 +60,10 @@ def _json_from_text(text: str) -> dict[str, Any]:
     end = cleaned.rfind("}")
     if start >= 0 and end >= start:
         cleaned = cleaned[start : end + 1]
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        return json.loads(_repair_json(cleaned))
 
 
 def _string_value(value: Any, fallback: str) -> str:
@@ -108,7 +145,7 @@ def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
         body=json.dumps(
             {
                 "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 900,
+                "max_tokens": 2048,
                 "temperature": 0.1,
                 "messages": [prompt],
             }
