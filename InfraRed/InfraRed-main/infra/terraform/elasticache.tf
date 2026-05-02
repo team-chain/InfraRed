@@ -10,7 +10,7 @@
 resource "aws_elasticache_subnet_group" "main" {
   name        = "${local.name_prefix}-redis-subnet"
   subnet_ids  = aws_subnet.public[*].id
-  description = "InfraRed ElastiCache 서브넷 그룹"
+  description = "InfraRed ElastiCache subnet group"
 
   tags = { Name = "${local.name_prefix}-redis-subnet" }
 }

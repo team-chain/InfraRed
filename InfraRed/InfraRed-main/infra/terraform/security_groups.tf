@@ -10,7 +10,7 @@
 # ── ALB Security Group ───────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name_prefix}-alb-sg"
-  description = "InfraRed ALB — 인터넷 수신"
+  description = "InfraRed ALB - public ingress"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -42,7 +42,7 @@ resource "aws_security_group" "alb" {
 # ── ECS Tasks Security Group ─────────────────────────────────
 resource "aws_security_group" "ecs" {
   name        = "${local.name_prefix}-ecs-sg"
-  description = "InfraRed ECS 태스크 — ALB + 내부 통신"
+  description = "InfraRed ECS tasks - ALB + internal communication"
   vpc_id      = aws_vpc.main.id
 
   # ALB → Ingestion API
@@ -65,7 +65,7 @@ resource "aws_security_group" "ecs" {
 
   # ECS 내부 통신 (workers ↔ workers — 향후 확장 대비)
   ingress {
-    description = "ECS 내부 통신"
+    description = "ECS internal communication"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -86,7 +86,7 @@ resource "aws_security_group" "ecs" {
 # ── RDS Security Group ───────────────────────────────────────
 resource "aws_security_group" "rds" {
   name        = "${local.name_prefix}-rds-sg"
-  description = "InfraRed RDS — ECS 태스크만 허용"
+  description = "InfraRed RDS - ECS tasks only"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -119,7 +119,7 @@ resource "aws_security_group" "rds" {
 # ── ElastiCache Security Group ───────────────────────────────
 resource "aws_security_group" "redis" {
   name        = "${local.name_prefix}-redis-sg"
-  description = "InfraRed Redis — ECS 태스크만 허용"
+  description = "InfraRed Redis - ECS tasks only"
   vpc_id      = aws_vpc.main.id
 
   ingress {

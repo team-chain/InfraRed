@@ -12,7 +12,7 @@
 resource "aws_db_subnet_group" "main" {
   name        = "${local.name_prefix}-db-subnet"
   subnet_ids  = aws_subnet.public[*].id
-  description = "InfraRed RDS 서브넷 그룹"
+  description = "InfraRed RDS subnet group"
 
   tags = { Name = "${local.name_prefix}-db-subnet" }
 }

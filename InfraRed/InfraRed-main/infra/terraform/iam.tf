@@ -19,7 +19,7 @@ data "aws_iam_policy_document" "ecs_assume" {
 resource "aws_iam_role" "ecs_execution" {
   name               = "${local.name_prefix}-ecs-execution-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
-  description        = "ECS 태스크 실행 역할 (ECR pull + CW 로그)"
+  description        = "ECS task execution role (ECR pull + CloudWatch logs)"
 }
 
 # AWS 관리형 정책 연결
@@ -53,7 +53,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
 resource "aws_iam_role" "ecs_task" {
   name               = "${local.name_prefix}-ecs-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
-  description        = "ECS 태스크 역할 (Bedrock, CloudWatch Metrics)"
+  description        = "ECS task role (Bedrock, CloudWatch Metrics, ECS Exec)"
 }
 
 # AWS Bedrock 호출 (LLM Worker)
