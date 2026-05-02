@@ -1,11 +1,13 @@
-"""Correlation worker that creates incidents and triggers role C.
+"""Correlation worker — creates Incidents and triggers role C.
 
 Pipeline stage (B):
-    enriched signal (signals:enriched)
-        -> track kill-chain stage progression in Redis per (tenant, asset, source_ip)
-        -> build Incident (severity / confidence / priority / evidence)
-        -> save_or_merge_incident in PostgreSQL
-        -> emit trigger onto incidents:new for role C
+  enriched signal (signals:enriched)
+    -> kill-chain stage tracking in Redis
+    -> escalate_to_incident check  (AUTH-004 design doc 6.2 — skip if False)
+    -> Incident Dedup (Redis SET NX, incident_dedup_ttl_seconds)
+    -> build Incident
+    -> save_or_merge_incident in PostgreSQL
+    -> emit trigger onto incidents:new for role C
 """
 from __future__ import annotations
 
@@ -30,15 +32,12 @@ from app.workers.dlq import reclaim_pending
 configure_logging()
 log = get_logger(__name__)
 
-
 CORRELATION_EVENTS = Counter(
     "infrared_correlation_events_total",
     "Outcomes from the correlation worker.",
     ["outcome"],
 )
 
-
-# Higher number = later in the kill chain.
 _STAGE_ORDER = {
     KillChainStage.RECONNAISSANCE.value: 1,
     KillChainStage.CREDENTIAL_ACCESS.value: 2,
@@ -48,32 +47,19 @@ _STAGE_ORDER = {
     KillChainStage.DEFENSE_EVASION.value: 6,
     KillChainStage.EXFILTRATION.value: 7,
 }
-_KILLCHAIN_TTL_SECONDS = 60 * 60  # remember per-IP stage for 1 hour
+_KILLCHAIN_TTL_SECONDS = 60 * 60
 
 
-async def _track_kill_chain(
-    redis: Redis,
-    signal: Signal,
-) -> Optional[str]:
-    """Persist the highest kill-chain stage seen for (tenant, asset, ip).
-
-    Returns the *previous* stage if we just advanced, otherwise ``None``. The
-    caller can use this to add a transition note to the Evidence Timeline.
-    """
-
+async def _track_kill_chain(redis: Redis, signal: Signal) -> Optional[str]:
+    """Track kill-chain stage per (tenant, asset, ip). Returns previous stage if advanced."""
     if not signal.source_ip or not signal.kill_chain_stage:
         return None
-
-    key = keys.killchain_stage(
-        signal.tenant_id, signal.asset_id, signal.source_ip
-    )
+    key = keys.killchain_stage(signal.tenant_id, signal.asset_id, signal.source_ip)
     incoming = signal.kill_chain_stage.value
     incoming_rank = _STAGE_ORDER.get(incoming, 0)
-
     raw = await redis.get(key)
     previous = str(raw) if raw is not None else None
     previous_rank = _STAGE_ORDER.get(previous, 0) if previous else 0
-
     if incoming_rank > previous_rank:
         await redis.set(key, incoming, ex=_KILLCHAIN_TTL_SECONDS)
         if previous and previous != incoming:
@@ -81,13 +67,53 @@ async def _track_kill_chain(
     return None
 
 
-async def process_enriched(signal_payload: str, cti_payload: str) -> tuple[str, bool]:
+async def _check_incident_dedup(redis: Redis, signal: Signal, settings) -> bool:
+    """Redis SET NX dedup check (design doc section 4, 10-min TTL).
+    Returns True if new (not duplicate), False if duplicate.
+    """
+    ip = signal.source_ip or "no-ip"
+    username = signal.username or "no-user"
+    dedup_key = keys.incident_dedup(
+        signal.tenant_id, signal.rule_id.value, signal.asset_id, ip, username,
+    )
+    is_new = await redis.set(dedup_key, "1", nx=True, ex=settings.incident_dedup_ttl_seconds)
+    return bool(is_new)
+
+
+async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
+    """Process one enriched signal. Returns (incident_id, created) or (None, False) if skipped."""
     settings = get_settings()
     redis = get_redis()
     signal = Signal.model_validate_json(signal_payload)
     cti = CtiEnrichment.model_validate_json(cti_payload)
 
+    # Kill-chain tracking always runs regardless of escalation
     advanced_from = await _track_kill_chain(redis, signal)
+
+    # Gate 1: escalate_to_incident (AUTH-004 design doc 6.2)
+    if not signal.escalate_to_incident:
+        log.info(
+            "signal_no_incident_escalation",
+            signal_id=signal.signal_id,
+            rule_id=signal.rule_id.value,
+            notes=signal.notes,
+        )
+        CORRELATION_EVENTS.labels(outcome="signal_only").inc()
+        return None, False
+
+    # Gate 2: Incident Dedup (Redis SET NX, 10-min TTL)
+    is_new_dedup = await _check_incident_dedup(redis, signal, settings)
+    if not is_new_dedup:
+        log.info(
+            "incident_dedup_skipped",
+            signal_id=signal.signal_id,
+            rule_id=signal.rule_id.value,
+            source_ip=signal.source_ip,
+            username=signal.username,
+        )
+        CORRELATION_EVENTS.labels(outcome="dedup_skipped").inc()
+        return None, False
+
     incident = build_incident(signal, cti, advanced_from=advanced_from)
     incident_id, created = await save_or_merge_incident(incident)
     await redis.xadd(
@@ -111,9 +137,9 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple[str, 
 
 async def _handle(stream_id: str, fields: dict) -> None:
     incident_id, created = await process_enriched(fields["signal"], fields["cti"])
-    if created:
+    if incident_id and created:
         log.info("incident_created", incident_id=incident_id)
-    else:
+    elif incident_id:
         log.info("incident_merged", incident_id=incident_id)
 
 
@@ -126,7 +152,6 @@ async def main() -> None:
     log.info("correlation_worker_started", stream=stream)
 
     while True:
-        # ── Process new messages ──────────────────────────────────────────────
         messages = await redis.xreadgroup(
             streams.GROUP_CORRELATION,
             consumer,
@@ -139,20 +164,17 @@ async def main() -> None:
                 for stream_id, fields in entries:
                     try:
                         incident_id, created = await process_enriched(
-                            fields["signal"],
-                            fields["cti"],
+                            fields["signal"], fields["cti"],
                         )
                         await redis.xack(stream, streams.GROUP_CORRELATION, stream_id)
-                        if created:
+                        if incident_id and created:
                             CORRELATION_EVENTS.labels(outcome="incident_created").inc()
-                        else:
+                        elif incident_id:
                             CORRELATION_EVENTS.labels(outcome="incident_merged").inc()
                     except Exception as exc:  # noqa: BLE001
-                        # Leave in PEL for retry via XAUTOCLAIM
                         CORRELATION_EVENTS.labels(outcome="failed").inc()
                         log.exception("correlation_failed", stream_id=stream_id, error=str(exc))
 
-        # ── Reclaim & retry idle PEL messages ────────────────────────────────
         await reclaim_pending(
             redis=redis,
             stream=stream,

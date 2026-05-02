@@ -63,18 +63,22 @@ class Settings(BaseSettings):
     maxmind_db_path: str = "/app/data/GeoLite2-City.mmdb"
 
     # Incident correlation
-    incident_merge_window_minutes: int = 120  # group signals into one incident for 2 h
+    incident_merge_window_minutes: int = 120
 
     # Dead Letter Queue
-    dlq_max_retries: int = 3        # move to DLQ after this many failures
-    dlq_idle_seconds: int = 60      # reclaim PEL messages idle longer than this
+    dlq_max_retries: int = 3
+    dlq_idle_seconds: int = 60
 
     # Detection rule thresholds (AUTH-001 ~ AUTH-005)
-    auth_brute_force_threshold: int = 3          # failed attempts before AUTH-001 fires
-    auth_brute_force_window_seconds: int = 300   # sliding window for brute-force
-    auth_invalid_user_threshold: int = 2         # invalid-user probes for AUTH-003
-    auth_invalid_user_window_seconds: int = 300  # sliding window for invalid-user
-    auth_fail_then_success_window_seconds: int = 600  # look-back for AUTH-004
+    auth_brute_force_threshold: int = 3
+    auth_brute_force_window_seconds: int = 300
+    auth_invalid_user_threshold: int = 2
+    auth_invalid_user_window_seconds: int = 300
+    auth_fail_then_success_window_seconds: int = 600
+    auth_fail_then_success_threshold: int = 3
+
+    # Incident dedup
+    incident_dedup_ttl_seconds: int = 600
 
     cors_origins: str = "http://localhost:3000"
     late_event_threshold_seconds: int = 300

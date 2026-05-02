@@ -34,3 +34,6 @@ class Signal(BaseModel):
 
     triggering_event_ids: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
+
+    # AUTH-004: True = Incident 생성, False = Signal 저장만 (설계서 6.2)
+    escalate_to_incident: bool = True
