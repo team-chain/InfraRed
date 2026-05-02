@@ -47,3 +47,16 @@ Thumbs.db
 # Docker volumes (if mounted under repo)
 postgres-data/
 redis-data/
+
+# Terraform — 민감 정보 및 로컬 상태 파일
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/tfplan
+
+.terraform/
+*.tfstate
+*.tfvars
+tfplan**/.terraform/

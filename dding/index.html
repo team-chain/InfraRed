@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>띵타이쿤 통합 효율 측정기</title>
+    <style>
+        :root { --main-color: #5d4037; --bg-color: #fbe9e7; --accent-color: #d84315; }
+        body { font-family: 'Apple SD Gothic Neo', sans-serif; background-color: var(--bg-color); padding: 0; margin: 0; color: #333; }
+        
+        /* 네비게이션 */
+        .nav-bar { background: var(--main-color); padding: 10px 0; position: sticky; top: 0; z-index: 100; display: flex; justify-content: center; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .nav-btn { background: none; border: 2px solid #fff; color: white; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 1em; }
+        .nav-btn.active { background: white; color: var(--main-color); }
+
+        .container { max-width: 1150px; margin: 30px auto; background: white; padding: 35px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .page { display: none; }
+        .page.active { display: block; }
+
+        h1 { text-align: center; color: var(--main-color); margin-bottom: 30px; font-size: 2em; }
+        .grid-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
+        .section { background: #fffcfb; padding: 20px; border: 2px solid #efebe9; border-radius: 12px; }
+        h3 { margin-top: 0; color: #8d6e63; font-size: 1.15em; border-bottom: 1px solid #d7ccc8; padding-bottom: 10px; margin-bottom: 15px; }
+        label { display: block; margin: 12px 0 6px; font-weight: bold; font-size: 0.95em; }
+        select, input { width: 100%; padding: 12px; border: 1px solid #d7ccc8; border-radius: 8px; box-sizing: border-box; font-size: 1em; }
+        .highlight-input { background-color: #fffde7 !important; border: 2px solid #fff176; font-weight: bold; color: #f57f17; }
+        
+        /* 분석 버튼 */
+        .full-btn-container { grid-column: span 2; width: 100%; margin-top: 20px; }
+        button.calc-btn { width: 100%; padding: 20px; background: #795548; color: white; border: none; border-radius: 12px; cursor: pointer; font-size: 1.2em; transition: 0.3s; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button.calc-btn:hover { background: #5d4037; transform: translateY(-1px); }
+
+        /* 결과 창 */
+        .result-box { grid-column: span 2; background: #efebe9; padding: 25px; border-radius: 15px; margin-top: 30px; display: none; border: 1px solid #d7ccc8; }
+        table { width: 100%; border-collapse: collapse; background: white; margin-top: 15px; border: 1px solid #d7ccc8; }
+        th, td { border: 1px solid #d7ccc8; padding: 14px; text-align: center; font-size: 1em; }
+        th { background: #d7ccc8; color: #5d4037; font-weight: bold; }
+        .summary-info { text-align: right; font-size: 1.3em; margin-top: 25px; color: #5d4037; border-top: 2px solid #d7ccc8; padding-top: 20px; line-height: 1.8; }
+        .highlight-text { color: var(--accent-color); font-weight: bold; }
+        .profit-text { color: #2e7d32; font-weight: bold; font-size: 1.5em; }
+    </style>
+</head>
+<body>
+
+<nav class="nav-bar">
+    <button class="nav-btn active" onclick="showPage('cookPage', this)">🍳 요리 계산기</button>
+    <button class="nav-btn" onclick="showPage('minePage', this)">⛏️ 채광 계산기</button>
+    <button class="nav-btn" onclick="showPage('potionPage', this)">🧪 포션 계산기</button>
+</nav>
+
+<div class="container">
+    
+    <div id="cookPage" class="page active">
+        <h1>👨‍🍳 요리 효율 측정기 </h1>
+        <div class="grid-layout">
+            <div class="section">
+                <h3>🍴 요리 시세 및 목표 설정</h3>
+                <label>요리 종류 선택</label>
+                <select id="dishSelect" onchange="document.getElementById('minPrice').value = this.value">
+                    <optgroup label="에픽">
+                        <option value="1253" data-t="1" data-o="1" data-g="1" data-etc="당근 묶음 1, 호박 묶음 1, 밀가루 반죽 1, 익힌 양 다리살 1">토마토 라자냐</option>
+                        <option value="1151" data-t="1" data-o="1" data-g="1" data-etc="수박 묶음 1, 감자 묶음 1, 치즈 조각 1, 요리용 우유 1">딥 크림 빠네</option>
+                        <option value="1291" data-t="1" data-o="1" data-g="1" data-etc="당근 묶음 1, 비트 묶음 1, 설탕 큐브 1, 익힌 소 갈비살 1">트리플 소갈비 꼬치</option>
+                    </optgroup>
+                    <optgroup label="레어">
+                        <option value="970" data-t="1" data-o="1" data-g="0" data-etc="비트 묶음 1, 달콤한 열매 묶음 1, 익힌 닭 가슴살 1, 익힌 닭 다리살 1">스윗 치킨 햄버거</option>
+                        <option value="1036" data-t="2" data-o="0" data-g="2" data-etc="파인애플 1, 치즈 조각 1, 스테이크 1, 익힌 소 등심 1">토마토 파인애플 피자</option>
+                        <option value="1139" data-t="0" data-o="2" data-g="1" data-etc="감자 묶음 1, 코코넛 1, 버터 조각 1, 익힌 돼지 앞다리살 1">양파 수프</option>
+                        <option value="894" data-t="0" data-o="1" data-g="2" data-etc="호박 묶음 1, 감자 묶음 1, 익힌 돼지고기 1, 익힌 돼지 삼겹살 1">허브 삼겹살 찜</option>
+                    </optgroup>
+                    <optgroup label="노멀">
+                        <option value="611" data-t="2" data-o="0" data-g="0" data-etc="비트 묶음 1, 요리용 소금 1, 익힌 돼지고기 1, 익힌 돼지 삼겹살 1">삼겹살 토마토 찌개</option>
+                        <option value="906" data-t="0" data-o="2" data-g="0" data-etc="수박 묶음 1, 코코넛 1, 설탕 큐브 1, 요리용 우유 1">삼색 아이스크림</option>
+                        <option value="513" data-t="0" data-o="0" data-g="2" data-etc="감자 묶음 1, 오일 1, 익힌 양고기 1, 익힌 양 갈비살 1">마늘 양갈비 핫도그</option>
+                        <option value="773" data-t="2" data-o="0" data-g="0" data-etc="달콤한 열매 묶음 1, 파인애플 1, 밀가루 반죽 1, 오일 1">달콤 시리얼</option>
+                        <option value="640" data-t="0" data-o="0" data-g="2" data-etc="당근 묶음 1, 버터 조각 1, 익힌 닭고기 1, 익힌 닭 다리살 1">로스트 치킨 파이</option>
+                    </optgroup>
+                    <optgroup label="커먼">
+                        <option value="259" data-t="1" data-o="0" data-g="0" data-etc="호박 묶음 1">토마토 스파게티</option>
+                        <option value="307" data-t="0" data-o="1" data-g="0" data-etc="감자 묶음 1">어니언 링</option>
+                        <option value="226" data-t="0" data-o="0" data-g="1" data-etc="당근 묶음 1">갈릭 케이크</option>
+                    </optgroup>
+                </select>
+                <label>최저가 (자동 참조)</label>
+                <input type="number" id="minPrice" value="1253" readonly style="background:#eee;">
+                <label>현재 개당 판매가 입력 (G)</label>
+                <input type="number" id="currentPrice" class="highlight-input" placeholder="현재가를 입력하세요">
+                <label>목표 제작 수량 (세트 단위)</label>
+                <input type="number" id="targetSets" value="56">
+            </div>
+
+            <div class="section">
+                <h3>🌟 요리 전문가 스킬 설정</h3>
+                <label>왕 크니까 왕 좋아 (대왕 확률)</label>
+                <select id="skillBig">
+                    <option value="0">0 LV (기본 0%)</option>
+                    <option value="0.005">1 LV (0.5%)</option>
+                    <option value="0.01">2 LV (1%)</option>
+                    <option value="0.03">3 LV (3%)</option>
+                    <option value="0.05" selected>4 LV (5%)</option>
+                </select>
+                <label>돈 좀 벌어볼까 (판매가 %)</label>
+                <select id="skillMoney">
+                    <option value="1.0">0 LV (0%)</option>
+                    <option value="1.01">1 LV (+1%)</option>
+                    <option value="1.02">2 LV (+2%)</option>
+                    <option value="1.03">3 LV (+3%)</option>
+                    <option value="1.04">4 LV (+4%)</option>
+                    <option value="1.05">5 LV (+5%)</option>
+                    <option value="1.06">6 LV (+6%)</option>
+                    <option value="1.10">7 LV (+10%)</option>
+                    <option value="1.15">8 LV (+15%)</option>
+                    <option value="1.30">9 LV (+30%)</option>
+                    <option value="1.50" selected>10 LV (+50%)</option>
+                </select>
+                <label>한 솥 가득 (보너스 %)</label>
+                <select id="skillPot">
+                    <option value="1.0">0 LV (0%)</option>
+                    <option value="1.01">1 LV (+1%)</option>
+                    <option value="1.02">2 LV (+2%)</option>
+                    <option value="1.03">3 LV (+3%)</option>
+                    <option value="1.04">4 LV (+4%)</option>
+                    <option value="1.07" selected>5 LV (+7%)</option>
+                </select>
+            </div>
+
+            <div class="full-btn-container">
+                <button class="calc-btn" onclick="runCookCalc()">재료 및 수익 분석 실행</button>
+            </div>
+            
+            <div id="cookResult" class="result-box" style="grid-column: span 2;">
+                <div id="cookResContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="minePage" class="page">
+        <h1>⛏️ 채광 효율 및 제작 측정기</h1>
+        <div class="grid-layout">
+            <div class="section">
+                <h3>💎 보석 판매가 분석</h3>
+                <label>보석 종류 선택</label>
+                <select id="gemType">
+                    <option value="7000">그라밋 (기본 7,000 G)</option>
+                    <option value="7500">에메리오 (기본 7,500 G)</option>
+                    <option value="8000">샤인플레어 (기본 8,000 G)</option>
+                </select>
+                <label>판매 수량 (개)</label>
+                <input type="number" id="gemCount" value="1" min="1">
+                <label>반짝반짝 눈이 부셔 (보석 판매가 LV)</label>
+                <select id="gemExpertLv">
+                    <option value="0">0 LV (0%)</option>
+                    <option value="0.05">1 LV (5%)</option>
+                    <option value="0.07">2 LV (7%)</option>
+                    <option value="0.10">3 LV (10%)</option>
+                    <option value="0.20">4 LV (20%)</option>
+                    <option value="0.30">5 LV (30%)</option>
+                    <option value="0.50" selected>6 LV (50%)</option>
+                </select>
+                <button class="calc-btn" style="margin-top:20px;" onclick="runGemCalc()">보석 수익 분석</button>
+            </div>
+
+            <div class="section">
+                <h3>🛠️ 라이프 스톤 제작 분석</h3>
+                <label>스톤 종류 선택</label>
+                <select id="stoneType">
+                    <option value="high" selected>상급 라이프 스톤</option>
+                    <option value="mid">중급 라이프 스톤</option>
+                    <option value="low">하급 라이프 스톤</option>
+                </select>
+                <label>제작 수량 (개)</label>
+                <input type="number" id="stoneCount" value="1" min="1">
+                <button class="calc-btn" style="margin-top:20px;" onclick="runStoneCalc()">제작 재료 분석</button>
+            </div>
+
+            <div id="mineResult" class="result-box" style="grid-column: span 2;">
+                <div id="mineResContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="potionPage" class="page">
+        <h1>🧪 포션 제작 재료 계산기</h1>
+        <div class="grid-layout">
+            <div class="section">
+                <h3>💧 제작할 포션 선택</h3>
+                <label>포션 종류</label>
+                <select id="potionSelect">
+                    <option value="beginner">입문자의 체력 포션 (50 회복)</option>
+                    <option value="apprentice">견습자의 체력 포션 (100 회복)</option>
+                    <option value="elite">정예의 체력 포션 (300 회복)</option>
+                    <option value="hero">영웅의 체력 포션 (500 회복)</option>
+                </select>
+                <label>목표 포션 개수 (1회 제작 시 3개 단위이므로 자동 올림 처리됩니다)</label>
+                <input type="number" id="potionTargetCount" value="3" min="1">
+                
+                <button class="calc-btn" style="margin-top:20px;" onclick="runPotionCalc()">포션 재료 분석 실행</button>
+            </div>
+
+            <div class="section" style="display:flex; align-items:center; justify-content:center; background:#fffde7; border-color:#fff176;">
+                <div style="text-align:center;">
+                    <h3 style="color:#f57f17; border-bottom:none;">💡 포션 제작 팁</h3>
+                    <p style="font-weight:bold; color:#5d4037;">포션은 1번 만들 때마다 3개씩 나옵니다.</p>
+                    <p>기존 요리 데이터를 그대로 참조하여<br>필요한 베이스와 작물, 부가 재료를<br>한 번에 계산해 드립니다.</p>
+                </div>
+            </div>
+
+            <div id="potionResult" class="result-box" style="grid-column: span 2;">
+                <div id="potionResContent"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    function showPage(pageId, btn) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    function runCookCalc() {
+        const targetSets = parseInt(document.getElementById('targetSets').value);
+        const setUnit = 64; 
+        const bigChestSlots = 54; 
+        const totalAmount = targetSets * setUnit;
+        const minPrice = parseInt(document.getElementById('minPrice').value);
+        const currentPrice = parseInt(document.getElementById('currentPrice').value) || 0;
+        
+        const bigProb = parseFloat(document.getElementById('skillBig').value);
+        const moneyMul = parseFloat(document.getElementById('skillMoney').value);
+        const potMul = parseFloat(document.getElementById('skillPot').value);
+
+        const crops = [
+            { id: 't', name: '토마토', avg: 2.0, reqPerBase: 8 }, 
+            { id: 'o', name: '양파', avg: 1.5, reqPerBase: 8 },   
+            { id: 'g', name: '마늘', avg: 2.5, reqPerBase: 8 }    
+        ];
+
+        let cropHtml = '<h3>📊 농작물 상세 분석 (전체 세트 기준)</h3><table><thead><tr><th>필요 재료</th><th>총 필요 베이스 (세트)</th><th>총 필요 작물 (세트)</th><th>평균 필요 씨앗 (세트 / 큰상자)</th></tr></thead><tbody>';
+        const sel = document.getElementById('dishSelect').options[document.getElementById('dishSelect').selectedIndex];
+
+        crops.forEach(c => {
+            const baseNeededPerDish = parseInt(sel.getAttribute(`data-${c.id}`));
+            if (baseNeededPerDish > 0) {
+                const totalBase = totalAmount * baseNeededPerDish;
+                const totalCrops = totalBase * c.reqPerBase;
+                const expPerSeed = c.avg * (1 - bigProb) + (c.avg * 7 * bigProb);
+                const totalSeeds = Math.ceil(totalCrops / expPerSeed);
+                
+                const seedSets = (totalSeeds / setUnit).toFixed(1);
+                const chestCount = (totalSeeds / (bigChestSlots * setUnit)).toFixed(2);
+
+                cropHtml += `<tr>
+                    <td>${c.name}</td>
+                    <td>${(totalBase / setUnit).toFixed(1)} 세트</td>
+                    <td>${(totalCrops / setUnit).toFixed(1)} 세트</td>
+                    <td>약 ${(totalSeeds / setUnit).toFixed(1)} 세트 <br><small>(${chestCount} 상자)</small></td>
+                </tr>`;
+            }
+        });
+        cropHtml += '</tbody></table>';
+
+        const etcRaw = sel.getAttribute('data-etc');
+        let etcHtml = '<h3 style="margin-top:30px;">📦 기타 부가 재료 합계 (세트 단위)</h3><table><thead><tr><th>재료명</th><th>총 필요 개수</th><th>필요 세트 (64개 기준)</th></tr></thead><tbody>';
+        etcRaw.split(', ').forEach(item => {
+            const parts = item.split(' ');
+            const countPerDish = parseInt(parts.pop());
+            const name = parts.join(' ');
+            const totalItemCount = countPerDish * totalAmount;
+            etcHtml += `<tr><td>${name}</td><td>${totalItemCount.toLocaleString()} 개</td><td>${(totalItemCount / setUnit).toFixed(1)} 세트</td></tr>`;
+        });
+        etcHtml += '</tbody></table>';
+
+        let finalPriceUnit = currentPrice * moneyMul;
+        if (targetSets >= 3) finalPriceUnit *= potMul; 
+        
+        const totalGold = finalPriceUnit * totalAmount;
+        const profitPercent = minPrice > 0 ? ((currentPrice / minPrice) - 1) * 100 : 0;
+
+        document.getElementById('cookResContent').innerHTML = cropHtml + etcHtml + `
+            <div class="summary-info">
+                제작 목표: <span class="highlight-text">${targetSets}</span> 세트 (총 <span class="highlight-text">${totalAmount.toLocaleString()}</span> 개)<br>
+                예상 총 수익 (스킬 포함): <span class="highlight-text">${Math.floor(totalGold).toLocaleString()}</span> G<br>
+                최저가(${minPrice.toLocaleString()}G) 대비 이득률: <span class="profit-text">${profitPercent.toFixed(2)}</span> %
+            </div>`;
+        document.getElementById('cookResult').style.display = 'block';
+    }
+
+    function runGemCalc() {
+        const base = parseInt(document.getElementById('gemType').value);
+        const count = parseInt(document.getElementById('gemCount').value);
+        const bonus = parseFloat(document.getElementById('gemExpertLv').value);
+        
+        const finalPrice = Math.floor(base * (1 + bonus));
+        const totalGold = finalPrice * count;
+
+        let html = `<h3>💎 보석 판매 수익 결과</h3>
+                    <div class="summary-info" style="text-align:left; border-top:none;">
+                    개당 판매가: ${finalPrice.toLocaleString()} G (+${Math.round(bonus*100)}%)<br>
+                    판매 수량: ${count.toLocaleString()} 개<br>
+                    총 예상 수익: <span class="highlight-text">${totalGold.toLocaleString()}</span> G</div>`;
+        
+        document.getElementById('mineResContent').innerHTML = html;
+        document.getElementById('mineResult').style.display = 'block';
+    }
+
+    const lifeRecipes = {
+        low: { name: "하급", per: { "조약돌 뭉치": 2, "구리블럭": 8, "레드스톤 블럭": 3, "코룸": 1 } },
+        mid: { name: "중급", per: { "심층암 조약돌 뭉치": 2, "청금석 블럭": 5, "철블럭": 5, "다이아블럭": 3, "리프톤 주괴": 2 } },
+        high: { name: "상급", per: { "구리블럭": 30, "자수정 블럭": 20, "철블럭": 7, "금블럭": 7, "다이아블럭": 5, "세렌트 주괴": 3 } }
+    };
+
+    function runStoneCalc() {
+        const type = document.getElementById('stoneType').value;
+        const count = parseInt(document.getElementById('stoneCount').value);
+        const recipe = lifeRecipes[type];
+        
+        let html = `<h3>📦 ${recipe.name} 라이프 스톤 제작 재료 분석</h3><table><thead><tr><th>재료명</th><th>총 필요 개수</th><th>필요 세트 (64개 기준)</th></tr></thead><tbody>`;
+        for (const [mat, per] of Object.entries(recipe.per)) {
+            const totalMat = per * count;
+            html += `<tr><td>${mat}</td><td>${totalMat.toLocaleString()} 개</td><td>${(totalMat/64).toFixed(1)} 세트</td></tr>`;
+        }
+        html += `</tbody></table>`;
+        document.getElementById('mineResContent').innerHTML = html;
+        document.getElementById('mineResult').style.display = 'block';
+    }
+
+    const potionData = {
+        beginner: {
+            name: "입문자의 체력 포션",
+            dishes: [{name: "토마토 스파게티", qty: 1}, {name: "어니언 링", qty: 1}, {name: "갈릭 케이크", qty: 1}]
+        },
+        apprentice: {
+            name: "견습자의 체력 포션",
+            dishes: [{name: "삼겹살 토마토 찌개", qty: 2}, {name: "달콤 시리얼", qty: 1}, {name: "로스트 치킨 파이", qty: 1}]
+        },
+        elite: {
+            name: "정예의 체력 포션",
+            dishes: [{name: "토마토 파인애플 피자", qty: 3}, {name: "양파 수프", qty: 2}, {name: "삼색 아이스크림", qty: 1}]
+        },
+        hero: {
+            name: "영웅의 체력 포션",
+            dishes: [{name: "허브 삼겹살 찜", qty: 4}, {name: "딥 크림 빠네", qty: 4}, {name: "스윗 치킨 햄버거", qty: 4}]
+        }
+    };
+
+    function getDishInfo(dishName) {
+        const options = document.querySelectorAll('#dishSelect option');
+        for (let opt of options) {
+            if (opt.text === dishName) {
+                return {
+                    t: parseInt(opt.getAttribute('data-t') || 0),
+                    o: parseInt(opt.getAttribute('data-o') || 0),
+                    g: parseInt(opt.getAttribute('data-g') || 0),
+                    etc: opt.getAttribute('data-etc')
+                };
+            }
+        }
+        return { t:0, o:0, g:0, etc:"" };
+    }
+
+    function runPotionCalc() {
+        const pType = document.getElementById('potionSelect').value;
+        const targetPotions = parseInt(document.getElementById('potionTargetCount').value) || 1;
+        const craftCount = Math.ceil(targetPotions / 3);
+        const recipe = potionData[pType];
+        
+        let total_t = 0, total_o = 0, total_g = 0;
+        let dishHtml = '<h3>🍽️ 필요 요리 목록</h3><table><thead><tr><th>요리명</th><th>필요 개수 (총합)</th></tr></thead><tbody>';
+
+        // 변경된 부분: 요리별로 표를 분리하여 보여주기 위한 변수
+        let etcHtml = '<h3 style="margin-top:30px;">📦 요리별 부가 재료 상세</h3><table><thead><tr><th>요리명</th><th>재료명</th><th>총 필요 개수</th><th>필요 세트 (64개 기준)</th></tr></thead><tbody>';
+        let hasEtc = false;
+
+        recipe.dishes.forEach(dish => {
+            const totalDishQty = dish.qty * craftCount;
+            dishHtml += `<tr><td>${dish.name}</td><td>${totalDishQty.toLocaleString()} 개</td></tr>`;
+            
+            const info = getDishInfo(dish.name);
+            total_t += info.t * totalDishQty;
+            total_o += info.o * totalDishQty;
+            total_g += info.g * totalDishQty;
+
+            // 요리별 재료를 테이블 병합(rowspan)을 사용해 묶어서 출력
+            if (info.etc) {
+                hasEtc = true;
+                const materials = info.etc.split(', ');
+                materials.forEach((item, index) => {
+                    const parts = item.split(' ');
+                    const countPerDish = parseInt(parts.pop());
+                    const matName = parts.join(' ');
+                    const totalItemCount = countPerDish * totalDishQty;
+
+                    if (index === 0) {
+                        etcHtml += `<tr>
+                            <td rowspan="${materials.length}" style="font-weight:bold; background-color:#fffde7; border-right: 1px solid #d7ccc8;">
+                                ${dish.name}<br><small style="color:#f57f17;">(${totalDishQty}개 기준)</small>
+                            </td>
+                            <td>${matName}</td>
+                            <td>${totalItemCount.toLocaleString()} 개</td>
+                            <td>${(totalItemCount/64).toFixed(1)} 세트</td>
+                        </tr>`;
+                    } else {
+                        etcHtml += `<tr>
+                            <td>${matName}</td>
+                            <td>${totalItemCount.toLocaleString()} 개</td>
+                            <td>${(totalItemCount/64).toFixed(1)} 세트</td>
+                        </tr>`;
+                    }
+                });
+            }
+        });
+        dishHtml += '</tbody></table>';
+
+        if (!hasEtc) {
+            etcHtml += '<tr><td colspan="4">필요한 부가 재료가 없습니다.</td></tr>';
+        }
+        etcHtml += '</tbody></table>';
+
+        let baseHtml = '<h3 style="margin-top:30px;">🍅 필수 베이스 및 작물 합계</h3><table><thead><tr><th>종류</th><th>필요 베이스</th><th>필요 원본 작물</th><th>필요 세트 (64개 기준)</th></tr></thead><tbody>';
+        const bases = [
+            { name: '토마토', val: total_t },
+            { name: '양파', val: total_o },
+            { name: '마늘', val: total_g }
+        ];
+        
+        let hasBase = false;
+        bases.forEach(b => {
+            if (b.val > 0) {
+                hasBase = true;
+                const cropTotal = b.val * 8; 
+                baseHtml += `<tr><td>${b.name}</td><td>${b.val.toLocaleString()} 개</td><td>${cropTotal.toLocaleString()} 개</td><td>${(cropTotal/64).toFixed(1)} 세트</td></tr>`;
+            }
+        });
+        if (!hasBase) baseHtml += '<tr><td colspan="4">필요한 베이스가 없습니다.</td></tr>';
+        baseHtml += '</tbody></table>';
+
+        const resultDiv = document.getElementById('potionResContent');
+        resultDiv.innerHTML = `
+            ${dishHtml}
+            ${baseHtml}
+            ${etcHtml}
+            <div class="summary-info">
+                목표 포션: <span class="highlight-text">${recipe.name}</span> <span class="highlight-text">${targetPotions}</span> 개<br>
+                필요 제작 횟수: <span class="highlight-text">${craftCount}</span> 회 
+                (최종 획득: <span class="profit-text">${(craftCount * 3).toLocaleString()}</span> 개)
+            </div>
+        `;
+        document.getElementById('potionResult').style.display = 'block';
+    }
+</script>
+</body>
+</html>
