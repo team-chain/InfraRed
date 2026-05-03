@@ -121,7 +121,13 @@ def _bedrock_client():
         client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
     if settings.aws_session_token:
         client_kwargs["aws_session_token"] = settings.aws_session_token
-    return session.client("bedrock-runtime", **client_kwargs)
+    from botocore.config import Config  # noqa: PLC0415
+
+    return session.client(
+        "bedrock-runtime",
+        config=Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 0}),
+        **client_kwargs,
+    )
 
 
 def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
@@ -165,7 +171,7 @@ async def analyze_with_bedrock(contract: dict[str, Any]) -> LLMResult:
     try:
         data = await asyncio.to_thread(_invoke_bedrock, contract)
     except Exception as exc:  # noqa: BLE001
-        log.exception("bedrock_analysis_failed", error=str(exc))
+        log.exception("bedrock_analysis_failed", error=type(exc).__name__)
         return fallback
 
     return LLMResult(

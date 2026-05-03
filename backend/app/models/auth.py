@@ -1,7 +1,7 @@
 """Authentication API contracts."""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
@@ -17,4 +17,7 @@ class TokenResponse(BaseModel):
 
 
 class StatusUpdateRequest(BaseModel):
-    status: str
+    status: str = Field(
+        ...,
+        pattern="^(open|acknowledged|resolved|false_positive)$",
+    )

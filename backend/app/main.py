@@ -1,6 +1,8 @@
 """InfraRed FastAPI application."""
 from __future__ import annotations
 
+import hmac
+
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
@@ -67,7 +69,7 @@ async def metrics(request: Request) -> Response:
     bearer_token = settings.prometheus_bearer_token
     if bearer_token:
         auth_header = request.headers.get("Authorization", "")
-        if auth_header != f"Bearer {bearer_token}":
+        if not hmac.compare_digest(auth_header, f"Bearer {bearer_token}"):
             return Response(status_code=401)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
@@ -232,9 +234,6 @@ async def patch_incident_status(
     request: Request,
     claims: dict = Depends(require_permission("incident:write")),
 ) -> dict[str, object]:
-    allowed = {"open", "acknowledged", "resolved", "false_positive"}
-    if payload.status not in allowed:
-        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(allowed)}")
     updated = await update_incident_status(
         tenant_id=claims["tenant_id"],
         incident_id=incident_id,
