@@ -14,7 +14,7 @@ import re
 
 from redis.asyncio import Redis
 
-from app.common.constants import KillChainStage, RuleId
+from app.common.constants import HONEYPOT_DEMO_PATH, HONEYPOT_PATH_SEVERITY, KillChainStage, RuleId, SignalCategory
 from app.models.envelope import NormalizedEvent
 from app.models.signal import Signal
 from app.redis_kv import keys
@@ -145,6 +145,56 @@ def _web_signal(
     )
 
 
+
+
+def _match_honeypot_path(path: str) -> str | None:
+    """경로별 Severity 반환 (설계서 Table 6). 매핑 없으면 None."""
+    clean = path.split("?")[0].rstrip("/") or "/"
+    if clean in HONEYPOT_PATH_SEVERITY:
+        return HONEYPOT_PATH_SEVERITY[clean]
+    for prefix, sev in HONEYPOT_PATH_SEVERITY.items():
+        if clean.startswith(prefix + "/"):
+            return sev
+    return None
+
+
+async def evaluate_honeypot(redis: Redis, event: NormalizedEvent) -> Signal | None:
+    """WEB-HNY-001 — Honeypot 경로 접근 탐지 (설계서 6.5).
+
+    /demo        → Info,   Demo Signal  (Incident 승격 안 함)
+    /.env        → High,   Threat Signal
+    /wp-login.php → Medium, Threat Signal
+    /phpmyadmin  → High,   Threat Signal
+    """
+    if not event.request_path:
+        return None
+
+    severity = _match_honeypot_path(event.request_path)
+    if severity is None:
+        return None
+
+    is_demo_path = event.request_path.split("?")[0].rstrip("/") == HONEYPOT_DEMO_PATH
+    category = SignalCategory.DEMO if is_demo_path else SignalCategory.THREAT
+
+    return Signal(
+        tenant_id=event.tenant_id,
+        asset_id=event.asset_id,
+        rule_id=RuleId.WEB_HONEYPOT,
+        rule_name="Honeypot Path Access",
+        mitre_tactic="Reconnaissance" if severity in ("info", "medium") else "Initial Access",
+        mitre_technique="T1595" if severity in ("info", "medium") else "T1190",
+        kill_chain_stage=KillChainStage.RECONNAISSANCE,
+        source_ip=event.source_ip,
+        user_agent=event.user_agent,
+        detected_count=1,
+        detected_at=event.timestamp,
+        triggering_event_ids=[event.event_id],
+        notes=f"Honeypot path accessed: {event.request_path} (severity={severity})",
+        escalate_to_incident=(category == SignalCategory.THREAT),
+        category=category,
+        is_demo=is_demo_path,
+    )
+
 async def evaluate_web_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
     """Evaluate WEB-001..007 rules for a WEB_REQUEST event."""
     signals: list[Signal] = []
@@ -260,5 +310,10 @@ async def evaluate_web_rules(redis: Redis, event: NormalizedEvent) -> list[Signa
                 stage=KillChainStage.RECONNAISSANCE,
                 note=f"Sensitive/CVE probe path accessed: {probe_path}",
             ))
+
+    # WEB-HNY-001: Honeypot 경로 접근 탐지
+    honeypot_signal = await evaluate_honeypot(redis, event)
+    if honeypot_signal:
+        signals.append(honeypot_signal)
 
     return signals

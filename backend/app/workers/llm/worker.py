@@ -7,9 +7,10 @@ import httpx
 
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
-from app.db.repositories import save_llm_result
+from app.db.repositories import save_llm_pending, save_llm_result, update_llm_status
 from app.dispatcher.service import dispatch_incident_alert
 from app.iam.security import create_token
+from app.models.llm import LLMPendingRow
 from app.redis_kv import streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.autoresponse.engine import run_autoresponse
@@ -57,31 +58,46 @@ async def process_incident(
     severity = str(contract.get("incident", {}).get("severity", "info")).lower()
 
     if severity not in AUTO_ANALYZE_SEVERITIES | STATIC_PLAYBOOK_SEVERITIES:
-        log.info(
-            "llm_skipped_by_policy",
-            incident_id=incident_id,
-            severity=severity,
-            refresh=refresh,
-        )
-        return {
-            "severity": severity,
-            "analysis_mode": "stored_only",
-            "dispatch_attempted": False,
-        }
+        log.info("llm_skipped_by_policy", incident_id=incident_id, severity=severity)
+        return {"severity": severity, "analysis_mode": "stored_only", "dispatch_attempted": False}
+
+    # ── v5: LLM 호출 시작 시 pending row 즉시 생성 (설계서 9.3) ──────────────
+    if not refresh:
+        try:
+            await save_llm_pending(LLMPendingRow(
+                llm_result_id=f"LLM-{incident_id}",
+                incident_id=incident_id,
+                tenant_id=tenant_id,
+            ))
+        except Exception as exc:
+            log.warning("llm_pending_save_failed", incident_id=incident_id, error=str(exc))
 
     force_static = severity in STATIC_PLAYBOOK_SEVERITIES
-    result = await analyze_contract_with_cache(
-        contract,
-        refresh=refresh,
-        force_static=force_static,
-    )
-    await save_llm_result(result, tenant_id=tenant_id)
+    result = None
+    failure_reason = None
+    try:
+        result = await analyze_contract_with_cache(
+            contract,
+            refresh=refresh,
+            force_static=force_static,
+        )
+        # ── success: status 업데이트 ──────────────────────────────────────────
+        await update_llm_status(incident_id, status="success", result=result)
+        await save_llm_result(result, tenant_id=tenant_id)
+    except Exception as llm_exc:
+        failure_reason = "timeout" if "timeout" in str(llm_exc).lower() else "api_error"
+        log.warning("llm_analysis_failed", incident_id=incident_id, reason=failure_reason, error=str(llm_exc))
+        # ── fallback: status 업데이트, Static Playbook 유지 ──────────────────
+        await update_llm_status(incident_id, status="fallback", failure_reason=failure_reason)
 
     dispatch_attempted = severity in AUTO_ANALYZE_SEVERITIES and not refresh
     discord_sent = False
     email_sent = False
     autoresponse_summary: dict = {}
-    if dispatch_attempted:
+
+    if dispatch_attempted and result:
+        # ── Discord 2차 알림: LLM 완료 후 비동기 발송 ─────────────────────────
+        # (1차 즉시 알림은 Correlation Worker에서 발송 — Person B 영역)
         dispatch_result = await dispatch_incident_alert(tenant_id, result, severity=severity)
         discord_sent = dispatch_result.discord_sent
         email_sent = dispatch_result.email_sent
@@ -97,7 +113,6 @@ async def process_incident(
                 source_ip=incident.get("source_ip"),
                 username=incident.get("username"),
             )
-            # auto/approval 모드에서 처리 결과를 Discord에 별도 알림
             mode = autoresponse_summary.get("mode", "manual")
             if mode in ("auto", "approval"):
                 try:
@@ -109,23 +124,15 @@ async def process_incident(
                         actions_taken=autoresponse_summary.get("actions_taken", []),
                         actions_queued=autoresponse_summary.get("actions_queued", []),
                     )
-                    log.info(
-                        "autoresponse_discord_sent",
-                        incident_id=incident_id,
-                        mode=mode,
-                    )
                 except Exception as exc_discord:
-                    log.warning(
-                        "autoresponse_discord_failed",
-                        incident_id=incident_id,
-                        error=str(exc_discord),
-                    )
+                    log.warning("autoresponse_discord_failed", incident_id=incident_id, error=str(exc_discord))
         except Exception as exc:
             log.exception("autoresponse_failed", incident_id=incident_id, error=str(exc))
 
     return {
         "severity": severity,
         "analysis_mode": "static_playbook" if force_static else "bedrock",
+        "llm_status": "success" if result else f"fallback:{failure_reason}",
         "dispatch_attempted": dispatch_attempted,
         "discord_sent": discord_sent,
         "email_sent": email_sent,

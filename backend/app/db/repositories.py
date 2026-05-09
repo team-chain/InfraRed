@@ -12,7 +12,9 @@ from app.db.connection import get_session
 from app.models.envelope import NormalizedEvent
 from app.models.heartbeat import Heartbeat
 from app.models.incident import CtiEnrichment, Incident
-from app.models.llm import LLMResult
+from app.models.auto_response import AutoResponseLog
+from app.models.demo_signal import DemoSignal
+from app.models.llm import LLMResult, LLMPendingRow
 from app.models.signal import Signal
 
 
@@ -818,3 +820,146 @@ async def touch_heartbeat(heartbeat: Heartbeat) -> None:
                 "agent_id": heartbeat.agent_id,
             },
         )
+
+
+async def save_demo_signal(signal: DemoSignal) -> None:
+    """Honeypot /demo 방문자 정보 저장 (incidents와 물리 분리, 설계서 17.3)."""
+    async with get_session() as session:
+        await session.execute(
+            text("""
+                INSERT INTO demo_signals (
+                    demo_signal_id, tenant_id, asset_id,
+                    source_ip, source_ip_hash,
+                    country, region, accuracy_radius,
+                    device_type, os_family, browser_family, accept_language,
+                    path, severity, detected_at, expires_at
+                )
+                VALUES (
+                    :demo_signal_id, :tenant_id, :asset_id,
+                    :source_ip, :source_ip_hash,
+                    :country, :region, :accuracy_radius,
+                    :device_type, :os_family, :browser_family, :accept_language,
+                    :path, :severity, :detected_at,
+                    :detected_at + INTERVAL '24 hours'
+                )
+                ON CONFLICT (demo_signal_id) DO NOTHING
+            """),
+            {
+                "demo_signal_id": signal.demo_signal_id,
+                "tenant_id": signal.tenant_id,
+                "asset_id": signal.asset_id,
+                "source_ip": signal.source_ip_masked,
+                "source_ip_hash": signal.source_ip_hash,
+                "country": signal.geo.country if signal.geo else None,
+                "region": signal.geo.region if signal.geo else None,
+                "accuracy_radius": signal.geo.accuracy_radius if signal.geo else None,
+                "device_type": signal.device.device_type if signal.device else None,
+                "os_family": signal.device.os_family if signal.device else None,
+                "browser_family": signal.device.browser_family if signal.device else None,
+                "accept_language": signal.device.accept_language if signal.device else None,
+                "path": signal.path,
+                "severity": signal.severity,
+                "detected_at": signal.detected_at,
+            },
+        )
+        await session.commit()
+
+
+async def save_llm_pending(pending: LLMPendingRow) -> None:
+    """LLM 호출 시작 시 즉시 pending row 생성 (설계서 9.3)."""
+    async with get_session() as session:
+        await session.execute(
+            text("""
+                INSERT INTO llm_results (
+                    incident_id, tenant_id, status, plain_summary, model, cached, generated_at
+                )
+                VALUES (
+                    :incident_id, :tenant_id, 'pending', NULL, 'pending', FALSE, NOW()
+                )
+                ON CONFLICT DO NOTHING
+            """),
+            {"incident_id": pending.incident_id, "tenant_id": pending.tenant_id},
+        )
+        await session.commit()
+
+
+async def update_llm_status(
+    incident_id: str,
+    *,
+    status: str,
+    result: LLMResult | None = None,
+    failure_reason: str | None = None,
+) -> None:
+    """LLM 완료/실패 시 status 업데이트 (success | fallback)."""
+    async with get_session() as session:
+        if status == "success" and result:
+            await session.execute(
+                text("""
+                    UPDATE llm_results
+                    SET status = 'success',
+                        plain_summary = :plain_summary,
+                        attack_intent = :attack_intent,
+                        kill_chain_analysis = :kill_chain_analysis,
+                        recommended_actions = CAST(:recommended_actions AS JSONB),
+                        confidence_note = :confidence_note,
+                        model = :model,
+                        cached = :cached,
+                        generated_at = NOW()
+                    WHERE incident_id = :incident_id
+                """),
+                {
+                    "incident_id": incident_id,
+                    "plain_summary": result.plain_summary,
+                    "attack_intent": result.attack_intent,
+                    "kill_chain_analysis": result.kill_chain_analysis,
+                    "recommended_actions": _json(result.recommended_actions),
+                    "confidence_note": result.confidence_note,
+                    "model": result.model,
+                    "cached": result.cached,
+                },
+            )
+        else:
+            await session.execute(
+                text("""
+                    UPDATE llm_results
+                    SET status = 'fallback',
+                        failure_reason = :failure_reason,
+                        generated_at = NOW()
+                    WHERE incident_id = :incident_id
+                """),
+                {"incident_id": incident_id, "failure_reason": failure_reason or "unknown"},
+            )
+        await session.commit()
+
+
+async def save_auto_response_log(log_entry: AutoResponseLog) -> None:
+    """자동 대응 실행 이력 append-only 저장 (설계서 6.7)."""
+    async with get_session() as session:
+        await session.execute(
+            text("""
+                INSERT INTO auto_response_logs (
+                    auto_response_id, tenant_id, incident_id, rule_id, severity,
+                    actions_taken, dry_run, triggered_by, policy_reason,
+                    policy_version, executed_at, reversed
+                )
+                VALUES (
+                    :auto_response_id, :tenant_id, :incident_id, :rule_id, :severity,
+                    CAST(:actions_taken AS JSONB), :dry_run, :triggered_by, :policy_reason,
+                    :policy_version, :executed_at, FALSE
+                )
+            """),
+            {
+                "auto_response_id": log_entry.auto_response_id,
+                "tenant_id": log_entry.tenant_id,
+                "incident_id": log_entry.incident_id,
+                "rule_id": log_entry.rule_id,
+                "severity": log_entry.severity,
+                "actions_taken": _json(log_entry.actions_taken),
+                "dry_run": log_entry.dry_run,
+                "triggered_by": log_entry.triggered_by,
+                "policy_reason": log_entry.policy_reason,
+                "policy_version": log_entry.policy_version,
+                "executed_at": log_entry.executed_at,
+            },
+        )
+        await session.commit()

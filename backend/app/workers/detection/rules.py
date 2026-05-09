@@ -75,6 +75,20 @@ RULE_META = {
         "subtechnique": None,
         "stage": KillChainStage.INITIAL_ACCESS,
     },
+    RuleId.AUTH_CRED_STUFFING: {
+        "name": "Credential Stuffing",
+        "tactic": "Credential Access",
+        "technique": "T1110.004",
+        "subtechnique": "T1110.004",
+        "stage": KillChainStage.CREDENTIAL_ACCESS,
+    },
+    RuleId.AUTH_PASSWORD_SPRAYING: {
+        "name": "Password Spraying",
+        "tactic": "Credential Access",
+        "technique": "T1110.004",
+        "subtechnique": "T1110.004",
+        "stage": KillChainStage.CREDENTIAL_ACCESS,
+    },
 }
 
 
@@ -306,6 +320,33 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
                     f"Login at KST {kst_hour:02d}:xx — outside business hours "
                     f"({off_start:02d}:00~{off_end:02d}:00 flagged)."
                 ),
+            ))
+
+    # AUTH-CS-A / AUTH-CS-B: Credential Stuffing / Password Spraying (실패 로그인 시)
+    if event.result == "failed" and event.username:
+        stuffing_user_key = keys.auth_stuffing_user_to_ips(event.tenant_id, event.asset_id, event.username)
+        stuffing_ip_key   = keys.auth_stuffing_ip_to_users(event.tenant_id, event.asset_id, event.source_ip)
+        _STUFFING_TTL = 3600  # 1h window
+
+        await redis.expire(stuffing_user_key, _STUFFING_TTL)
+
+        await redis.sadd(stuffing_ip_key, event.username)
+        await redis.expire(stuffing_ip_key, _STUFFING_TTL)
+
+        # AUTH-CS-A: Credential Stuffing — 동일 username, 1h 내 3개 이상 다른 source_ip
+        ip_count = int(await redis.scard(stuffing_user_key))
+        if ip_count >= 3:
+            signals.append(_signal(
+                RuleId.AUTH_CRED_STUFFING, event, ip_count,
+                note=f"Credential Stuffing: {ip_count} different IPs tried username '{event.username}' within 1h.",
+            ))
+
+        # AUTH-CS-B: Password Spraying — 동일 source_ip, 1h 내 5개 이상 다른 username
+        user_count = int(await redis.scard(stuffing_ip_key))
+        if user_count >= 5:
+            signals.append(_signal(
+                RuleId.AUTH_PASSWORD_SPRAYING, event, user_count,
+                note=f"Password Spraying: {user_count} different usernames tried from {event.source_ip} within 1h.",
             ))
 
     # AUTH-007: 해외 IP 로그인 (GeoIP 기반, 허용 국가 외)

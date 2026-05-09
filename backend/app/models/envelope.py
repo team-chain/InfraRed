@@ -31,6 +31,8 @@ class RawEventEnvelope(BaseModel):
     file_inode: Optional[str] = None
     file_offset: Optional[int] = None
     late_event: bool = False
+    # v5: Honeypot /demo 접근 이벤트 태깅 (설계서 17.3)
+    is_demo: bool = False
 
     # SSH fields
     username: Optional[str] = None
@@ -71,3 +73,4 @@ class NormalizedEvent(BaseModel):
     raw_source: str = "auth.log"
     raw_line: Optional[str] = None
     late_event: bool = False
+    is_demo: bool = False

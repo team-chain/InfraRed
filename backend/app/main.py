@@ -32,6 +32,7 @@ from app.ingestion.fluent_routes import router as fluent_router
 from app.ingestion.api_routes import router as api_router
 from app.ingestion.command_routes import router as command_router
 from app.ingestion.settings_routes import router as settings_router
+from app.ingestion.policy_routes import router as policy_router
 from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
 from app.models.llm import LLMResult
 from app.workers.llm.service import analyze_contract_with_cache
@@ -66,6 +67,7 @@ async def metrics_middleware(request: Request, call_next):
 
 app.include_router(ingestion_router)
 app.include_router(web_router)
+app.include_router(policy_router)
 app.include_router(fluent_router)
 app.include_router(api_router)
 app.include_router(command_router, prefix="/ingest")

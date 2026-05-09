@@ -1,30 +1,50 @@
-"""AI 자동 대응 엔진.
+"""Policy-based Auto-Response Engine (설계서 6.7).
 
-LLM 분석 완료 후 호출되며 response_mode에 따라 분기합니다.
-
-  manual   → Discord 알림만 (기존 동작과 동일)
-  approval → pending_actions에 적재 후 대기
-  auto     → Agent 명령 큐에 즉시 전송
+v5 설계:
+  - LLM은 설명만 생성. 실행은 이 엔진이 정책 기반으로만 수행.
+  - MVP 기본값: dry_run=True (실제 enforcement 없음, 로그만 기록)
+  - 모든 대응은 auto_response_logs에 append-only 기록
+  - allowlist / 사설IP / 루프백은 절대 차단 안 함
 """
 from __future__ import annotations
 
+import ipaddress
+import json
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import text
 
-from app.autoresponse.actions import (
-    ActionType,
-    build_actions_from_llm,
-    should_auto_execute,
-    should_queue_approval,
-)
+from app.autoresponse.actions import ActionType, build_actions_from_llm, should_auto_execute, should_queue_approval
 from app.db.connection import get_session
+from app.db.repositories import save_auto_response_log
+from app.models.auto_response import AutoResponseLog
 from app.models.llm import LLMResult
+from app.redis_kv import keys
 from app.redis_kv.client import get_redis
 
 
 log = logging.getLogger(__name__)
+
+# 안전장치: 사설/루프백 대역은 절대 차단하지 않음 (설계서 6.7)
+_SAFE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+]
+
+
+def _is_safe_ip(ip: str | None) -> bool:
+    if not ip:
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in net for net in _SAFE_NETWORKS)
+    except ValueError:
+        return True  # 파싱 불가 시 안전하게 차단 안 함
 
 
 async def _get_tenant_settings(tenant_id: str) -> dict:
@@ -39,11 +59,42 @@ async def _get_tenant_settings(tenant_id: str) -> dict:
     return {"response_mode": "manual", "auto_block_min_severity": "critical"}
 
 
-async def _save_pending_action(
-    tenant_id: str,
-    incident_id: str,
-    action: dict,
-) -> str:
+async def _load_autoresponse_policy(tenant_id: str) -> dict:
+    """Redis에서 Policy-based Auto-Response 정책 로딩 (설계서 6.7)."""
+    redis = get_redis()
+    raw = await redis.get(keys.policy_autoresponse(tenant_id))
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    # 기본 정책 (MVP)
+    return {
+        "critical": {"watchlist": True,  "block_ip": False, "discord_notify": True},
+        "high":     {"watchlist": True,  "block_ip": False, "discord_notify": True},
+        "medium":   {"watchlist": False, "block_ip": False, "discord_notify": True},
+        "info":     {"watchlist": False, "block_ip": False, "discord_notify": False},
+    }
+
+
+async def _get_policy_version(tenant_id: str) -> int:
+    redis = get_redis()
+    val = await redis.get(keys.policy_version(tenant_id))
+    return int(val) if val else 0
+
+
+async def _is_in_allowlist(tenant_id: str, ip: str) -> bool:
+    """Threat IP allowlist에 포함된 IP는 차단하지 않음."""
+    redis = get_redis()
+    return bool(await redis.sismember(keys.policy_allowlist(tenant_id), ip))
+
+
+async def _watchlist_add(tenant_id: str, ip: str) -> None:
+    redis = get_redis()
+    await redis.sadd(keys.policy_watchlist(tenant_id), ip)
+
+
+async def _save_pending_action(tenant_id: str, incident_id: str, action: dict) -> str:
     async with get_session() as session:
         row = await session.execute(
             text("""
@@ -57,7 +108,7 @@ async def _save_pending_action(
                 "incident_id": incident_id,
                 "action_type": action["action_type"],
                 "target": action["target"],
-                "payload": __import__("json").dumps(action["payload"]),
+                "payload": json.dumps(action["payload"]),
             },
         )
         await session.commit()
@@ -65,8 +116,6 @@ async def _save_pending_action(
 
 
 async def _push_agent_command(tenant_id: str, asset_id: str, action: dict) -> None:
-    """Redis List에 Agent 명령을 push."""
-    import json
     redis = get_redis()
     command = {
         "action_type": action["action_type"],
@@ -77,7 +126,6 @@ async def _push_agent_command(tenant_id: str, asset_id: str, action: dict) -> No
     key = f"tenant:{tenant_id}:commands:{asset_id}"
     await redis.lpush(key, json.dumps(command))
     await redis.expire(key, 3600)
-    log.info("agent_command_pushed tenant=%s asset=%s action=%s", tenant_id, asset_id, action["action_type"])
 
 
 async def run_autoresponse(
@@ -86,41 +134,110 @@ async def run_autoresponse(
     incident_id: str,
     severity: str,
     result: LLMResult,
-    source_ip: str | None = None,
-    username: str | None = None,
+    source_ip: Optional[str] = None,
+    username: Optional[str] = None,
+    rule_id: Optional[str] = None,
 ) -> dict:
+    """Policy-based Auto-Response 실행.
+
+    1. 정책 로딩 (Redis -> 기본값)
+    2. severity별 액션 결정
+    3. 안전장치 검사 (사설IP, allowlist)
+    4. MVP: dry_run=True -> Watchlist Redis SADD만, 실제 차단 없음
+    5. auto_response_logs append-only 저장
+    """
+    sev_lower = severity.lower()
+    policy = await _load_autoresponse_policy(tenant_id)
+    sev_policy = policy.get(sev_lower, {"watchlist": False, "block_ip": False, "discord_notify": False})
+    policy_version = await _get_policy_version(tenant_id)
+
+    # 기존 tenant_settings 기반 mode 확인
     settings = await _get_tenant_settings(tenant_id)
     mode = settings["response_mode"]
     min_sev = settings["auto_block_min_severity"]
 
-    actions = build_actions_from_llm(
+    actions_taken: list[str] = []
+    actions_queued: list[str] = []
+    actions_notified: list[str] = []
+
+    triggered_by = f"severity={sev_lower}" + (f", rule={rule_id}" if rule_id else "")
+
+    # -- Watchlist 등록 --------------------------------------------------------
+    if sev_policy.get("watchlist") and source_ip:
+        if not _is_safe_ip(source_ip) and not await _is_in_allowlist(tenant_id, source_ip):
+            # MVP: dry_run=True -> Redis SADD만 (실제 enforcement 없음)
+            await _watchlist_add(tenant_id, source_ip)
+            actions_taken.append("watchlist")
+
+    # -- IP 차단 (block_ip) ---------------------------------------------------
+    # MVP: block_ip=False가 기본값. dry_run=True로 로그만 기록
+    if sev_policy.get("block_ip") and source_ip:
+        if not _is_safe_ip(source_ip) and not await _is_in_allowlist(tenant_id, source_ip):
+            # 실제 차단은 운영 확장 시 (nginx deny / iptables / Cloudflare)
+            # MVP: 로그에만 기록
+            actions_taken.append("block_ip_dry_run")
+
+    # -- Discord 알림 ----------------------------------------------------------
+    if sev_policy.get("discord_notify"):
+        actions_notified.append("discord_notify")
+
+    # 기존 LLM-based 액션도 유지 (approval / auto mode)
+    llm_actions = build_actions_from_llm(
         incident_id=incident_id,
         source_ip=source_ip,
         username=username,
-        severity=severity,
-        recommended_actions=result.recommended_actions,
+        severity=sev_lower,
+        recommended_actions=result.recommended_actions if result else [],
+    )
+    for action in llm_actions:
+        atype = action["action_type"]
+        if atype == ActionType.NOTIFY:
+            actions_notified.append(atype)
+        elif should_auto_execute(mode, sev_lower, min_sev):
+            await _push_agent_command(tenant_id, asset_id, action)
+            actions_taken.append(atype)
+        elif should_queue_approval(mode, sev_lower, min_sev):
+            await _save_pending_action(tenant_id, incident_id, action)
+            actions_queued.append(atype)
+        else:
+            actions_notified.append(atype)
+
+    # -- auto_response_logs append-only 저장 (설계서 6.7) ----------------------
+    policy_reason = (
+        f"{sev_lower.capitalize()} severity {rule_id or ''} matched. "
+        + (f"Watchlist policy enabled." if "watchlist" in actions_taken else "")
+        + (f" Block IP dry_run." if "block_ip_dry_run" in actions_taken else "")
+    ).strip()
+
+    ar_log = AutoResponseLog(
+        tenant_id=tenant_id,
+        incident_id=incident_id,
+        rule_id=rule_id,
+        severity=sev_lower,
+        actions_taken=actions_taken + actions_notified,
+        dry_run=True,  # MVP 기본값
+        triggered_by=triggered_by,
+        policy_reason=policy_reason,
+        policy_version=policy_version,
+    )
+    try:
+        await save_auto_response_log(ar_log)
+    except Exception as exc:
+        log.warning("auto_response_log_save_failed", incident_id=incident_id, error=str(exc))
+
+    log.info(
+        "autoresponse_done",
+        incident_id=incident_id,
+        severity=sev_lower,
+        actions_taken=actions_taken,
+        dry_run=True,
     )
 
-    summary = {"mode": mode, "actions_taken": [], "actions_queued": [], "actions_notified": []}
-
-    for action in actions:
-        atype = action["action_type"]
-
-        if atype == ActionType.NOTIFY:
-            summary["actions_notified"].append(atype)
-            continue
-
-        if should_auto_execute(mode, severity, min_sev):
-            await _push_agent_command(tenant_id, asset_id, action)
-            summary["actions_taken"].append({"type": atype, "target": action["target"]})
-            log.info("autoresponse_executed tenant=%s incident=%s action=%s", tenant_id, incident_id, atype)
-
-        elif should_queue_approval(mode, severity, min_sev):
-            action_id = await _save_pending_action(tenant_id, incident_id, action)
-            summary["actions_queued"].append({"type": atype, "target": action["target"], "action_id": action_id})
-            log.info("autoresponse_queued tenant=%s incident=%s action=%s", tenant_id, incident_id, atype)
-
-        else:
-            summary["actions_notified"].append(atype)
-
-    return summary
+    return {
+        "mode": mode,
+        "actions_taken": actions_taken,
+        "actions_queued": actions_queued,
+        "actions_notified": actions_notified,
+        "dry_run": True,
+        "policy_reason": policy_reason,
+    }
