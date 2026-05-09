@@ -1,0 +1,211 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: infrared-postgres
+    environment:
+      POSTGRES_USER: infrared
+      POSTGRES_PASSWORD: infrared-dev-pw
+      POSTGRES_DB: infrared
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./infra/postgres/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infrared -d infrared"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: infrared-redis
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - redis-data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "infrared-redis-dev-pw", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingestion:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-ingestion
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+
+  detection-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-detection
+    command: ["python", "-m", "app.workers.detection.worker"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  enrichment-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-enrichment
+    command: ["python", "-m", "app.workers.enrichment.worker"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  correlation-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-correlation
+    command: ["python", "-m", "app.workers.correlation.worker"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  llm-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-llm
+    command: ["python", "-m", "app.workers.llm.worker"]
+    env_file: .env
+    depends_on:
+      ingestion:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  cleanup-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-cleanup
+    command: ["python", "-m", "app.workers.cleanup.worker"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: ../infra/docker/agent.Dockerfile
+    container_name: infrared-agent
+    env_file: .env
+    depends_on:
+      ingestion:
+        condition: service_started
+    volumes:
+      - ./infra/sample-logs:/host/var/log:ro
+      - agent-state:/var/lib/infrared
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/docker/frontend.Dockerfile
+    container_name: infrared-frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      ingestion:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
+  # ── Fluent Bit: 로그 수집 → InfraRed API + (선택) S3 ──────────────────────
+  # S3로 보내려면 .env에 S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+  # AWS_REGION 을 추가하고 command를 아래로 교체:
+  #   command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf",
+  #             "--config", "/fluent-bit/etc/fluent-bit-s3.conf"]
+  fluentbit:
+    image: fluent/fluent-bit:3.1
+    container_name: infrared-fluentbit
+    environment:
+      INFRARED_HOST: ingestion
+      INFRARED_PORT: "8000"
+      INFRARED_API_KEY: ${FLUENTBIT_API_KEY:-ir_demo_key_company_a_000000000000}
+      INFRARED_TENANT_ID: ${FLUENTBIT_TENANT_ID:-company-a}
+      S3_BUCKET: ${S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+    command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    volumes:
+      - ./infra/fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./infra/fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./infra/fluentbit/fluent-bit-s3.conf:/fluent-bit/etc/fluent-bit-s3.conf:ro
+      - ./infra/sample-logs:/host/var/log:ro
+      - fluentbit-db:/var/lib/fluentbit
+    depends_on:
+      ingestion:
+        condition: service_started
+    ports:
+      - "2020:2020"   # Fluent Bit HTTP 메트릭 엔드포인트
+    profiles:
+      - full           # docker compose --profile full up 으로 활성화
+                       # 기본 up에서는 제외 (샘플 로그 없는 환경 고려)
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: infrared-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      ingestion:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: infrared-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
+  agent-state:
+  grafana-data:
+  fluentbit-db:
