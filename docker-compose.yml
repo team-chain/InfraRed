@@ -132,6 +132,37 @@ services:
     ports:
       - "3000:3000"
 
+  # ── Fluent Bit: 로그 수집 → InfraRed API + (선택) S3 ──────────────────────
+  # S3로 보내려면 .env에 S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+  # AWS_REGION 을 추가하고 command를 아래로 교체:
+  #   command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf",
+  #             "--config", "/fluent-bit/etc/fluent-bit-s3.conf"]
+  fluentbit:
+    image: fluent/fluent-bit:3.1
+    container_name: infrared-fluentbit
+    environment:
+      INFRARED_HOST: ingestion
+      INFRARED_PORT: "8000"
+      INFRARED_API_KEY: ${FLUENTBIT_API_KEY:-ir_demo_key_company_a_000000000000}
+      INFRARED_TENANT_ID: ${FLUENTBIT_TENANT_ID:-company-a}
+      S3_BUCKET: ${S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+    command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    volumes:
+      - ./infra/fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./infra/fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./infra/fluentbit/fluent-bit-s3.conf:/fluent-bit/etc/fluent-bit-s3.conf:ro
+      - ./infra/sample-logs:/host/var/log:ro
+      - fluentbit-db:/var/lib/fluentbit
+    depends_on:
+      ingestion:
+        condition: service_started
+    ports:
+      - "2020:2020"   # Fluent Bit HTTP 메트릭 엔드포인트
+    profiles:
+      - full           # docker compose --profile full up 으로 활성화
+                       # 기본 up에서는 제외 (샘플 로그 없는 환경 고려)
+
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: infrared-prometheus
@@ -162,3 +193,4 @@ volumes:
   redis-data:
   agent-state:
   grafana-data:
+  fluentbit-db:

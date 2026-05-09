@@ -10,6 +10,13 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    tenant_id: str = "company-a"
+    email: str
+    password: str = Field(..., min_length=8)
+    role: str = Field(default="analyst", pattern="^(analyst|viewer)$")
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

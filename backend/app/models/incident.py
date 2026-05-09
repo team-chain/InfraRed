@@ -17,6 +17,9 @@ class MitreAttack(BaseModel):
 class CtiEnrichment(BaseModel):
     abuse_score: Optional[int] = None
     country: Optional[str] = None
+    city: Optional[str] = None
+    asn_org: Optional[str] = None
+    user_agent: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
     note: Optional[str] = None

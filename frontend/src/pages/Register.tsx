@@ -3,7 +3,7 @@ import { UserPlus, Siren } from "lucide-react";
 import { register, type AuthUser } from "../lib/api";
 
 type Props = {
-  onRegister: (token: string, user: AuthUser) => void;
+  onRegister: (user: AuthUser) => void;
   onGoToLogin: () => void;
 };
 
@@ -30,7 +30,7 @@ export function RegisterPage({ onRegister, onGoToLogin }: Props) {
     setError(undefined);
     try {
       const result = await register(tenantId, email, password, role);
-      onRegister(result.access_token, result.user);
+      onRegister(result.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -50,38 +50,21 @@ export function RegisterPage({ onRegister, onGoToLogin }: Props) {
         </label>
         <label>
           Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </label>
         <label>
           Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="8자 이상"
-            required
-          />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상" required />
         </label>
         <label>
           Password 확인
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
         </label>
         <label>
           Role
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="analyst">Analyst</option>
             <option value="viewer">Viewer</option>
-            <option value="admin">Admin</option>
           </select>
         </label>
         <button className="primary-button" disabled={loading} type="submit">
@@ -90,11 +73,8 @@ export function RegisterPage({ onRegister, onGoToLogin }: Props) {
         </button>
         <p style={{ textAlign: "center", marginTop: "0.75rem", fontSize: "0.875rem" }}>
           이미 계정이 있으신가요?{" "}
-          <button
-            type="button"
-            onClick={onGoToLogin}
-            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontWeight: 600 }}
-          >
+          <button type="button" onClick={onGoToLogin}
+            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontWeight: 600 }}>
             로그인
           </button>
         </p>

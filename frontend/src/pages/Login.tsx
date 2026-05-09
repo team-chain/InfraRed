@@ -3,7 +3,7 @@ import { LogIn, Siren } from "lucide-react";
 import { login, type AuthUser } from "../lib/api";
 
 type Props = {
-  onLogin: (token: string, user: AuthUser) => void;
+  onLogin: (user: AuthUser) => void;
 };
 
 export function LoginPage({ onLogin }: Props) {
@@ -19,7 +19,7 @@ export function LoginPage({ onLogin }: Props) {
     setError(undefined);
     try {
       const result = await login(tenantId, email, password);
-      onLogin(result.access_token, result.user);
+      onLogin(result.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

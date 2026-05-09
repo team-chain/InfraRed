@@ -2,21 +2,24 @@
 from __future__ import annotations
 
 import hmac
+import os
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
 from app.db.repositories import (
     authenticate_user,
     get_incident_contract,
+    list_assets,
     list_audit_logs,
     list_detection_rules,
     list_incidents,
+    register_user,
     save_llm_result,
     update_incident_status,
 )
@@ -24,7 +27,12 @@ from app.dispatcher.service import dispatch_incident_alert
 from app.iam.audit import write_audit_log
 from app.iam.security import create_token, require_permission, verify_user_token
 from app.ingestion.routes import router as ingestion_router
-from app.models.auth import LoginRequest, StatusUpdateRequest, TokenResponse
+from app.ingestion.web_routes import router as web_router
+from app.ingestion.fluent_routes import router as fluent_router
+from app.ingestion.api_routes import router as api_router
+from app.ingestion.command_routes import router as command_router
+from app.ingestion.settings_routes import router as settings_router
+from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
 from app.models.llm import LLMResult
 from app.workers.llm.service import analyze_contract_with_cache
 
@@ -57,6 +65,11 @@ async def metrics_middleware(request: Request, call_next):
 
 
 app.include_router(ingestion_router)
+app.include_router(web_router)
+app.include_router(fluent_router)
+app.include_router(api_router)
+app.include_router(command_router, prefix="/ingest")
+app.include_router(settings_router)
 
 
 @app.get("/healthz")
@@ -103,6 +116,50 @@ async def login(payload: LoginRequest, request: Request) -> Response:
 
     response = JSONResponse(
         content={"access_token": token, "user": user},
+    )
+    response.set_cookie(
+        key="infrared_token",
+        value=token,
+        httponly=True,
+        secure=(settings.env == "prod"),
+        samesite="lax",
+        max_age=settings.jwt_user_ttl_seconds,
+        path="/",
+    )
+    return response
+
+
+@app.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest, request: Request) -> Response:
+    user = await register_user(
+        tenant_id=payload.tenant_id,
+        email=payload.email,
+        password=payload.password,
+        role=payload.role,
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="tenant_missing_or_user_exists",
+        )
+
+    await write_audit_log(
+        tenant_id=user["tenant_id"],
+        actor=user["email"],
+        action="auth.register",
+        resource="user",
+        ip=request.client.host if request.client else None,
+        metadata={"role": user["role"]},
+    )
+    token = create_token(
+        subject=user["user_id"],
+        tenant_id=user["tenant_id"],
+        role=user["role"],
+    )
+
+    response = JSONResponse(
+        content={"access_token": token, "user": user},
+        status_code=status.HTTP_201_CREATED,
     )
     response.set_cookie(
         key="infrared_token",
@@ -265,3 +322,23 @@ async def audit_logs(
     claims: dict = Depends(require_permission("audit:read")),
 ) -> dict[str, object]:
     return {"items": await list_audit_logs(claims["tenant_id"], limit=limit)}
+
+
+@app.get("/assets")
+async def assets(
+    claims: dict = Depends(require_permission("incident:read")),
+) -> dict[str, object]:
+    return {"items": await list_assets(claims["tenant_id"])}
+
+
+@app.get("/install-agent.sh", response_class=PlainTextResponse)
+async def install_agent_script() -> PlainTextResponse:
+    """Serve the agent install script — users can pipe it directly from curl."""
+    script_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "install-agent.sh")
+    )
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail="install script not found")
+    with open(script_path, "r") as f:
+        script_content = f.read()
+    return PlainTextResponse(content=script_content, media_type="text/x-shellscript")

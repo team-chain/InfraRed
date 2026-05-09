@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.common.constants import EventType
 from app.models.envelope import RawEventEnvelope
+from app.workers.detection.nginx_parser import parse_nginx_log
 from app.workers.detection.parser import parse_auth_log
 
 
@@ -70,3 +71,24 @@ def test_failed_password_invalid_user_marks_invalid_user_event() -> None:
 def test_unknown_line_returns_none() -> None:
     line = "Apr 30 03:12:01 web-01 cron[222]: pam_unix(cron:session): session opened"
     assert parse_auth_log(_envelope(line)) is None
+
+
+def test_structured_web_event_normalizes_without_raw_line() -> None:
+    event = parse_nginx_log(
+        _envelope(
+            "",
+            event_type="web_request",
+            raw_source="sdk",
+            source_ip="203.0.113.9",
+            request_path="/admin",
+            request_method="GET",
+            status_code=404,
+            user_agent="curl/8.0",
+        )
+    )
+
+    assert event is not None
+    assert event.event_type == EventType.WEB_REQUEST
+    assert event.source_ip == "203.0.113.9"
+    assert event.request_path == "/admin"
+    assert event.status_code == 404

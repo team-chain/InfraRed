@@ -107,6 +107,28 @@ async def test_web002_fires_after_threshold_admin_hits(fake_redis) -> None:
 
 
 @pytest.mark.asyncio
+async def test_web002_uses_runtime_threshold_from_redis(fake_redis) -> None:
+    from app.redis_kv.keys import tenant_settings
+
+    await fake_redis.hset(
+        tenant_settings("company-a"),
+        mapping={"web_admin_scan_threshold": "2"},
+    )
+
+    first = await evaluate_web_rules(
+        fake_redis,
+        _web_event(event_id="adm-runtime-1", path="/admin", status_code=200),
+    )
+    second = await evaluate_web_rules(
+        fake_redis,
+        _web_event(event_id="adm-runtime-2", path="/admin", status_code=200),
+    )
+
+    assert RuleId.WEB_ADMIN_SCAN not in {s.rule_id for s in first}
+    assert RuleId.WEB_ADMIN_SCAN in {s.rule_id for s in second}
+
+
+@pytest.mark.asyncio
 async def test_web002_does_not_fire_below_threshold(fake_redis) -> None:
     """Fewer than 30 admin hits should NOT trigger WEB-002."""
     for i in range(5):

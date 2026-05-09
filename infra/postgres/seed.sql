@@ -2,6 +2,19 @@ INSERT INTO tenants (tenant_id, name, plan)
 VALUES ('company-a', 'Company A (Demo)', 'mvp')
 ON CONFLICT (tenant_id) DO NOTHING;
 
+INSERT INTO tenant_settings (tenant_id) VALUES ('company-a') ON CONFLICT (tenant_id) DO NOTHING;
+
+-- Demo API key: "ir_demo_key_company_a_000000000000"
+-- sha256 hex of the above string
+INSERT INTO api_keys (tenant_id, key_hash, name, source)
+VALUES (
+  'company-a',
+  encode(digest('ir_demo_key_company_a_000000000000', 'sha256'), 'hex'),
+  'Demo SDK / API Key',
+  'api'
+)
+ON CONFLICT (key_hash) DO NOTHING;
+
 INSERT INTO assets (asset_id, tenant_id, hostname, os)
 VALUES ('asset-001', 'company-a', 'web-01', 'ubuntu-22.04')
 ON CONFLICT (asset_id) DO NOTHING;

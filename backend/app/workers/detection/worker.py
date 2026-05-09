@@ -49,8 +49,10 @@ DETECTION_SIGNALS = Counter(
 
 def _is_nginx_source(envelope: RawEventEnvelope) -> bool:
     """Return True when the raw envelope originated from an nginx access.log."""
+    if envelope.event_type == EventType.WEB_REQUEST:
+        return True
     source = (envelope.raw_source or "").lower()
-    return source in {"nginx", "nginx_access", "nginx_access_log"}
+    return source in {"nginx", "nginx_access", "nginx_access_log", "sdk", "web"}
 
 
 async def process_payload(stream_id: str, payload: str) -> None:

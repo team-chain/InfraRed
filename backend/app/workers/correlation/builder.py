@@ -106,6 +106,11 @@ def build_incident(
 
     stage = signal.kill_chain_stage or KillChainStage.RECONNAISSANCE
 
+    # Attach user_agent from signal (web events) into cti if not already set
+    enriched_cti = cti
+    if getattr(signal, "user_agent", None) and not cti.user_agent:
+        enriched_cti = cti.model_copy(update={"user_agent": signal.user_agent})
+
     return Incident(
         incident_id=_incident_id(now),
         tenant_id=signal.tenant_id,
@@ -118,7 +123,7 @@ def build_incident(
             tactic=signal.mitre_tactic or "Unknown",
             technique=signal.mitre_technique or "Unknown",
         ),
-        cti_enrichment=cti,
+        cti_enrichment=enriched_cti,
         evidence_timeline=evidence_items,
         signal_ids=[signal.signal_id],
         source_ip=signal.source_ip,

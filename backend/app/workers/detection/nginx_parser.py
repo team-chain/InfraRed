@@ -48,6 +48,25 @@ def parse_nginx_log(envelope: RawEventEnvelope) -> NormalizedEvent | None:
 
     m = NGINX_LOG_RE.match(raw_line)
     if not m:
+        if envelope.event_type == EventType.WEB_REQUEST and envelope.request_path:
+            return NormalizedEvent(
+                event_id=envelope.event_id,
+                tenant_id=envelope.tenant_id,
+                asset_id=envelope.asset_id or settings.asset_id,
+                agent_id=envelope.agent_id,
+                timestamp=envelope.timestamp,
+                event_type=EventType.WEB_REQUEST,
+                host=envelope.host,
+                source_ip=envelope.source_ip,
+                request_path=envelope.request_path,
+                request_method=envelope.request_method,
+                status_code=envelope.status_code,
+                response_bytes=envelope.response_bytes,
+                user_agent=envelope.user_agent,
+                raw_source=envelope.raw_source or "web",
+                raw_line=raw_line or None,
+                late_event=envelope.late_event,
+            )
         return None
 
     source_ip = m.group("ip")

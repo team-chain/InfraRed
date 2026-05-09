@@ -42,6 +42,9 @@ export type IncidentContract = {
     cti_enrichment?: {
       abuse_score?: number;
       country?: string;
+      city?: string;
+      asn_org?: string;
+      user_agent?: string;
       tags?: string[];
       sources?: string[];
       note?: string;
@@ -156,4 +159,121 @@ export async function fetchDetectionRules(): Promise<DetectionRule[]> {
 export async function fetchAuditLogs(): Promise<AuditLog[]> {
   const data = await apiFetch<{ items: AuditLog[] }>("/audit-logs");
   return data.items ?? [];
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────── //
+
+export type TenantSettings = {
+  tenant_id: string;
+  response_mode: "manual" | "approval" | "auto";
+  auto_block_min_severity: string;
+  discord_webhook_url?: string;
+  alert_email_to?: string;
+  // AUTH 기존 임계값
+  auth_brute_force_threshold: number;
+  auth_brute_force_window_sec: number;
+  auth_invalid_user_threshold: number;
+  auth_fail_then_success_threshold: number;
+  // WEB 기존 임계값
+  web_admin_scan_threshold: number;
+  web_404_threshold: number;
+  // AUTH-006 비업무시간대 로그인
+  off_hours_enabled: boolean;
+  off_hours_start_kst: number;
+  off_hours_end_kst: number;
+  // AUTH-007 해외 IP 로그인
+  foreign_login_enabled: boolean;
+  allowed_countries: string;
+  // WEB-005~007 on/off
+  web_sql_injection_enabled: boolean;
+  web_path_traversal_enabled: boolean;
+  web_cve_probe_enabled: boolean;
+};
+
+export async function fetchSettings(): Promise<TenantSettings> {
+  return apiFetch<TenantSettings>("/settings");
+}
+
+export async function updateSettings(patch: Partial<TenantSettings>): Promise<void> {
+  await apiFetch("/settings", { method: "PUT", body: JSON.stringify(patch) });
+}
+
+// ── API Keys ─────────────────────────────────────────────────────────────── //
+
+export type ApiKey = {
+  key_id: string;
+  name: string;
+  source: string;
+  enabled: boolean;
+  created_at: string;
+  last_used_at?: string;
+};
+
+export async function fetchApiKeys(): Promise<ApiKey[]> {
+  const data = await apiFetch<{ items: ApiKey[] }>("/api-keys");
+  return data.items ?? [];
+}
+
+export async function createApiKey(name: string, source: string): Promise<{ api_key: string; key_id: string }> {
+  return apiFetch("/api-keys", { method: "POST", body: JSON.stringify({ name, source }) });
+}
+
+export async function revokeApiKey(keyId: string): Promise<void> {
+  await apiFetch(`/api-keys/${keyId}`, { method: "DELETE" });
+}
+
+// ── Pending Actions ───────────────────────────────────────────────────────── //
+
+export type PendingAction = {
+  action_id: string;
+  incident_id?: string;
+  action_type: string;
+  target: string;
+  status: string;
+  created_at: string;
+};
+
+export async function fetchPendingActions(): Promise<PendingAction[]> {
+  const data = await apiFetch<{ items: PendingAction[] }>("/ingest/actions/pending");
+  return data.items ?? [];
+}
+
+export async function approveAction(actionId: string): Promise<void> {
+  await apiFetch(`/ingest/actions/${actionId}/approve`, { method: "POST" });
+}
+
+export async function rejectAction(actionId: string): Promise<void> {
+  await apiFetch(`/ingest/actions/${actionId}/reject`, { method: "POST" });
+}
+
+// ── Assets ───────────────────────────────────────────────────────────────── //
+
+export type Asset = {
+  asset_id: string;
+  hostname: string;
+  os?: string;
+  status: string;
+  last_heartbeat?: string;
+};
+
+export async function fetchAssets(): Promise<Asset[]> {
+  const data = await apiFetch<{ items: Asset[] }>("/assets");
+  return data.items ?? [];
+}
+
+// ── Register (stub — user creation handled by admin/seed) ─────────────────── //
+export async function register(
+  tenantId: string,
+  email: string,
+  password: string,
+  role: string,
+): Promise<{ user: AuthUser }> {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ tenant_id: tenantId, email, password, role }),
+  });
+  if (!response.ok) throw new Error("Registration failed");
+  return response.json();
 }

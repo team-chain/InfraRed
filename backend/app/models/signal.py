@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from app.common.constants import KillChainStage, RuleId
+from app.common.constants import KillChainStage, RuleId, SignalCategory
 
 
 class Signal(BaseModel):
@@ -26,6 +26,7 @@ class Signal(BaseModel):
 
     source_ip: Optional[str] = None
     username: Optional[str] = None
+    user_agent: Optional[str] = None
     detected_count: int = 1
 
     detected_at: datetime
@@ -37,3 +38,8 @@ class Signal(BaseModel):
 
     # AUTH-004: True = Incident 생성, False = Signal 저장만 (설계서 6.2)
     escalate_to_incident: bool = True
+
+    # v5: Demo vs Threat 분류 (설계서 17.3)
+    # is_demo=True인 이벤트에서 생성된 Signal은 category=demo, Incident 승격 안 함
+    category: SignalCategory = SignalCategory.THREAT
+    is_demo: bool = False

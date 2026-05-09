@@ -136,6 +136,9 @@ def _merge_cti(existing: Any, incoming: CtiEnrichment | None) -> dict[str, Any] 
     return {
         "abuse_score": abuse_score,
         "country": preferred.get("country"),
+        "city": preferred.get("city") or existing_cti.get("city") or incoming_cti.get("city"),
+        "asn_org": preferred.get("asn_org") or existing_cti.get("asn_org") or incoming_cti.get("asn_org"),
+        "user_agent": existing_cti.get("user_agent") or incoming_cti.get("user_agent"),
         "tags": tags,
         "sources": sources,
         "note": preferred.get("note") or existing_cti.get("note") or incoming_cti.get("note"),
@@ -555,6 +558,41 @@ async def authenticate_user(
         return _row(row) if row else None
 
 
+async def register_user(
+    *,
+    tenant_id: str,
+    email: str,
+    password: str,
+    role: str = "analyst",
+) -> dict[str, Any] | None:
+    async with get_session() as session:
+        tenant_result = await session.execute(
+            text("SELECT 1 FROM tenants WHERE tenant_id = :tenant_id"),
+            {"tenant_id": tenant_id},
+        )
+        if tenant_result.first() is None:
+            return None
+
+        result = await session.execute(
+            text(
+                """
+                INSERT INTO users (tenant_id, email, password_hash, role)
+                VALUES (:tenant_id, :email, crypt(:password, gen_salt('bf')), :role)
+                ON CONFLICT (tenant_id, email) DO NOTHING
+                RETURNING user_id::text, tenant_id, email, role
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "email": email,
+                "password": password,
+                "role": role,
+            },
+        )
+        row = result.mappings().first()
+        return _row(row) if row else None
+
+
 async def list_detection_rules(tenant_id: str | None = None) -> list[dict[str, Any]]:
     async with get_session() as session:
         result = await session.execute(
@@ -566,6 +604,22 @@ async def list_detection_rules(tenant_id: str | None = None) -> list[dict[str, A
                 ORDER BY rule_id ASC
                 """
             )
+        )
+        return [_row(row) for row in result.mappings().all()]
+
+
+async def list_assets(tenant_id: str) -> list[dict[str, Any]]:
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                SELECT a.asset_id, a.hostname, a.os,
+                       ag.status, ag.last_heartbeat, ag.agent_version
+                FROM assets a
+                LEFT JOIN agents ag ON ag.asset_id = a.asset_id
+                WHERE a.tenant_id = :tenant_id
+                ORDER BY a.created_at DESC
+            """),
+            {"tenant_id": tenant_id},
         )
         return [_row(row) for row in result.mappings().all()]
 

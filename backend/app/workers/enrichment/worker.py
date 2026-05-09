@@ -61,6 +61,9 @@ def _merge_geo_into_cti(cti: CtiEnrichment, geo: GeoLocation) -> CtiEnrichment:
     return CtiEnrichment(
         abuse_score=cti.abuse_score,
         country=cti.country or geo.country,
+        city=cti.city or geo.city,
+        asn_org=cti.asn_org or geo.asn_org,
+        user_agent=cti.user_agent,
         tags=tags,
         sources=sources,
         note=" | ".join(note_parts) if note_parts else None,

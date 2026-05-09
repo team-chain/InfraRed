@@ -12,6 +12,8 @@ from app.dispatcher.service import dispatch_incident_alert
 from app.iam.security import create_token
 from app.redis_kv import streams
 from app.redis_kv.client import ensure_group, get_redis
+from app.autoresponse.engine import run_autoresponse
+from app.dispatcher.discord import send_discord_autoresponse_result
 from app.workers.llm.service import analyze_contract_with_cache
 
 
@@ -78,16 +80,56 @@ async def process_incident(
     dispatch_attempted = severity in AUTO_ANALYZE_SEVERITIES and not refresh
     discord_sent = False
     email_sent = False
+    autoresponse_summary: dict = {}
     if dispatch_attempted:
         dispatch_result = await dispatch_incident_alert(tenant_id, result, severity=severity)
         discord_sent = dispatch_result.discord_sent
         email_sent = dispatch_result.email_sent
+
+        incident = contract.get("incident", {})
+        try:
+            autoresponse_summary = await run_autoresponse(
+                tenant_id=tenant_id,
+                asset_id=incident.get("asset_id", "unknown"),
+                incident_id=incident_id,
+                severity=severity,
+                result=result,
+                source_ip=incident.get("source_ip"),
+                username=incident.get("username"),
+            )
+            # auto/approval 모드에서 처리 결과를 Discord에 별도 알림
+            mode = autoresponse_summary.get("mode", "manual")
+            if mode in ("auto", "approval"):
+                try:
+                    await send_discord_autoresponse_result(
+                        incident_id=incident_id,
+                        tenant_id=tenant_id,
+                        severity=severity,
+                        mode=mode,
+                        actions_taken=autoresponse_summary.get("actions_taken", []),
+                        actions_queued=autoresponse_summary.get("actions_queued", []),
+                    )
+                    log.info(
+                        "autoresponse_discord_sent",
+                        incident_id=incident_id,
+                        mode=mode,
+                    )
+                except Exception as exc_discord:
+                    log.warning(
+                        "autoresponse_discord_failed",
+                        incident_id=incident_id,
+                        error=str(exc_discord),
+                    )
+        except Exception as exc:
+            log.exception("autoresponse_failed", incident_id=incident_id, error=str(exc))
+
     return {
         "severity": severity,
         "analysis_mode": "static_playbook" if force_static else "bedrock",
         "dispatch_attempted": dispatch_attempted,
         "discord_sent": discord_sent,
         "email_sent": email_sent,
+        "autoresponse": autoresponse_summary,
     }
 
 

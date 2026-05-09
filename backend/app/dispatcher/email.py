@@ -15,15 +15,17 @@ def _ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def send_email_alert(subject: str, body: str) -> bool:
+def send_email_alert(subject: str, body: str, *, to_override: str | None = None) -> bool:
+    """Send alert email. to_override takes precedence over global settings."""
     settings = get_settings()
-    if not settings.smtp_host or not settings.alert_email_to:
+    email_to = to_override or settings.alert_email_to
+    if not settings.smtp_host or not email_to:
         return False
 
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.alert_email_from
-    message["To"] = settings.alert_email_to
+    message["To"] = email_to
     message.set_content(body)
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:

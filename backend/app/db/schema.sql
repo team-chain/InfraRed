@@ -163,3 +163,119 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     metadata    JSONB
 );
 CREATE INDEX IF NOT EXISTS idx_audit_tenant_ts ON audit_logs(tenant_id, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    key_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id    TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    key_hash     TEXT NOT NULL UNIQUE,
+    name         TEXT NOT NULL DEFAULT 'default',
+    source       TEXT NOT NULL DEFAULT 'api',
+    enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON api_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash   ON api_keys(key_hash);
+
+CREATE TABLE IF NOT EXISTS tenant_settings (
+    tenant_id          TEXT PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    response_mode      TEXT NOT NULL DEFAULT 'manual',
+    auto_block_min_severity TEXT NOT NULL DEFAULT 'critical',
+    discord_webhook_url TEXT,
+    alert_email_to     TEXT,
+    auth_brute_force_threshold     INT NOT NULL DEFAULT 3,
+    auth_brute_force_window_sec    INT NOT NULL DEFAULT 300,
+    auth_invalid_user_threshold    INT NOT NULL DEFAULT 5,
+    auth_fail_then_success_threshold INT NOT NULL DEFAULT 3,
+    web_admin_scan_threshold       INT NOT NULL DEFAULT 30,
+    web_404_threshold              INT NOT NULL DEFAULT 50,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pending_actions (
+    action_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id      TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    incident_id    TEXT REFERENCES incidents(incident_id) ON DELETE SET NULL,
+    action_type    TEXT NOT NULL,
+    target         TEXT NOT NULL,
+    payload        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status         TEXT NOT NULL DEFAULT 'pending',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at    TIMESTAMPTZ,
+    resolved_by    TEXT,
+    result         JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_pending_actions_tenant ON pending_actions(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_pending_actions_incident ON pending_actions(incident_id);
+
+-- ============================================================
+-- v5 신규 테이블
+-- ============================================================
+
+-- llm_results: status(pending/success/fallback) 컬럼 추가
+ALTER TABLE llm_results
+    ADD COLUMN IF NOT EXISTS status           TEXT NOT NULL DEFAULT 'success',
+    ADD COLUMN IF NOT EXISTS failure_reason   TEXT,
+    ALTER COLUMN plain_summary    DROP NOT NULL,
+    ALTER COLUMN model            DROP NOT NULL;
+
+-- demo_signals: Honeypot /demo 방문자 정보 (incidents와 물리적 분리)
+CREATE TABLE IF NOT EXISTS demo_signals (
+    demo_signal_id   TEXT PRIMARY KEY,          -- 예: DEMO-20260509-abc123
+    tenant_id        TEXT NOT NULL,
+    asset_id         TEXT NOT NULL,
+    source_ip        TEXT,                      -- 마스킹 표시용 (예: 121.135.xx.xx)
+    source_ip_hash   TEXT,                      -- 원본 IP 해시 (중복 식별용, 평문 미저장)
+    country          TEXT,
+    region           TEXT,
+    accuracy_radius  INT,
+    device_type      TEXT,                      -- mobile / desktop / bot
+    os_family        TEXT,                      -- iOS / Android / Windows 등 계열 추정
+    browser_family   TEXT,                      -- Safari / Chrome 등 계열 추정
+    accept_language  TEXT,
+    path             TEXT NOT NULL DEFAULT '/demo',
+    severity         TEXT NOT NULL DEFAULT 'info',
+    detected_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at       TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_demo_signals_tenant_ts  ON demo_signals(tenant_id, detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_demo_signals_expires    ON demo_signals(expires_at);
+
+-- auto_response_logs: 자동 대응 실행 이력 (append-only 불변 감사 로그)
+CREATE TABLE IF NOT EXISTS auto_response_logs (
+    auto_response_id  TEXT PRIMARY KEY,         -- 예: AR-20260509-001
+    tenant_id         TEXT NOT NULL,
+    incident_id       TEXT,                     -- demo_signal은 incident 없을 수 있음
+    rule_id           TEXT,
+    severity          TEXT,
+    actions_taken     JSONB NOT NULL DEFAULT '[]'::jsonb,  -- ["watchlist", "discord_notify"]
+    dry_run           BOOLEAN NOT NULL DEFAULT TRUE,
+    triggered_by      TEXT,                     -- "severity=high, rule=WEB-HNY-001"
+    policy_reason     TEXT,
+    policy_version    INT,
+    executed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reversed          BOOLEAN NOT NULL DEFAULT FALSE,
+    reversed_at       TIMESTAMPTZ,
+    reversed_by       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_autoresponse_tenant_ts  ON auto_response_logs(tenant_id, executed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_autoresponse_incident   ON auto_response_logs(incident_id);
+
+-- ip_policies: 테넌트별 IP 허용/차단 정책 (3종 분리)
+-- policy_type: 'agent_access' | 'threat_ip' | 'dashboard_access'
+CREATE TABLE IF NOT EXISTS ip_policies (
+    id              BIGSERIAL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    policy_type     TEXT NOT NULL,
+    policy_version  INT NOT NULL DEFAULT 1,
+    mode            TEXT NOT NULL DEFAULT 'allow_all',  -- allow_all | allowlist_only
+    allowlist       JSONB NOT NULL DEFAULT '[]'::jsonb,  -- ["192.168.1.0/24", "1.2.3.4"]
+    denylist        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    country_block   JSONB NOT NULL DEFAULT '[]'::jsonb,  -- ["CN", "RU", "KP"]
+    allowed_agents  JSONB NOT NULL DEFAULT '[]'::jsonb,  -- agent_access 전용
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by      TEXT,
+    UNIQUE (tenant_id, policy_type)
+);
+CREATE INDEX IF NOT EXISTS idx_ip_policies_tenant ON ip_policies(tenant_id, policy_type);

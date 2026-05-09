@@ -1,4 +1,4 @@
-"""AUTH-001..005 rule evaluator.
+"""AUTH-001..007 rule evaluator.
 
 AUTH-004 Incident escalation conditions (design doc 6.2):
   - Same source_ip + username with failure_count >= auth_fail_then_success_threshold
@@ -11,15 +11,15 @@ AUTH-004 Incident escalation conditions (design doc 6.2):
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from redis.asyncio import Redis
 
 from app.common.constants import EventType, KillChainStage, RuleId
-from app.config import get_settings
 from app.models.envelope import NormalizedEvent
 from app.models.signal import Signal
 from app.redis_kv import keys
+from app.workers.detection.rule_settings import get_rule_settings
 
 
 PRIVILEGED_ACCOUNTS: frozenset[str] = frozenset({"root", "admin", "deploy"})
@@ -56,6 +56,20 @@ RULE_META = {
     },
     RuleId.AUTH_SUSPICIOUS_LOGIN: {
         "name": "Suspicious Login",
+        "tactic": "Initial Access",
+        "technique": "T1078",
+        "subtechnique": None,
+        "stage": KillChainStage.INITIAL_ACCESS,
+    },
+    RuleId.AUTH_OFF_HOURS_LOGIN: {
+        "name": "Off-Hours Login",
+        "tactic": "Initial Access",
+        "technique": "T1078",
+        "subtechnique": None,
+        "stage": KillChainStage.INITIAL_ACCESS,
+    },
+    RuleId.AUTH_FOREIGN_IP_LOGIN: {
+        "name": "Foreign Country Login",
         "tactic": "Initial Access",
         "technique": "T1078",
         "subtechnique": None,
@@ -175,7 +189,7 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
     if not event.source_ip:
         return signals
 
-    cfg = get_settings()
+    cfg = await get_rule_settings(redis, event.tenant_id)
     bf_window = cfg.auth_brute_force_window_seconds
     bf_threshold = cfg.auth_brute_force_threshold
     inv_window = cfg.auth_invalid_user_window_seconds
@@ -275,5 +289,41 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
         await redis.zadd(fail_user_key, {event.event_id: now_score})
         await redis.zremrangebyscore(fail_user_key, 0, now_score - fts_window)
         await redis.expire(fail_user_key, fts_window + 300)
+
+    # AUTH-006: 비업무 시간대 로그인 (KST 00:00~06:00 = UTC 15:00~21:00)
+    if event.event_type == EventType.SSH_LOGIN_SUCCESS and cfg.off_hours_enabled:
+        kst_hour = (event.timestamp.astimezone(timezone.utc).hour + 9) % 24
+        off_start = cfg.off_hours_start_kst   # 기본 0 (자정)
+        off_end = cfg.off_hours_end_kst       # 기본 6 (오전 6시)
+        in_off_hours = (
+            (off_start < off_end and off_start <= kst_hour < off_end)
+            or (off_start >= off_end and (kst_hour >= off_start or kst_hour < off_end))
+        )
+        if in_off_hours:
+            signals.append(_signal(
+                RuleId.AUTH_OFF_HOURS_LOGIN, event,
+                note=(
+                    f"Login at KST {kst_hour:02d}:xx — outside business hours "
+                    f"({off_start:02d}:00~{off_end:02d}:00 flagged)."
+                ),
+            ))
+
+    # AUTH-007: 해외 IP 로그인 (GeoIP 기반, 허용 국가 외)
+    if event.event_type == EventType.SSH_LOGIN_SUCCESS and cfg.foreign_login_enabled:
+        try:
+            import geoip2.database  # type: ignore
+            from app.config import get_settings as _get_settings
+            db_path = _get_settings().maxmind_db_path
+            with geoip2.database.Reader(db_path) as reader:
+                geo = reader.city(event.source_ip)
+                country = geo.country.iso_code or "XX"
+            allowed = {c.strip().upper() for c in cfg.allowed_countries.split(",")}
+            if country not in allowed:
+                signals.append(_signal(
+                    RuleId.AUTH_FOREIGN_IP_LOGIN, event,
+                    note=f"Login from foreign country: {country} (allowed: {cfg.allowed_countries}).",
+                ))
+        except Exception:
+            pass  # GeoIP DB 없거나 사설 IP면 조용히 스킵
 
     return signals
