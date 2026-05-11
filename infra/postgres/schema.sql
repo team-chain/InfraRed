@@ -118,16 +118,79 @@ CREATE TABLE IF NOT EXISTS llm_results (
     id                    BIGSERIAL PRIMARY KEY,
     incident_id           TEXT NOT NULL REFERENCES incidents(incident_id) ON DELETE CASCADE,
     tenant_id             TEXT NOT NULL,
-    plain_summary         TEXT NOT NULL,
+    status                TEXT NOT NULL DEFAULT 'pending',  -- pending | success | fallback
+    plain_summary         TEXT,                             -- pending 시 NULL 허용
     attack_intent         TEXT,
     kill_chain_analysis   TEXT,
     recommended_actions   JSONB NOT NULL DEFAULT '[]'::jsonb,
     confidence_note       TEXT,
-    model                 TEXT NOT NULL,
+    failure_reason        TEXT,                             -- timeout | api_error 등
+    model                 TEXT,                             -- pending 시 NULL 허용
     cached                BOOLEAN NOT NULL DEFAULT FALSE,
     generated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_llm_incident ON llm_results(incident_id);
+
+-- demo_signals: Honeypot /demo 방문자 정보 (incidents와 물리적 분리, 설계서 6.5/17.3)
+CREATE TABLE IF NOT EXISTS demo_signals (
+    demo_signal_id   TEXT PRIMARY KEY,
+    tenant_id        TEXT NOT NULL,
+    asset_id         TEXT NOT NULL,
+    source_ip        TEXT,                      -- 마스킹 표시용 (예: 121.135.xx.xx)
+    source_ip_hash   TEXT,                      -- 원본 IP 해시 (중복 식별용, 평문 미저장)
+    country          TEXT,
+    region           TEXT,
+    accuracy_radius  INT,
+    device_type      TEXT,
+    os_family        TEXT,
+    browser_family   TEXT,
+    accept_language  TEXT,
+    path             TEXT NOT NULL DEFAULT '/demo',
+    severity         TEXT NOT NULL DEFAULT 'info',
+    detected_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at       TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_demo_signals_tenant_ts ON demo_signals(tenant_id, detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_demo_signals_expires   ON demo_signals(expires_at);
+
+-- auto_response_logs: 자동 대응 실행 이력 (append-only 불변 감사 로그, 설계서 6.7)
+CREATE TABLE IF NOT EXISTS auto_response_logs (
+    auto_response_id  TEXT PRIMARY KEY,
+    tenant_id         TEXT NOT NULL,
+    incident_id       TEXT,
+    rule_id           TEXT,
+    severity          TEXT,
+    actions_taken     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    dry_run           BOOLEAN NOT NULL DEFAULT TRUE,
+    triggered_by      TEXT,
+    policy_reason     TEXT,
+    policy_version    INT,
+    executed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reversed          BOOLEAN NOT NULL DEFAULT FALSE,
+    reversed_at       TIMESTAMPTZ,
+    reversed_by       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_autoresponse_tenant_ts ON auto_response_logs(tenant_id, executed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_autoresponse_incident  ON auto_response_logs(incident_id);
+
+-- ip_policies: 테넌트별 IP 허용/차단 정책 3종 분리 (설계서 6.6)
+-- policy_type: 'agent_access' | 'threat_ip' | 'dashboard_access'
+CREATE TABLE IF NOT EXISTS ip_policies (
+    id              BIGSERIAL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    policy_type     TEXT NOT NULL,
+    policy_version  INT NOT NULL DEFAULT 1,
+    mode            TEXT NOT NULL DEFAULT 'allow_all',
+    allowlist       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    denylist        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    country_block   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    allowed_agents  JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by      TEXT,
+    UNIQUE (tenant_id, policy_type)
+);
+CREATE INDEX IF NOT EXISTS idx_ip_policies_tenant ON ip_policies(tenant_id, policy_type);
 
 CREATE TABLE IF NOT EXISTS users (
     user_id        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

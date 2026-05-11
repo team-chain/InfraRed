@@ -16,6 +16,8 @@ class AgentSettings(BaseSettings):
     heartbeat_interval_sec: int = 30
     agent_offset_db: str = "/var/lib/infrared/offset.sqlite"
     agent_auth_log_path: str = "/host/var/log/auth.log"
+    agent_nginx_log_path: str = "/host/var/log/nginx/access.log"
+    agent_nginx_enabled: bool = True   # False로 설정 시 nginx tailing 비활성화
     poll_interval_sec: float = 2.0
 
     # S3 로그 업로드 설정 (선택, 미설정 시 비활성화)

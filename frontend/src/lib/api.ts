@@ -108,6 +108,23 @@ export async function logout(): Promise<void> {
   });
 }
 
+export async function fetchMe(): Promise<AuthUser | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      credentials: "include",
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return {
+      email: data.subject,
+      tenant_id: data.tenant_id,
+      role: data.role,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,

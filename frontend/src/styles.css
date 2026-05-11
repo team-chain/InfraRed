@@ -327,6 +327,11 @@ a { color: var(--accent); text-decoration: none; }
   display: grid;
   grid-template-columns: 320px 1fr;
   overflow: hidden;
+  transition: grid-template-columns 0.22s ease;
+}
+
+.layout:has(.left-pane-collapsed) {
+  grid-template-columns: 44px 1fr;
 }
 
 .left-pane {
@@ -335,6 +340,17 @@ a { color: var(--accent); text-decoration: none; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.22s ease;
+}
+
+.left-pane-collapsed .pane-header {
+  justify-content: center;
+  padding: 12px 8px;
+}
+
+.list-toggle-btn {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .right-pane {

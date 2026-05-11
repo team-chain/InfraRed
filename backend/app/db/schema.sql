@@ -118,12 +118,14 @@ CREATE TABLE IF NOT EXISTS llm_results (
     id                    BIGSERIAL PRIMARY KEY,
     incident_id           TEXT NOT NULL REFERENCES incidents(incident_id) ON DELETE CASCADE,
     tenant_id             TEXT NOT NULL,
-    plain_summary         TEXT NOT NULL,
+    status                TEXT NOT NULL DEFAULT 'pending',  -- pending | success | fallback
+    plain_summary         TEXT,                             -- pending 시 NULL 허용
     attack_intent         TEXT,
     kill_chain_analysis   TEXT,
     recommended_actions   JSONB NOT NULL DEFAULT '[]'::jsonb,
     confidence_note       TEXT,
-    model                 TEXT NOT NULL,
+    failure_reason        TEXT,                             -- timeout | api_error 등
+    model                 TEXT,                             -- pending 시 NULL 허용
     cached                BOOLEAN NOT NULL DEFAULT FALSE,
     generated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -212,7 +214,8 @@ CREATE INDEX IF NOT EXISTS idx_pending_actions_incident ON pending_actions(incid
 -- v5 신규 테이블
 -- ============================================================
 
--- llm_results: status(pending/success/fallback) 컬럼 추가
+-- llm_results: 기존 DB 마이그레이션용 ALTER (새 DB는 CREATE TABLE에 이미 반영됨)
+-- 기존 완료된 row는 success로 간주하므로 DEFAULT 'success' 유지
 ALTER TABLE llm_results
     ADD COLUMN IF NOT EXISTS status           TEXT NOT NULL DEFAULT 'success',
     ADD COLUMN IF NOT EXISTS failure_reason   TEXT,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, Bell, BrainCircuit, CheckCircle2,
-  ClipboardList, Cog, Globe, LogOut, Monitor,
+  ChevronLeft, ChevronRight, ClipboardList, Cog, Globe, LogOut, Monitor,
   RefreshCw, Shield, ShieldAlert, Siren, UserPlus,
 } from "lucide-react";
 import { SettingsPage } from "./SettingsPage";
@@ -75,6 +75,8 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   const [selected, setSelected] = useState<IncidentContract | undefined>();
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | undefined>();
+  // Honeypot /demo 방문자 실시간 카드 (SSE demo_visitor 이벤트로 추가)
+  const [demoVisitors, setDemoVisitors] = useState<{ demo_signal_id: string; source_ip_masked: string | null; path: string; detected_at: string }[]>([]);
   const [error, setError] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
   const [rules, setRules] = useState<DetectionRule[]>([]);
@@ -83,6 +85,7 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   const [auditLoading, setAuditLoading] = useState(false);
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [sseConnected, setSseConnected] = useState(false);
+  const [listOpen, setListOpen] = useState(true);
 
   const esRef = useRef<EventSource | null>(null);
   const selectedRef = useRef(selected);
@@ -172,6 +175,13 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
               }
             }).catch(() => {});
           }
+          // Honeypot /demo 방문자 실시간 카드 추가 (설계서 성공 기준 1번)
+          if (data.event === "demo_visitor") {
+            setDemoVisitors(prev => [
+              { demo_signal_id: data.demo_signal_id, source_ip_masked: data.source_ip_masked ?? null, path: data.path ?? "/demo", detected_at: data.detected_at },
+              ...prev,
+            ].slice(0, 50)); // 최대 50개 유지
+          }
         } catch (_) {}
       };
 
@@ -195,8 +205,8 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   const critN     = incidents.filter(i => i.severity === "critical").length;
   const highN     = incidents.filter(i => i.severity === "high").length;
   const doneN     = incidents.filter(i => i.status === "resolved").length;
-  // Honeypot 방문자: web SDK 이벤트로 생성된 인시던트
-  const honeypotN = incidents.filter(i =>
+  // Honeypot 방문자: SSE demo_visitor 실시간 누적 + 인시던트 중 Reconnaissance 포함
+  const honeypotN = demoVisitors.length + incidents.filter(i =>
     i.asset_id?.startsWith("sdk-web") || i.mitre_tactic === "Reconnaissance"
   ).length;
 
@@ -296,12 +306,21 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
 
           <div className="layout">
             {/* Left: list */}
-            <div className="left-pane">
+            <div className={`left-pane${listOpen ? "" : " left-pane-collapsed"}`}>
               <div className="pane-header">
-                <span className="pane-header-title">인시던트 목록</span>
-                <span className="pane-header-count">{incidents.length}</span>
+                {listOpen && <>
+                  <span className="pane-header-title">인시던트 목록</span>
+                  <span className="pane-header-count">{incidents.length}</span>
+                </>}
+                <button
+                  className="icon-btn list-toggle-btn"
+                  onClick={() => setListOpen(v => !v)}
+                  title={listOpen ? "목록 숨기기" : "목록 보기"}
+                >
+                  {listOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+                </button>
               </div>
-              <div className="incident-list">
+              <div className="incident-list" style={listOpen ? {} : { display: "none" }}>
                 {[...incidents]
                   .sort((a, b) =>
                     (SEV_RANK[b.severity] ?? 0) - (SEV_RANK[a.severity] ?? 0) ||

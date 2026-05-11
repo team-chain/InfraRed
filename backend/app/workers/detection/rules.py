@@ -328,8 +328,11 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
         stuffing_ip_key   = keys.auth_stuffing_ip_to_users(event.tenant_id, event.asset_id, event.source_ip)
         _STUFFING_TTL = 3600  # 1h window
 
+        # AUTH-CS-A: 동일 username에 시도한 source_ip 목록 누적
+        await redis.sadd(stuffing_user_key, event.source_ip)
         await redis.expire(stuffing_user_key, _STUFFING_TTL)
 
+        # AUTH-CS-B: 동일 source_ip에서 시도한 username 목록 누적
         await redis.sadd(stuffing_ip_key, event.username)
         await redis.expire(stuffing_ip_key, _STUFFING_TTL)
 

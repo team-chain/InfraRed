@@ -42,7 +42,11 @@ VALUES
   ('WEB-001',  'Web Shell Access',         'nginx',    'Initial Access',    'T1505.003', FALSE),
   ('WEB-002',  'Admin Path Scan',          'nginx',    'Reconnaissance',    'T1595',     FALSE),
   ('WEB-003',  'Automation Tool Access',   'nginx',    'Initial Access',    'T1190',     FALSE),
-  ('WEB-004',  '404 Burst',                'nginx',    'Reconnaissance',    'T1595',     FALSE)
+  ('WEB-004',  '404 Burst',                'nginx',    'Reconnaissance',    'T1595',     FALSE),
+  ('AUTH-006', 'Off-Hours Login',          'auth.log', 'Initial Access',    'T1078',     TRUE),
+  ('AUTH-007', 'Foreign Country Login',    'auth.log', 'Initial Access',    'T1078',     FALSE),
+  ('AUTH-CS-A','Credential Stuffing',      'auth.log', 'Credential Access', 'T1110.004', TRUE),
+  ('AUTH-CS-B','Password Spraying',        'auth.log', 'Credential Access', 'T1110.004', TRUE)
 ON CONFLICT (rule_id) DO NOTHING;
 
 INSERT INTO incidents (

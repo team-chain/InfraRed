@@ -16,12 +16,15 @@ from typing import Optional
 
 from prometheus_client import Counter
 from redis.asyncio import Redis
+from sqlalchemy import text
 
 from app.common.constants import KillChainStage
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
+from app.db.connection import get_session
 from app.db.repositories import save_or_merge_incident
-from app.models.incident import CtiEnrichment
+from app.dispatcher.discord import send_discord_phase1_alert
+from app.models.incident import CtiEnrichment, Incident
 from app.models.signal import Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
@@ -80,6 +83,44 @@ async def _check_incident_dedup(redis: Redis, signal: Signal, settings) -> bool:
     return bool(is_new)
 
 
+async def _get_discord_webhook(tenant_id: str) -> str | None:
+    """테넌트별 Discord webhook URL 조회."""
+    try:
+        async with get_session() as session:
+            row = await session.execute(
+                text("SELECT discord_webhook_url FROM tenant_settings WHERE tenant_id = :t"),
+                {"t": tenant_id},
+            )
+            record = row.mappings().first()
+        return (record.get("discord_webhook_url") or None) if record else None
+    except Exception:
+        return None
+
+
+async def _send_phase1_alert(incident: Incident) -> None:
+    """Discord 1차 즉시 알림 발송 (설계서 9.3 — LLM 분석 전 탐지 즉시).
+
+    High/Critical만 발송. 실패해도 파이프라인 중단하지 않음.
+    """
+    severity = incident.severity.value if hasattr(incident.severity, "value") else str(incident.severity)
+    if severity.lower() not in {"high", "critical"}:
+        return
+    try:
+        webhook_url = await _get_discord_webhook(incident.tenant_id)
+        await send_discord_phase1_alert(
+            incident_id=incident.incident_id,
+            tenant_id=incident.tenant_id,
+            severity=severity,
+            source_ip=incident.source_ip,
+            mitre_tactic=incident.mitre_attack.tactic if incident.mitre_attack else "-",
+            kill_chain_stage=incident.kill_chain_stage.value if hasattr(incident.kill_chain_stage, "value") else str(incident.kill_chain_stage),
+            webhook_url=webhook_url,
+        )
+        log.info("discord_phase1_sent", incident_id=incident.incident_id, severity=severity)
+    except Exception as exc:
+        log.warning("discord_phase1_failed", incident_id=incident.incident_id, error=str(exc))
+
+
 async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
     """Process one enriched signal. Returns (incident_id, created) or (None, False) if skipped."""
     settings = get_settings()
@@ -128,7 +169,10 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
         maxlen=settings.redis_stream_maxlen,
         approximate=True,
     )
+    # 새 Incident 생성 시 Discord 1차 즉시 알림 발송 (설계서 9.3)
+    # LLM 분석과 무관하게 탐지 즉시 발송. 실패해도 파이프라인 중단 안 함.
     if created:
+        await _send_phase1_alert(incident)
         CORRELATION_EVENTS.labels(outcome="incident_created").inc()
     else:
         CORRELATION_EVENTS.labels(outcome="incident_merged").inc()
