@@ -222,6 +222,41 @@ export async function revokeApiKey(keyId: string): Promise<void> {
   await apiFetch(`/api-keys/${keyId}`, { method: "DELETE" });
 }
 
+// ── 자동 대응 정책 (per-severity) — 설계서 5.2 ───────────────────────────────── //
+
+export type AutoresponseActions = {
+  watchlist: boolean;
+  block_ip: boolean;
+  discord_notify: boolean;
+};
+
+export type AutoresponsePolicy = {
+  critical: AutoresponseActions;
+  high: AutoresponseActions;
+  medium: AutoresponseActions;
+  info: AutoresponseActions;
+};
+
+export async function fetchAutoresponsePolicy(): Promise<AutoresponsePolicy> {
+  const data = await apiFetch<{ policy: AutoresponsePolicy }>("/api/policy/autoresponse");
+  return data.policy;
+}
+
+export async function patchAutoresponsePolicy(
+  patch: Partial<AutoresponsePolicy>,
+): Promise<{ policy: AutoresponsePolicy; policy_version: number }> {
+  return apiFetch("/api/policy/autoresponse", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+// ── IP 차단 롤백 ─────────────────────────────────────────────────────────── //
+
+export async function unblockIp(ip: string): Promise<{ ok: boolean; ip: string }> {
+  return apiFetch(`/policy/denylist/${encodeURIComponent(ip)}`, { method: "DELETE" });
+}
+
 // ── Pending Actions ───────────────────────────────────────────────────────── //
 
 export type PendingAction = {

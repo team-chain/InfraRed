@@ -76,11 +76,11 @@ services:
     volumes:
       - ./backend:/app
 
-  correlation-worker:
+  incident-worker:
     build:
       context: ./backend
       dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-correlation
+    container_name: infrared-incident
     command: ["python", "-m", "app.workers.correlation.worker"]
     env_file: .env
     depends_on:

@@ -5,7 +5,8 @@ import {
 } from "lucide-react";
 import {
   fetchSettings, updateSettings, fetchApiKeys, createApiKey, revokeApiKey,
-  type TenantSettings, type ApiKey,
+  fetchAutoresponsePolicy, patchAutoresponsePolicy,
+  type TenantSettings, type ApiKey, type AutoresponsePolicy, type AutoresponseActions,
 } from "../lib/api";
 
 /* ── Sidebar nav items ─────────────────────────────────── */
@@ -32,6 +33,73 @@ const NAV = [
 ] as const;
 
 type TabId = "response" | "notify" | "rules" | "advanced" | "keys";
+
+/* ── Per-severity 정책 체크박스 컴포넌트 (설계서 5.2) ──────────────────────── */
+const SEV_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
+  critical: { label: "Critical", color: "#cc2200", emoji: "🔴" },
+  high:     { label: "High",     color: "#ff6600", emoji: "🟠" },
+  medium:   { label: "Medium",   color: "#ffaa00", emoji: "🟡" },
+  info:     { label: "Info",     color: "#3399ff", emoji: "🔵" },
+};
+const ACTION_LABELS: Record<keyof AutoresponseActions, string> = {
+  watchlist:      "Watchlist 등록",
+  block_ip:       "IP 차단 (Denylist)",
+  discord_notify: "Discord 알림",
+};
+
+function AutoresponsePolicyTable({
+  policy,
+  onChange,
+}: {
+  policy: AutoresponsePolicy;
+  onChange: (sev: string, action: keyof AutoresponseActions, value: boolean) => void;
+}) {
+  const severities = ["critical", "high", "medium", "info"] as const;
+  const actions = ["watchlist", "block_ip", "discord_notify"] as const;
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: "rgba(255,255,255,0.04)" }}>
+            <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600 }}>심각도</th>
+            {actions.map((a) => (
+              <th key={a} style={{ padding: "8px 12px", textAlign: "center", fontWeight: 600 }}>
+                {ACTION_LABELS[a]}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {severities.map((sev) => {
+            const meta = SEV_LABELS[sev];
+            const sevPolicy = policy[sev];
+            return (
+              <tr key={sev} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <td style={{ padding: "10px 12px" }}>
+                  <span style={{ color: meta.color, fontWeight: 600 }}>
+                    {meta.emoji} {meta.label}
+                  </span>
+                </td>
+                {actions.map((action) => (
+                  <td key={action} style={{ padding: "10px 12px", textAlign: "center" }}>
+                    <Toggle
+                      checked={sevPolicy[action]}
+                      onChange={(v) => onChange(sev, action, v)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 11, opacity: 0.5, marginTop: 10 }}>
+        * IP 차단은 서비스 레벨 Redis Denylist 차단입니다 (설계서 Level 2). allowlist IP / 사설망은 차단되지 않습니다.
+      </p>
+    </div>
+  );
+}
 
 /* ── Mode definitions ──────────────────────────────────── */
 const MODES = [
@@ -123,6 +191,13 @@ function RangeField({
 }
 
 /* ── Main component ────────────────────────────────────── */
+const DEFAULT_AUTORESPONSE: AutoresponsePolicy = {
+  critical: { watchlist: true,  block_ip: true,  discord_notify: true },
+  high:     { watchlist: true,  block_ip: false, discord_notify: true },
+  medium:   { watchlist: false, block_ip: false, discord_notify: true },
+  info:     { watchlist: false, block_ip: false, discord_notify: false },
+};
+
 export function SettingsPage() {
   const [settings, setSettings]   = useState<TenantSettings | null>(null);
   const [apiKeys, setApiKeys]     = useState<ApiKey[]>([]);
@@ -132,11 +207,13 @@ export function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyRaw, setNewKeyRaw]  = useState<string>();
   const [copied, setCopied]        = useState(false);
+  const [arPolicy, setArPolicy]    = useState<AutoresponsePolicy>(DEFAULT_AUTORESPONSE);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     fetchSettings().then(setSettings).catch(console.error);
     fetchApiKeys().then(setApiKeys).catch(console.error);
+    fetchAutoresponsePolicy().then(setArPolicy).catch(console.error);
   }, []);
 
   function showToast(msg: string, ok = true) {
@@ -265,7 +342,35 @@ export function SettingsPage() {
                   </div>
                 </div>
               </div>
+
             )}
+
+            {/* ── 심각도별 자동 대응 정책 (설계서 5.2) ──────── */}
+            <div className="setting-group" style={{ marginTop: 8 }}>
+              <div className="setting-row-label" style={{ marginBottom: 4 }}>
+                심각도별 자동 대응 정책
+              </div>
+              <div className="setting-row-desc" style={{ marginBottom: 12 }}>
+                각 심각도에서 실행할 대응 액션을 개별적으로 설정합니다. 변경 즉시 Policy Engine에 반영됩니다.
+              </div>
+              <AutoresponsePolicyTable
+                policy={arPolicy}
+                onChange={async (sev, action, value) => {
+                  const updated: AutoresponsePolicy = {
+                    ...arPolicy,
+                    [sev]: { ...arPolicy[sev as keyof AutoresponsePolicy], [action]: value },
+                  };
+                  setArPolicy(updated);
+                  try {
+                    await patchAutoresponsePolicy({ [sev]: updated[sev as keyof AutoresponsePolicy] });
+                    showToast(`${sev} 정책이 저장됐습니다`);
+                  } catch {
+                    showToast("정책 저장 실패", false);
+                    setArPolicy(arPolicy); // 롤백
+                  }
+                }}
+              />
+            </div>
           </>
         )}
 

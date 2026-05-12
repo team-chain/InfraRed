@@ -317,3 +317,46 @@ async def evaluate_web_rules(redis: Redis, event: NormalizedEvent) -> list[Signa
         signals.append(honeypot_signal)
 
     return signals
+
+
+async def evaluate_net_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
+    """NET-001 HTTP Flood 탐지 (설계서 3.1).
+
+    5분 내 동일 IP에서 임계값 이상의 HTTP 요청 → NET-001 Signal 생성.
+    Sliding Window (Redis Sorted Set) 방식으로 정확한 윈도우 계산.
+    """
+    signals: list[Signal] = []
+    if not event.source_ip:
+        return signals
+
+    cfg = await get_rule_settings(redis, event.tenant_id)
+    if not cfg.net_http_flood_enabled:
+        return signals
+
+    now_score = event.timestamp.timestamp()
+    flood_key = keys.net_rate_ip(event.tenant_id, event.asset_id, event.source_ip)
+    flood_window = cfg.net_http_flood_window_seconds
+    flood_threshold = cfg.net_http_flood_threshold
+
+    await redis.zadd(flood_key, {event.event_id: now_score})
+    await redis.zremrangebyscore(flood_key, 0, now_score - flood_window)
+    await redis.expire(flood_key, flood_window * 2)
+    flood_count = int(await redis.zcard(flood_key))
+
+    if flood_count >= flood_threshold:
+        triggering = await _window_event_ids(redis, flood_key, now_score - flood_window, now_score)
+        signals.append(_web_signal(
+            RuleId.NET_HTTP_FLOOD, event,
+            rule_name="HTTP Flood",
+            tactic="Impact",
+            technique="T1595",
+            stage=KillChainStage.RECONNAISSANCE,
+            count=flood_count,
+            note=(
+                f"HTTP Flood detected: {flood_count} requests from {event.source_ip} "
+                f"in {flood_window}s (threshold={flood_threshold})."
+            ),
+            triggering_event_ids=triggering[:50],  # 최대 50개로 제한
+        ))
+
+    return signals

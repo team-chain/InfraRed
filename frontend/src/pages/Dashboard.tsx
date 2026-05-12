@@ -115,6 +115,31 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
     if (tab === "audit") { setAuditLoading(true); fetchAuditLogs().then(setAuditLogs).catch(() => {}).finally(() => setAuditLoading(false)); }
   }, [tab]);
 
+  // ── SSE 실시간 Push 연결 (설계서 6.1) ───────────────────────────────────────
+  useEffect(() => {
+    const apiBase = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+    const es = new EventSource(`${apiBase}/events/stream`, { withCredentials: true });
+
+    es.addEventListener("incident_created", () => {
+      // 새 Incident 생성 시 목록 즉시 갱신
+      load();
+    });
+    es.addEventListener("incident_updated", () => {
+      load();
+    });
+    es.addEventListener("llm_completed", () => {
+      // LLM 분석 완료 시 선택된 Incident 상세 갱신
+      if (selected) {
+        fetchIncident(selected.incident.incident_id).then(setSelected).catch(() => {});
+      }
+    });
+    es.onerror = () => {
+      // 연결 끊김 시 EventSource가 자동 재연결 시도
+    };
+
+    return () => es.close();
+  }, []);
+
   const llm = selected?.llm_result;
   const inc = selected?.incident;
   const cti = inc?.cti_enrichment;

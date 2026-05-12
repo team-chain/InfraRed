@@ -1,10 +1,13 @@
-"""Policy-based Auto-Response Engine (설계서 6.7).
+"""Policy-based Auto-Response Engine (설계서 5장).
 
-v5 설계:
+설계서 기준:
   - LLM은 설명만 생성. 실행은 이 엔진이 정책 기반으로만 수행.
-  - MVP 기본값: dry_run=True (실제 enforcement 없음, 로그만 기록)
+  - Level 1: Watchlist 등록 (Redis SADD)
+  - Level 2: 서비스 레벨 차단 (Redis Denylist → FastAPI 미들웨어 → 403)
   - 모든 대응은 auto_response_logs에 append-only 기록
   - allowlist / 사설IP / 루프백은 절대 차단 안 함
+  - 동일 IP 중복 차단 idempotent 처리
+  - reversed=true로 롤백 가능
 """
 from __future__ import annotations
 
@@ -68,9 +71,9 @@ async def _load_autoresponse_policy(tenant_id: str) -> dict:
             return json.loads(raw)
         except Exception:
             pass
-    # 기본 정책 (MVP)
+    # 기본 정책 (설계서 5.2 — critical: Watchlist+Denylist, high: Watchlist만)
     return {
-        "critical": {"watchlist": True,  "block_ip": False, "discord_notify": True},
+        "critical": {"watchlist": True,  "block_ip": True,  "discord_notify": True},
         "high":     {"watchlist": True,  "block_ip": False, "discord_notify": True},
         "medium":   {"watchlist": False, "block_ip": False, "discord_notify": True},
         "info":     {"watchlist": False, "block_ip": False, "discord_notify": False},
@@ -92,6 +95,24 @@ async def _is_in_allowlist(tenant_id: str, ip: str) -> bool:
 async def _watchlist_add(tenant_id: str, ip: str) -> None:
     redis = get_redis()
     await redis.sadd(keys.policy_watchlist(tenant_id), ip)
+
+
+async def _denylist_add(tenant_id: str, ip: str) -> bool:
+    """Redis Denylist에 IP 추가 (설계서 Level 2 차단).
+
+    idempotent: 이미 있으면 False 반환 (중복 차단 방지).
+    FastAPI 미들웨어가 이 Set을 체크해 403 반환.
+    """
+    redis = get_redis()
+    added = await redis.sadd(keys.policy_denylist(tenant_id), ip)
+    return bool(added)
+
+
+async def _denylist_remove(tenant_id: str, ip: str) -> bool:
+    """Redis Denylist에서 IP 제거 (롤백)."""
+    redis = get_redis()
+    removed = await redis.srem(keys.policy_denylist(tenant_id), ip)
+    return bool(removed)
 
 
 async def _save_pending_action(tenant_id: str, incident_id: str, action: dict) -> str:
@@ -169,13 +190,19 @@ async def run_autoresponse(
             await _watchlist_add(tenant_id, source_ip)
             actions_taken.append("watchlist")
 
-    # -- IP 차단 (block_ip) ---------------------------------------------------
-    # MVP: block_ip=False가 기본값. dry_run=True로 로그만 기록
+    # -- IP 차단 (block_ip) — Level 2: Redis Denylist (설계서 5.1) -------------
+    # FastAPI 미들웨어가 Denylist를 체크해 403 반환 (서비스 레벨 차단)
+    # allowlist / 사설IP / 루프백은 절대 차단 안 함 (설계서 5.3 안전장치)
     if sev_policy.get("block_ip") and source_ip:
         if not _is_safe_ip(source_ip) and not await _is_in_allowlist(tenant_id, source_ip):
-            # 실제 차단은 운영 확장 시 (nginx deny / iptables / Cloudflare)
-            # MVP: 로그에만 기록
-            actions_taken.append("block_ip_dry_run")
+            newly_blocked = await _denylist_add(tenant_id, source_ip)
+            if newly_blocked:
+                actions_taken.append("block_ip")
+                log.info("denylist_ip_added", tenant_id=tenant_id, ip=source_ip, incident_id=incident_id)
+            else:
+                # idempotent: 이미 차단된 IP
+                actions_taken.append("block_ip_already_blocked")
+                log.info("denylist_ip_already_blocked", tenant_id=tenant_id, ip=source_ip)
 
     # -- Discord 알림 ----------------------------------------------------------
     if sev_policy.get("discord_notify"):
@@ -202,11 +229,12 @@ async def run_autoresponse(
         else:
             actions_notified.append(atype)
 
-    # -- auto_response_logs append-only 저장 (설계서 6.7) ----------------------
+    # -- auto_response_logs append-only 저장 (설계서 5.3) ----------------------
     policy_reason = (
         f"{sev_lower.capitalize()} severity {rule_id or ''} matched. "
-        + (f"Watchlist policy enabled." if "watchlist" in actions_taken else "")
-        + (f" Block IP dry_run." if "block_ip_dry_run" in actions_taken else "")
+        + ("Watchlist registered. " if "watchlist" in actions_taken else "")
+        + ("IP blocked via Denylist (Level 2). " if "block_ip" in actions_taken else "")
+        + ("IP already in Denylist (idempotent). " if "block_ip_already_blocked" in actions_taken else "")
     ).strip()
 
     ar_log = AutoResponseLog(
@@ -215,7 +243,7 @@ async def run_autoresponse(
         rule_id=rule_id,
         severity=sev_lower,
         actions_taken=actions_taken + actions_notified,
-        dry_run=True,  # MVP 기본값
+        dry_run=False,  # 설계서: Level 2 Denylist는 실제 차단
         triggered_by=triggered_by,
         policy_reason=policy_reason,
         policy_version=policy_version,
@@ -230,7 +258,7 @@ async def run_autoresponse(
         incident_id=incident_id,
         severity=sev_lower,
         actions_taken=actions_taken,
-        dry_run=True,
+        source_ip=source_ip,
     )
 
     return {
@@ -238,6 +266,12 @@ async def run_autoresponse(
         "actions_taken": actions_taken,
         "actions_queued": actions_queued,
         "actions_notified": actions_notified,
-        "dry_run": True,
+        "dry_run": False,
         "policy_reason": policy_reason,
+        "source_ip": source_ip,
     }
+
+
+async def rollback_denylist(tenant_id: str, ip: str, actor: str = "system") -> bool:
+    """Denylist에서 IP 제거 (롤백). auto_response_logs에 reversed=true 기록은 호출자가 처리."""
+    return await _denylist_remove(tenant_id, ip)

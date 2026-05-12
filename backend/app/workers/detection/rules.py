@@ -322,31 +322,32 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
                 ),
             ))
 
-    # AUTH-CS-A / AUTH-CS-B: Credential Stuffing / Password Spraying (실패 로그인 시)
+    # AUTH-006A / AUTH-006B: Credential Stuffing / Password Spraying (설계서 3.1)
     if event.result == "failed" and event.username:
         stuffing_user_key = keys.auth_stuffing_user_to_ips(event.tenant_id, event.asset_id, event.username)
         stuffing_ip_key   = keys.auth_stuffing_ip_to_users(event.tenant_id, event.asset_id, event.source_ip)
         _STUFFING_TTL = 3600  # 1h window
 
+        await redis.sadd(stuffing_user_key, event.source_ip)
         await redis.expire(stuffing_user_key, _STUFFING_TTL)
 
         await redis.sadd(stuffing_ip_key, event.username)
         await redis.expire(stuffing_ip_key, _STUFFING_TTL)
 
-        # AUTH-CS-A: Credential Stuffing — 동일 username, 1h 내 3개 이상 다른 source_ip
+        # AUTH-006A: Credential Stuffing — 동일 username, 1h 내 3개 이상 다른 source_ip
         ip_count = int(await redis.scard(stuffing_user_key))
         if ip_count >= 3:
             signals.append(_signal(
                 RuleId.AUTH_CRED_STUFFING, event, ip_count,
-                note=f"Credential Stuffing: {ip_count} different IPs tried username '{event.username}' within 1h.",
+                note=f"Credential Stuffing (AUTH-006A): {ip_count} different IPs tried username '{event.username}' within 1h.",
             ))
 
-        # AUTH-CS-B: Password Spraying — 동일 source_ip, 1h 내 5개 이상 다른 username
+        # AUTH-006B: Password Spraying — 동일 source_ip, 1h 내 5개 이상 다른 username
         user_count = int(await redis.scard(stuffing_ip_key))
         if user_count >= 5:
             signals.append(_signal(
                 RuleId.AUTH_PASSWORD_SPRAYING, event, user_count,
-                note=f"Password Spraying: {user_count} different usernames tried from {event.source_ip} within 1h.",
+                note=f"Password Spraying (AUTH-006B): {user_count} different usernames tried from {event.source_ip} within 1h.",
             ))
 
     # AUTH-007: 해외 IP 로그인 (GeoIP 기반, 허용 국가 외)

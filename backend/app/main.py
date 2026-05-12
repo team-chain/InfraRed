@@ -12,6 +12,8 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
+from app.redis_kv import keys as redis_keys
+from app.redis_kv.client import get_redis
 from app.db.repositories import (
     authenticate_user,
     get_incident_contract,
@@ -23,6 +25,7 @@ from app.db.repositories import (
     save_llm_result,
     update_incident_status,
 )
+from app.autoresponse.engine import rollback_denylist
 from app.dispatcher.service import dispatch_incident_alert
 from app.iam.audit import write_audit_log
 from app.iam.security import create_token, require_permission, verify_user_token
@@ -33,6 +36,7 @@ from app.ingestion.api_routes import router as api_router
 from app.ingestion.command_routes import router as command_router
 from app.ingestion.settings_routes import router as settings_router
 from app.ingestion.policy_routes import router as policy_router
+from app.ingestion.sse_routes import router as sse_router
 from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
 from app.models.llm import LLMResult
 from app.workers.llm.service import analyze_contract_with_cache
@@ -57,6 +61,38 @@ REQUEST_COUNT = Counter(
     ["method", "path", "status"],
 )
 
+_DENYLIST_EXEMPT_PREFIXES = ("/healthz", "/metrics", "/auth/", "/sdk.js")
+
+
+@app.middleware("http")
+async def denylist_middleware(request: Request, call_next):
+    """Redis Denylist IP 체크 -> 차단된 IP는 즉시 403 반환."""
+    path = request.url.path
+    if not any(path.startswith(p) for p in _DENYLIST_EXEMPT_PREFIXES):
+        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
+            request.client.host if request.client else None
+        )
+        if client_ip:
+            try:
+                redis = get_redis()
+                tenant_id = settings.tenant_id
+                is_blocked = await redis.sismember(redis_keys.policy_denylist(tenant_id), client_ip)
+                if is_blocked:
+                    log.info("denylist_blocked", ip=client_ip, path=path)
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "detail": "blocked",
+                            "message": "이 IP는 보안 정책에 의해 차단되었습니다.",
+                            "ip": client_ip,
+                        },
+                    )
+            except Exception as exc:
+                log.warning("denylist_check_failed", error=str(exc))
+
+    response = await call_next(request)
+    return response
+
 
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
@@ -72,6 +108,7 @@ app.include_router(fluent_router)
 app.include_router(api_router)
 app.include_router(command_router, prefix="/ingest")
 app.include_router(settings_router)
+app.include_router(sse_router)
 
 
 @app.get("/healthz")
@@ -97,10 +134,7 @@ async def login(payload: LoginRequest, request: Request) -> Response:
         password=payload.password,
     )
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid_credentials",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
 
     await write_audit_log(
         tenant_id=user["tenant_id"],
@@ -110,23 +144,12 @@ async def login(payload: LoginRequest, request: Request) -> Response:
         ip=request.client.host if request.client else None,
         metadata={"role": user["role"]},
     )
-    token = create_token(
-        subject=user["user_id"],
-        tenant_id=user["tenant_id"],
-        role=user["role"],
-    )
-
-    response = JSONResponse(
-        content={"access_token": token, "user": user},
-    )
+    token = create_token(subject=user["user_id"], tenant_id=user["tenant_id"], role=user["role"])
+    response = JSONResponse(content={"access_token": token, "user": user})
     response.set_cookie(
-        key="infrared_token",
-        value=token,
-        httponly=True,
-        secure=(settings.env == "prod"),
-        samesite="lax",
-        max_age=settings.jwt_user_ttl_seconds,
-        path="/",
+        key="infrared_token", value=token, httponly=True,
+        secure=(settings.env == "prod"), samesite="lax",
+        max_age=settings.jwt_user_ttl_seconds, path="/",
     )
     return response
 
@@ -140,10 +163,7 @@ async def register(payload: RegisterRequest, request: Request) -> Response:
         role=payload.role,
     )
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="tenant_missing_or_user_exists",
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="tenant_missing_or_user_exists")
 
     await write_audit_log(
         tenant_id=user["tenant_id"],
@@ -153,24 +173,12 @@ async def register(payload: RegisterRequest, request: Request) -> Response:
         ip=request.client.host if request.client else None,
         metadata={"role": user["role"]},
     )
-    token = create_token(
-        subject=user["user_id"],
-        tenant_id=user["tenant_id"],
-        role=user["role"],
-    )
-
-    response = JSONResponse(
-        content={"access_token": token, "user": user},
-        status_code=status.HTTP_201_CREATED,
-    )
+    token = create_token(subject=user["user_id"], tenant_id=user["tenant_id"], role=user["role"])
+    response = JSONResponse(content={"access_token": token, "user": user}, status_code=status.HTTP_201_CREATED)
     response.set_cookie(
-        key="infrared_token",
-        value=token,
-        httponly=True,
-        secure=(settings.env == "prod"),
-        samesite="lax",
-        max_age=settings.jwt_user_ttl_seconds,
-        path="/",
+        key="infrared_token", value=token, httponly=True,
+        secure=(settings.env == "prod"), samesite="lax",
+        max_age=settings.jwt_user_ttl_seconds, path="/",
     )
     return response
 
@@ -184,11 +192,7 @@ async def logout() -> Response:
 
 @app.get("/auth/me")
 async def me(claims: dict = Depends(verify_user_token)) -> dict[str, object]:
-    return {
-        "subject": claims.get("sub"),
-        "tenant_id": claims.get("tenant_id"),
-        "role": claims.get("role"),
-    }
+    return {"subject": claims.get("sub"), "tenant_id": claims.get("tenant_id"), "role": claims.get("role")}
 
 
 @app.get("/incidents")
@@ -228,14 +232,11 @@ async def analyze_incident(
         raise HTTPException(status_code=404, detail="incident_not_found")
     if contract["incident"]["tenant_id"] != claims["tenant_id"]:
         raise HTTPException(status_code=403, detail="tenant_mismatch")
-
     result = await analyze_contract_with_cache(contract, refresh=refresh)
     await save_llm_result(result, tenant_id=claims["tenant_id"])
     await write_audit_log(
-        tenant_id=claims["tenant_id"],
-        actor=str(claims["sub"]),
-        action="incident.analyze",
-        resource=incident_id,
+        tenant_id=claims["tenant_id"], actor=str(claims["sub"]),
+        action="incident.analyze", resource=incident_id,
         ip=request.client.host if request.client else None,
         metadata={"cached": result.cached, "model": result.model},
     )
@@ -253,13 +254,8 @@ async def dispatch_incident(
         raise HTTPException(status_code=404, detail="incident_not_found")
     if contract["incident"]["tenant_id"] != claims["tenant_id"]:
         raise HTTPException(status_code=403, detail="tenant_mismatch")
-
     llm_row = contract.get("llm_result")
-    result = (
-        LLMResult.model_validate(llm_row)
-        if llm_row
-        else await analyze_contract_with_cache(contract)
-    )
+    result = LLMResult.model_validate(llm_row) if llm_row else await analyze_contract_with_cache(contract)
     if not llm_row:
         await save_llm_result(result, tenant_id=claims["tenant_id"])
     dispatch_result = await dispatch_incident_alert(
@@ -267,10 +263,8 @@ async def dispatch_incident(
         severity=contract["incident"].get("severity", "high"),
     )
     await write_audit_log(
-        tenant_id=claims["tenant_id"],
-        actor=str(claims["sub"]),
-        action="incident.dispatch",
-        resource=incident_id,
+        tenant_id=claims["tenant_id"], actor=str(claims["sub"]),
+        action="incident.dispatch", resource=incident_id,
         ip=request.client.host if request.client else None,
         metadata={
             "model": result.model,
@@ -301,10 +295,8 @@ async def patch_incident_status(
     if updated is None:
         raise HTTPException(status_code=404, detail="incident_not_found")
     await write_audit_log(
-        tenant_id=claims["tenant_id"],
-        actor=str(claims["sub"]),
-        action="incident.status_update",
-        resource=incident_id,
+        tenant_id=claims["tenant_id"], actor=str(claims["sub"]),
+        action="incident.status_update", resource=incident_id,
         ip=request.client.host if request.client else None,
         metadata={"status": payload.status},
     )
@@ -333,9 +325,64 @@ async def assets(
     return {"items": await list_assets(claims["tenant_id"])}
 
 
+@app.delete("/policy/denylist/{ip}")
+async def unblock_ip(
+    ip: str,
+    request: Request,
+    claims: dict = Depends(require_permission("incident:write")),
+) -> dict[str, object]:
+    """DELETE /policy/denylist/{ip} -- IP 차단 롤백."""
+    tenant_id = claims["tenant_id"]
+    removed = await rollback_denylist(tenant_id, ip, actor=str(claims.get("sub", "unknown")))
+    try:
+        from sqlalchemy import text
+        from app.db.connection import get_session
+        from datetime import datetime, timezone
+        async with get_session() as session:
+            await session.execute(
+                text("""
+                    UPDATE auto_response_logs
+                    SET reversed = true,
+                        reversed_at = :ts,
+                        reversed_by = :actor
+                    WHERE tenant_id = :tenant_id
+                      AND actions_taken::text LIKE :ip_pattern
+                      AND reversed = false
+                """),
+                {
+                    "tenant_id": tenant_id,
+                    "ts": datetime.now(timezone.utc),
+                    "actor": str(claims.get("sub", "unknown")),
+                    "ip_pattern": f"%{ip}%",
+                },
+            )
+            await session.commit()
+    except Exception as exc:
+        log.warning("unblock_ip_log_failed", ip=ip, error=str(exc))
+    await write_audit_log(
+        tenant_id=tenant_id,
+        actor=str(claims.get("sub", "unknown")),
+        action="policy.denylist.remove",
+        resource=ip,
+        ip=request.client.host if request.client else None,
+        metadata={"ip_removed": ip, "was_in_denylist": removed},
+    )
+    return {"ok": True, "ip": ip, "removed": removed}
+
+
+@app.get("/policy/denylist")
+async def list_denylist(
+    claims: dict = Depends(require_permission("incident:read")),
+) -> dict[str, object]:
+    """GET /policy/denylist -- 현재 차단된 IP 목록 조회."""
+    tenant_id = claims["tenant_id"]
+    redis = get_redis()
+    ips = await redis.smembers(redis_keys.policy_denylist(tenant_id))
+    return {"items": [ip.decode() if isinstance(ip, bytes) else ip for ip in ips]}
+
+
 @app.get("/install-agent.sh", response_class=PlainTextResponse)
 async def install_agent_script() -> PlainTextResponse:
-    """Serve the agent install script — users can pipe it directly from curl."""
     script_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "install-agent.sh")
     )

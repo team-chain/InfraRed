@@ -130,6 +130,73 @@ async def send_discord_embed(
     return True
 
 
+async def send_discord_first_alert(
+    *,
+    incident_id: str,
+    tenant_id: str,
+    severity: str,
+    rule_id: str,
+    source_ip: str | None,
+    playbook_summary: str,
+    webhook_url: str | None = None,
+) -> bool:
+    """1차 즉시 알림 — Incident 생성 직후 발송 (설계서 4.3).
+
+    LLM 분석 완료를 기다리지 않고 즉시 발송.
+    rule_id 기반 Static Playbook 요약 포함.
+    LLM 완료 후 send_discord_embed()로 2차 알림 발송.
+    """
+    settings = get_settings()
+    url = webhook_url or settings.discord_webhook_url
+    if not url:
+        return False
+
+    color = _SEVERITY_COLOR.get(severity.lower(), 0x888888)
+    severity_emoji = {
+        "critical": "🔴", "high": "🟠", "medium": "🟡", "info": "🔵",
+    }.get(severity.lower(), "⚪")
+
+    ip_text = f"`{source_ip}`" if source_ip else "알 수 없음"
+
+    fields = [
+        {
+            "name": "🚨 탐지 룰",
+            "value": f"`{rule_id}`",
+            "inline": True,
+        },
+        {
+            "name": "🌐 출발지 IP",
+            "value": ip_text,
+            "inline": True,
+        },
+        {
+            "name": "📋 Static Playbook 요약",
+            "value": _truncate(playbook_summary, DISCORD_FIELD_LIMIT),
+            "inline": False,
+        },
+        {
+            "name": "⏳ AI 분석",
+            "value": "Bedrock Claude가 분석 중입니다. 완료 후 2차 알림이 발송됩니다.",
+            "inline": False,
+        },
+    ]
+
+    embed = {
+        "title": f"{severity_emoji} [{severity.upper()}] {incident_id} — 인시던트 탐지 (1차 알림)",
+        "color": color,
+        "fields": fields,
+        "footer": {"text": f"InfraRed SOC — {tenant_id}  |  AI 분석 완료 후 2차 알림 예정"},
+    }
+    payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        raise _safe_discord_error(exc) from None
+    return True
+
+
 async def send_discord_autoresponse_result(
     *,
     incident_id: str,
@@ -156,9 +223,9 @@ async def send_discord_autoresponse_result(
 
     color = _SEVERITY_COLOR.get(severity.lower(), 0x888888)
     mode_label = {
-        "auto": "🤖 AI 완전 자동 대응 완료",
-        "approval": "⏳ AI 대응 — 승인 대기",
-    }.get(mode, f"📋 대응 모드: {mode}")
+        "auto": "AI 완전 자동 대응 완료",
+        "approval": "AI 대응 -- 승인 대기",
+    }.get(mode, f"대응 모드: {mode}")
 
     def _fmt_actions(action_list: list[dict]) -> str:
         lines = []
@@ -166,16 +233,16 @@ async def send_discord_autoresponse_result(
             atype = a.get("type", a.get("action_type", "?"))
             target = a.get("target", "-")
             label = {
-                "block_ip": f"🔒 IP 차단: `{target}`",
-                "lock_account": f"🔐 계정 잠금: `{target}`",
-                "escalate": f"⬆️ 심각도 상향: `{target}`",
-            }.get(atype, f"`{atype}` → `{target}`")
+                "block_ip": f"IP 차단: `{target}`",
+                "lock_account": f"계정 잠금: `{target}`",
+                "escalate": f"심각도 상향: `{target}`",
+            }.get(atype, f"`{atype}` -> `{target}`")
             lines.append(label)
         return "\n".join(lines) or "없음"
 
     fields: list[dict] = [
         {
-            "name": "🛡️ 대응",
+            "name": "대응",
             "value": (
                 "AI가 분석 결과를 바탕으로 아래 조치를 처리했습니다."
                 if mode == "auto"
@@ -186,22 +253,22 @@ async def send_discord_autoresponse_result(
     ]
     if actions_taken:
         fields.append({
-            "name": "✅ 즉시 실행된 조치",
+            "name": "즉시 실행된 조치",
             "value": _truncate(_fmt_actions(actions_taken), DISCORD_FIELD_LIMIT),
             "inline": False,
         })
     if actions_queued:
         fields.append({
-            "name": "⏳ 승인 대기 중인 조치",
+            "name": "승인 대기 중인 조치",
             "value": _truncate(_fmt_actions(actions_queued), DISCORD_FIELD_LIMIT),
             "inline": False,
         })
 
     embed = {
-        "title": f"{mode_label} — {incident_id}",
+        "title": f"{mode_label} -- {incident_id}",
         "color": color,
         "fields": fields,
-        "footer": {"text": f"InfraRed SOC — {tenant_id}  |  {severity.upper()}"},
+        "footer": {"text": f"InfraRed SOC -- {tenant_id}  |  {severity.upper()}"},
     }
     payload = {"embeds": [embed], "allowed_mentions": {"parse": []}}
     try:

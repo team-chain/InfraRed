@@ -1,10 +1,4 @@
-"""Runtime detection-rule settings.
-
-The dashboard persists tenant settings in Postgres and mirrors the active rule
-thresholds into Redis. Workers read Redis on each event so UI changes take
-effect without restarting containers, while tests and cold starts fall back to
-environment defaults.
-"""
+"""Runtime detection-rule settings."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,17 +20,18 @@ class RuleSettings:
     web_admin_scan_window_seconds: int
     web_404_threshold: int
     web_404_window_seconds: int
-    # AUTH-006: 비업무 시간대 로그인
     off_hours_enabled: bool
-    off_hours_start_kst: int   # 0~23
-    off_hours_end_kst: int     # 0~23
-    # AUTH-007: 해외 IP 로그인
+    off_hours_start_kst: int
+    off_hours_end_kst: int
     foreign_login_enabled: bool
-    allowed_countries: str     # 콤마 구분 ISO-2 코드, 예: "KR"
-    # WEB-005~007 on/off
+    allowed_countries: str
     web_sql_injection_enabled: bool
     web_path_traversal_enabled: bool
     web_cve_probe_enabled: bool
+    # NET-001: HTTP Flood (설계서 3.1)
+    net_http_flood_enabled: bool
+    net_http_flood_threshold: int
+    net_http_flood_window_seconds: int
 
 
 def _int_value(raw: dict[str, Any], key: str, fallback: int) -> int:
@@ -75,37 +70,25 @@ async def get_rule_settings(redis: Any, tenant_id: str) -> RuleSettings:
         raw = {}
 
     return RuleSettings(
-        auth_brute_force_threshold=_int_value(
-            raw, "auth_brute_force_threshold", cfg.auth_brute_force_threshold
-        ),
-        auth_brute_force_window_seconds=_int_value(
-            raw, "auth_brute_force_window_sec", cfg.auth_brute_force_window_seconds
-        ),
-        auth_invalid_user_threshold=_int_value(
-            raw, "auth_invalid_user_threshold", cfg.auth_invalid_user_threshold
-        ),
+        auth_brute_force_threshold=_int_value(raw, "auth_brute_force_threshold", cfg.auth_brute_force_threshold),
+        auth_brute_force_window_seconds=_int_value(raw, "auth_brute_force_window_sec", cfg.auth_brute_force_window_seconds),
+        auth_invalid_user_threshold=_int_value(raw, "auth_invalid_user_threshold", cfg.auth_invalid_user_threshold),
         auth_invalid_user_window_seconds=cfg.auth_invalid_user_window_seconds,
-        auth_fail_then_success_threshold=_int_value(
-            raw,
-            "auth_fail_then_success_threshold",
-            cfg.auth_fail_then_success_threshold,
-        ),
+        auth_fail_then_success_threshold=_int_value(raw, "auth_fail_then_success_threshold", cfg.auth_fail_then_success_threshold),
         auth_fail_then_success_window_seconds=cfg.auth_fail_then_success_window_seconds,
-        web_admin_scan_threshold=_int_value(
-            raw, "web_admin_scan_threshold", cfg.web_admin_scan_threshold
-        ),
+        web_admin_scan_threshold=_int_value(raw, "web_admin_scan_threshold", cfg.web_admin_scan_threshold),
         web_admin_scan_window_seconds=cfg.web_admin_scan_window_seconds,
         web_404_threshold=_int_value(raw, "web_404_threshold", cfg.web_404_threshold),
         web_404_window_seconds=cfg.web_404_window_seconds,
-        # AUTH-006
         off_hours_enabled=_bool_value(raw, "off_hours_enabled", True),
         off_hours_start_kst=_int_value(raw, "off_hours_start_kst", 0),
         off_hours_end_kst=_int_value(raw, "off_hours_end_kst", 6),
-        # AUTH-007
         foreign_login_enabled=_bool_value(raw, "foreign_login_enabled", False),
         allowed_countries=_str_value(raw, "allowed_countries", "KR"),
-        # WEB-005~007
         web_sql_injection_enabled=_bool_value(raw, "web_sql_injection_enabled", True),
         web_path_traversal_enabled=_bool_value(raw, "web_path_traversal_enabled", True),
         web_cve_probe_enabled=_bool_value(raw, "web_cve_probe_enabled", True),
+        net_http_flood_enabled=_bool_value(raw, "net_http_flood_enabled", True),
+        net_http_flood_threshold=_int_value(raw, "net_http_flood_threshold", 300),
+        net_http_flood_window_seconds=_int_value(raw, "net_http_flood_window_seconds", 300),
     )

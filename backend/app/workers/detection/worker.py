@@ -32,7 +32,7 @@ from app.redis_kv.client import ensure_group, get_redis
 from app.workers.detection.nginx_parser import parse_nginx_log
 from app.workers.detection.parser import parse_auth_log
 from app.workers.detection.rules import evaluate_rules
-from app.workers.detection.web_rules import evaluate_web_rules
+from app.workers.detection.web_rules import evaluate_net_rules, evaluate_web_rules
 from app.workers.dlq import reclaim_pending
 
 
@@ -163,9 +163,12 @@ async def process_payload(stream_id: str, payload: str) -> None:
     else:
         DETECTION_EVENTS.labels(outcome="parsed").inc()
 
-    # -- Evaluate rules: SSH vs Web --------------------------------------------
+    # -- Evaluate rules: SSH vs Web (+ NET-001 HTTP Flood) --------------------
     if event.event_type == EventType.WEB_REQUEST:
         signals = await evaluate_web_rules(redis, event)
+        # NET-001: WEB_REQUEST 이벤트에서 HTTP Flood 추가 평가 (설계서 3.1)
+        net_signals = await evaluate_net_rules(redis, event)
+        signals.extend(net_signals)
     else:
         signals = await evaluate_rules(redis, event)
 

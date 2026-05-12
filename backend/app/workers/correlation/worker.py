@@ -1,13 +1,14 @@
-"""Correlation worker — creates Incidents and triggers role C.
+"""Correlation worker -- creates Incidents and triggers role C.
 
 Pipeline stage (B):
   enriched signal (signals:enriched)
     -> kill-chain stage tracking in Redis
-    -> escalate_to_incident check  (AUTH-004 design doc 6.2 — skip if False)
+    -> escalate_to_incident check
     -> Incident Dedup (Redis SET NX, incident_dedup_ttl_seconds)
     -> build Incident
     -> save_or_merge_incident in PostgreSQL
-    -> emit trigger onto incidents:new for role C
+    -> Discord 1차 즉시 알림 발송 (설계서 4.3)
+    -> emit trigger onto incidents:new for role C (LLM Worker가 2차 알림 발송)
 """
 from __future__ import annotations
 
@@ -21,12 +22,16 @@ from app.common.constants import KillChainStage
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
 from app.db.repositories import save_or_merge_incident
-from app.models.incident import CtiEnrichment
+from app.dispatcher.discord import send_discord_first_alert
+from app.dispatcher.service import _get_tenant_dispatch_config
+from app.models.incident import CtiEnrichment, Incident
 from app.models.signal import Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.correlation.builder import build_incident
 from app.workers.dlq import reclaim_pending
+from app.workers.llm.playbook import get_first_alert_summary
+from app.ingestion.sse_routes import publish_incident_event
 
 
 configure_logging()
@@ -51,7 +56,6 @@ _KILLCHAIN_TTL_SECONDS = 60 * 60
 
 
 async def _track_kill_chain(redis: Redis, signal: Signal) -> Optional[str]:
-    """Track kill-chain stage per (tenant, asset, ip). Returns previous stage if advanced."""
     if not signal.source_ip or not signal.kill_chain_stage:
         return None
     key = keys.killchain_stage(signal.tenant_id, signal.asset_id, signal.source_ip)
@@ -68,9 +72,6 @@ async def _track_kill_chain(redis: Redis, signal: Signal) -> Optional[str]:
 
 
 async def _check_incident_dedup(redis: Redis, signal: Signal, settings) -> bool:
-    """Redis SET NX dedup check (design doc section 4, 10-min TTL).
-    Returns True if new (not duplicate), False if duplicate.
-    """
     ip = signal.source_ip or "no-ip"
     username = signal.username or "no-user"
     dedup_key = keys.incident_dedup(
@@ -81,16 +82,13 @@ async def _check_incident_dedup(redis: Redis, signal: Signal, settings) -> bool:
 
 
 async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
-    """Process one enriched signal. Returns (incident_id, created) or (None, False) if skipped."""
     settings = get_settings()
     redis = get_redis()
     signal = Signal.model_validate_json(signal_payload)
     cti = CtiEnrichment.model_validate_json(cti_payload)
 
-    # Kill-chain tracking always runs regardless of escalation
     advanced_from = await _track_kill_chain(redis, signal)
 
-    # Gate 1: escalate_to_incident (AUTH-004 design doc 6.2)
     if not signal.escalate_to_incident:
         log.info(
             "signal_no_incident_escalation",
@@ -101,7 +99,6 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
         CORRELATION_EVENTS.labels(outcome="signal_only").inc()
         return None, False
 
-    # Gate 2: Incident Dedup (Redis SET NX, 10-min TTL)
     is_new_dedup = await _check_incident_dedup(redis, signal, settings)
     if not is_new_dedup:
         log.info(
@@ -116,6 +113,48 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
 
     incident = build_incident(signal, cti, advanced_from=advanced_from)
     incident_id, created = await save_or_merge_incident(incident)
+
+    # Discord 1차 즉시 알림 (설계서 4.3)
+    if created and incident.severity.lower() in ("critical", "high", "medium"):
+        try:
+            tenant_cfg = await _get_tenant_dispatch_config(incident.tenant_id)
+            discord_url = tenant_cfg.get("discord_webhook_url") or None
+            playbook_summary = get_first_alert_summary(
+                rule_id=signal.rule_id.value,
+                severity=incident.severity,
+                source_ip=signal.source_ip,
+                username=signal.username,
+            )
+            await send_discord_first_alert(
+                incident_id=incident_id,
+                tenant_id=incident.tenant_id,
+                severity=incident.severity,
+                rule_id=signal.rule_id.value,
+                source_ip=signal.source_ip,
+                playbook_summary=playbook_summary,
+                webhook_url=discord_url,
+            )
+            log.info("discord_first_alert_sent", incident_id=incident_id, severity=incident.severity)
+        except Exception as exc:
+            log.warning("discord_first_alert_failed", incident_id=incident_id, error=str(exc))
+
+    # SSE Push
+    try:
+        await publish_incident_event(
+            tenant_id=incident.tenant_id,
+            event_type="incident_created" if created else "incident_updated",
+            data={
+                "incident_id": incident_id,
+                "severity": incident.severity,
+                "kill_chain_stage": incident.kill_chain_stage,
+                "source_ip": signal.source_ip,
+                "rule_id": signal.rule_id.value,
+                "created_at": incident.created_at.isoformat() if hasattr(incident, "created_at") and incident.created_at else None,
+            },
+        )
+    except Exception as exc:
+        log.warning("sse_publish_failed", incident_id=incident_id, error=str(exc))
+
     await redis.xadd(
         streams.incidents_new(incident.tenant_id),
         {
@@ -171,7 +210,7 @@ async def main() -> None:
                             CORRELATION_EVENTS.labels(outcome="incident_created").inc()
                         elif incident_id:
                             CORRELATION_EVENTS.labels(outcome="incident_merged").inc()
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         CORRELATION_EVENTS.labels(outcome="failed").inc()
                         log.exception("correlation_failed", stream_id=stream_id, error=str(exc))
 
