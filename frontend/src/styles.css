@@ -100,14 +100,28 @@ a { color: var(--accent); text-decoration: none; }
    LAYOUT SHELL
 ══════════════════════════════════════════════════════════ */
 .shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-columns: 200px 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "nav    main";
   min-height: 100vh;
   background: var(--bg);
 }
 
+/* 메인 콘텐츠 영역 */
+.main-area {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-width: 0;
+}
+
 /* ── Top Bar ─────────────────────────────────────────────── */
 .topbar {
+  grid-area: topbar;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -216,46 +230,52 @@ a { color: var(--accent); text-decoration: none; }
 .icon-btn:disabled { opacity: .4; cursor: not-allowed; }
 .icon-btn.danger:hover { background: var(--c-red-50); color: var(--c-red-600); border-color: var(--c-red-100); }
 
-/* ── Tab Nav ─────────────────────────────────────────────── */
+/* ── Tab Nav (좌측 사이드바) ──────────────────────────────── */
 .tab-nav {
-  height: var(--nav-h);
+  grid-area: nav;
+  width: 200px;
+  height: calc(100vh - var(--topbar-h));
+  position: sticky;
+  top: var(--topbar-h);
+  overflow-y: auto;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   display: flex;
-  align-items: stretch;
-  padding: 0 20px;
-  gap: 2px;
+  flex-direction: column;
+  padding: 8px 0 16px;
   flex-shrink: 0;
 }
 
 .tab-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px;
+  gap: 9px;
+  padding: 7px 10px;
+  margin: 1px 8px;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--r-md);
   color: var(--text-2);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
-  margin-bottom: -1px;
-  transition: color .15s, border-color .15s, background .15s;
-  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  text-align: left;
+  cursor: pointer;
+  transition: color .15s, background .15s;
   white-space: nowrap;
+  width: calc(100% - 16px);
 }
 
-.tab-btn:hover { color: var(--text); background: var(--c-gray-50); }
+.tab-btn:hover { color: var(--text); background: var(--c-gray-100); }
 
 .tab-active {
   color: var(--accent) !important;
-  border-bottom-color: var(--accent) !important;
+  background: var(--accent-light) !important;
   font-weight: 600;
 }
 
 .tab-text { display: flex; flex-direction: column; }
-.tab-name { font-size: 13.5px; font-weight: inherit; line-height: 1.2; }
-.tab-desc { font-size: 11px; color: var(--text-3); font-weight: 400; line-height: 1.2; }
+.tab-name { font-size: 13px; font-weight: inherit; line-height: 1.3; }
+.tab-desc { font-size: 10.5px; color: var(--text-3); font-weight: 400; line-height: 1.2; }
 .tab-active .tab-desc { color: var(--c-blue-500); }
 
 .tab-badge {
@@ -270,6 +290,7 @@ a { color: var(--accent); text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-left: auto;
 }
 
 /* ── Notification bars ───────────────────────────────────── */

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: infrared-postgres
     environment:
       POSTGRES_USER: infrared
@@ -10,6 +10,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./infra/postgres/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./backend/app/db/migrate_v2.sql:/docker-entrypoint-initdb.d/03_migrate_v2.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U infrared -d infrared"]
       interval: 5s
@@ -34,7 +35,7 @@ services:
       context: ./backend
       dockerfile: ../infra/docker/backend.Dockerfile
     container_name: infrared-ingestion
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sh", "-c", "python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     env_file: .env
     depends_on:
       redis:
@@ -141,6 +142,7 @@ services:
     container_name: infrared-frontend
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_BACKEND_PROXY_URL: http://ingestion:8000
     depends_on:
       ingestion:
         condition: service_started

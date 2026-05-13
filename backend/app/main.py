@@ -37,6 +37,14 @@ from app.ingestion.command_routes import router as command_router
 from app.ingestion.settings_routes import router as settings_router
 from app.ingestion.policy_routes import router as policy_router
 from app.ingestion.sse_routes import router as sse_router
+# Phase 1~5 고도화 라우터
+from app.ingestion.incident_routes import router as incident_workflow_router
+from app.ingestion.health_routes import router as health_router
+from app.ingestion.rule_mgmt_routes import router as rule_mgmt_router
+from app.ingestion.suppression_routes import router as suppression_router
+from app.ingestion.user_routes import router as user_router
+from app.ingestion.agent_mgmt_routes import router as agent_mgmt_router
+from app.ingestion.enterprise_routes import router as enterprise_router
 from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
 from app.models.llm import LLMResult
 from app.workers.llm.service import analyze_contract_with_cache
@@ -109,6 +117,14 @@ app.include_router(api_router)
 app.include_router(command_router, prefix="/ingest")
 app.include_router(settings_router)
 app.include_router(sse_router)
+# Phase 1~5 고도화 라우터
+app.include_router(incident_workflow_router)
+app.include_router(health_router)
+app.include_router(rule_mgmt_router)
+app.include_router(suppression_router)
+app.include_router(user_router)
+app.include_router(agent_mgmt_router)
+app.include_router(enterprise_router)
 
 
 @app.get("/healthz")

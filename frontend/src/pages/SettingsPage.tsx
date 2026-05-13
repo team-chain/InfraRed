@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  Bot, Bell, SlidersHorizontal, ShieldCheck, Key,
+  Bot, Bell, BellOff, CheckCircle, Cpu, SlidersHorizontal, ShieldCheck, Key,
   Copy, Check, Trash2, Plus,
 } from "lucide-react";
 import {
@@ -35,11 +35,11 @@ const NAV = [
 type TabId = "response" | "notify" | "rules" | "advanced" | "keys";
 
 /* ── Per-severity 정책 체크박스 컴포넌트 (설계서 5.2) ──────────────────────── */
-const SEV_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
-  critical: { label: "Critical", color: "#cc2200", emoji: "🔴" },
-  high:     { label: "High",     color: "#ff6600", emoji: "🟠" },
-  medium:   { label: "Medium",   color: "#ffaa00", emoji: "🟡" },
-  info:     { label: "Info",     color: "#3399ff", emoji: "🔵" },
+const SEV_LABELS: Record<string, { label: string; color: string }> = {
+  critical: { label: "Critical", color: "var(--c-red-500)" },
+  high:     { label: "High",     color: "var(--c-orange-500)" },
+  medium:   { label: "Medium",   color: "var(--c-amber-500)" },
+  info:     { label: "Info",     color: "var(--c-blue-500)" },
 };
 const ACTION_LABELS: Record<keyof AutoresponseActions, string> = {
   watchlist:      "Watchlist 등록",
@@ -78,7 +78,7 @@ function AutoresponsePolicyTable({
               <tr key={sev} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                 <td style={{ padding: "10px 12px" }}>
                   <span style={{ color: meta.color, fontWeight: 600 }}>
-                    {meta.emoji} {meta.label}
+                    {meta.label}
                   </span>
                 </td>
                 {actions.map((action) => (
@@ -102,26 +102,26 @@ function AutoresponsePolicyTable({
 }
 
 /* ── Mode definitions ──────────────────────────────────── */
-const MODES = [
+const MODES: { value: string; icon: React.ReactNode; label: string; desc: string }[] = [
   {
     value: "manual",
-    icon: "🔕",
+    icon: <BellOff size={18} />,
     label: "수동 대응",
     desc: "AI가 위협을 분석하고 Discord로 알림만 전송합니다. 모든 대응 조치는 담당자가 직접 수행합니다.",
   },
   {
     value: "approval",
-    icon: "✅",
+    icon: <CheckCircle size={18} />,
     label: "승인 후 실행",
     desc: "AI가 대응 액션을 준비하고 대시보드에 표시합니다. 담당자가 승인하면 자동 실행됩니다.",
   },
   {
     value: "auto",
-    icon: "🤖",
+    icon: <Cpu size={18} />,
     label: "완전 자동화",
     desc: "AI가 탐지부터 IP 차단·계정 잠금까지 자동으로 실행하고 결과를 보고합니다.",
   },
-] as const;
+];
 
 const SEVERITIES = ["info", "medium", "high", "critical"] as const;
 
@@ -308,7 +308,7 @@ export function SettingsPage() {
                   <div className="mode-radio">
                     <div className="mode-radio-dot" />
                   </div>
-                  <div className="mode-icon">{m.icon}</div>
+                  <div className="mode-icon" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>{m.icon}</div>
                   <div>
                     <div className="mode-label">{m.label}</div>
                     <div className="mode-desc">{m.desc}</div>
@@ -579,7 +579,7 @@ export function SettingsPage() {
             {/* New key reveal */}
             {newKeyRaw && (
               <div style={{ marginBottom: 20, background: "var(--c-amber-50)", border: "1px solid var(--c-amber-100)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
-                <div className="key-value-label">⚠️ 지금만 표시됩니다 — 안전한 곳에 복사해 두세요</div>
+                <div className="key-value-label">지금만 표시됩니다 — 안전한 곳에 복사해 두세요</div>
                 <div className="key-value">{newKeyRaw}</div>
                 <button
                   className="btn btn-sm"

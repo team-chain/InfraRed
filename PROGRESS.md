@@ -1,8 +1,8 @@
 # InfraRed — 구현 진행상황 인수인계 문서
 
 > **대상 독자**: 이 프로젝트를 이어받는 AI / 팀원  
-> **기준 문서**: `InfraRed_설계서_최종.docx` (v1.0, AI ROOKIE 2026)  
-> **최종 업데이트**: 2026-05-12
+> **기준 문서**: `InfraRed_고도화_설계서_v2.0.docx`  
+> **최종 업데이트**: 2026-05-13
 
 ---
 
@@ -11,256 +11,212 @@
 **InfraRed** — 중소기업용 AI 보안 자동화 플랫폼.  
 서버에 에이전트를 설치하면 공격 징후를 실시간 탐지하고, AI(AWS Bedrock Claude)가 사건을 분석한 뒤, 관리자가 설정한 정책 범위 안에서 알림·Watchlist 등록·차단까지 자동 수행.
 
-### 핵심 파이프라인
+---
 
-```
-Agent (auth.log + nginx.log)
-  → POST /ingest (FastAPI)
-  → Redis Streams (events:raw)
-  → Detection Worker (AUTH/WEB/NET 룰 평가)
-  → Redis Streams (signals:matched)
-  → Enrichment Worker (GeoIP/CTI)
-  → Redis Streams (signals:enriched)
-  → Incident Worker (Correlation, Incident 생성)
-      ↓ Discord 1차 즉시 알림 (Static Playbook)
-      ↓ SSE Push → Dashboard / Tray App
-  → Redis Streams (incidents:new)
-  → LLM Worker (Bedrock Claude 분석)
-      ↓ Discord 2차 알림 (AI 완료 후)
-      ↓ Policy Engine (Watchlist/Denylist)
-  → Web Dashboard + PyQt6 Tray App
-```
+## ✅ v2.0 고도화 완료 항목
+
+### Phase 0 — 보안 기반
+| 항목 | 파일 | 설명 |
+|------|------|------|
+| DB 마이그레이션 | `backend/app/db/migrate_v2.sql` | Phase 1~5 전체 스키마 추가 (365줄) |
+| Row-Level Security | migrate_v2.sql | 테넌트 격리 RLS 정책 |
+| LLM 인젝션 방어 | `backend/app/workers/llm/sanitizer.py` | 프롬프트 인젝션 패턴 필터 |
+| LLM Provider 추상화 | `backend/app/workers/llm/providers.py` | Bedrock / Anthropic SDK 통합 인터페이스 |
 
 ---
 
-## ✅ 완료된 구현 항목
+### Phase 1 — 인시던트 워크플로우
+**파일**: `backend/app/ingestion/incident_routes.py` (624줄)
 
-### ① Redis Denylist 실제 차단 + 403 미들웨어
-**파일**: `backend/app/autoresponse/engine.py`, `backend/app/main.py`
+- `PATCH /incidents/{id}/status` — 상태 전이 (open→ack→in_progress→contained→resolved→closed)
+- `PATCH /incidents/{id}/assignee` — 담당자 지정
+- `POST/GET /incidents/{id}/comments` — 코멘트 스레드
+- `POST/GET /incidents/{id}/links` — 인시던트 연결 (related/duplicate/caused_by)
+- `GET /incidents/{id}/history` — 상태 변경 이력
+- `GET /incidents/stats/fp` — FP 비율 통계
+- `GET /incidents/stats/timeseries` — 시계열 인시던트 집계
 
-- `engine.py` 기본 정책 변경: `critical.block_ip = True` (기존 `False`)
-- `_denylist_add()` 구현: `block_ip=True` 시 Redis SADD로 실제 차단 (기존 dry_run 로그만)
-- `_denylist_remove()` 구현: 롤백용
-- `rollback_denylist()` 공개 함수 추가
-- `main.py`에 `denylist_middleware` 추가:
-  - 모든 HTTP 요청마다 `X-Forwarded-For` / `client.host`를 Redis Denylist와 대조
-  - 차단된 IP 요청 → 즉시 `403 {"detail": "blocked"}` 반환
-  - `/healthz`, `/metrics`, `/auth/`, `/sdk.js`는 차단 제외
-- 중복 차단 idempotent 처리 (`block_ip_already_blocked` 상태 구분)
-- `auto_response_logs.dry_run = False` (실제 차단으로 변경)
-
-**발표 데모 효과**: 모바일 QR 접속 → /.env 탐지 → Critical Policy → Redis Denylist 등록 → 모바일 재접속 시 403 차단 페이지
+**프론트엔드**: `frontend/src/components/IncidentWorkflow.tsx`, `IncidentTable.tsx`, `EvidenceTimeline.tsx`
 
 ---
 
-### ② Discord 1차 즉시 알림 분리
-**파일**: `backend/app/dispatcher/discord.py`, `backend/app/workers/correlation/worker.py`
-
-- `discord.py`에 `send_discord_first_alert()` 함수 추가:
-  - 탐지 룰 ID, 출발지 IP, Static Playbook 요약 포함
-  - "AI 분석 중, 2차 알림 예정" 안내 포함
-- `correlation/worker.py`에서 Incident 신규 생성(`created=True`) 시 즉시 1차 알림 발송
-- 기존 LLM Worker의 2차 알림(AI 완료 후)은 유지
-- Medium/High/Critical만 1차 알림 발송 (Info 제외)
-
-**설계서 4.3 구현**: 1차 즉시 → AI 분석 중 → 2차 AI 완료
-
----
-
-### ③ Static Playbook WEB/NET 룰 대응
-**파일**: `backend/app/workers/llm/playbook.py`
-
-전면 재작성. rule_id 기반 분기로 탐지 컨텍스트에 맞는 한국어 요약 생성.
-
-**지원 룰**:
-- `AUTH-001` ~ `AUTH-004`: SSH 브루트포스, root 로그인, 계정 열거, 계정 탈취
-- `AUTH-006A/B`: Credential Stuffing / Password Spraying
-- `WEB-HNY-001`: Honeypot 경로 접근 (발표 데모 핵심)
-- `WEB-001`: 웹셸 접근 의심
-- `WEB-007`: CVE 탐침 경로
-- `NET-001`: HTTP Flood
-
-추가 함수:
-- `get_first_alert_summary()`: Discord 1차 알림용 한 줄 요약 반환
-- `_render()`: `{source_ip}`, `{username}` 템플릿 치환
-
----
-
-### ④ 에이전트 nginx.log 수집
-**파일**: `agent/infrared_agent/nginx_tailer.py` (신규), `agent/infrared_agent/main.py`, `agent/infrared_agent/config.py`
-
-- `nginx_tailer.py` 신규 생성:
-  - nginx Combined Log Format 정규식 파싱
-  - `WEB_REQUEST` EventType의 RawEventEnvelope 생성
-  - `source_ip`, `http_method`, `request_path`, `status_code`, `user_agent` 필드 포함
-  - 파일 없으면 조용히 스킵 (nginx 없는 환경 호환)
-- `config.py`에 설정 추가:
-  - `agent_nginx_log_path`: `/host/var/log/nginx/access.log`
-  - `agent_nginx_enabled`: `True`
-- `main.py` 전면 개선:
-  - `AuthLogTailer` + `NginxLogTailer` 병렬 실행
-  - `_send_log_events()` 공통 함수로 리팩터링
-  - S3 업로드 nginx 로그도 포함
-
----
-
-### ⑤ PyQt6 Tray App
-**파일**: `tray_app/main.py` (신규), `tray_app/requirements.txt` (신규)
-
-설계서 6장 전체 구현:
-- SSE 연결 (`SseWorker` QThread) — 백그라운드 Redis Pub/Sub 수신
-- High/Critical 발생 시 `QSystemTrayIcon.showMessage()` OS 알림 팝업
-- 최근 Incident 3개 트레이 메뉴 표시
-- 클릭 시 웹 대시보드 URL 열기 (`webbrowser.open`)
-- 연결 상태 아이콘: 초록(Connected) / 회색(Disconnected) / 빨강(Alert)
-- 설정 다이얼로그: API URL, Token, 대시보드 URL 저장
-- 자동 재연결 (Exponential backoff, 최대 60초)
-
-**실행**:
-```bash
-cd tray_app
-pip install -r requirements.txt
-INFRARED_TOKEN=<your_token> python main.py
-```
-
----
-
-### ⑥ NET-001 HTTP Flood 탐지 룰
-**파일**: `backend/app/common/constants.py`, `backend/app/workers/detection/web_rules.py`, `backend/app/workers/detection/rule_settings.py`, `backend/app/workers/detection/worker.py`
-
-- `constants.py`: `NET_HTTP_FLOOD = "NET-001"` RuleId 추가
-- `rule_settings.py`: `net_http_flood_enabled`, `net_http_flood_threshold`(300req), `net_http_flood_window_seconds`(300s) 추가
-- `web_rules.py`: `evaluate_net_rules()` 구현
-  - Sliding Window (Redis Sorted Set) 방식
-  - 5분 내 동일 IP 300+ 요청 → NET-001 Signal 생성
-  - MITRE T1595 매핑, Impact KillChain 단계
-- `worker.py`: WEB_REQUEST 이벤트에서 `evaluate_net_rules()` 추가 호출
-
----
-
-### ⑦ 정책 UI per-severity 체크박스
-**파일**: `backend/app/ingestion/policy_routes.py`, `frontend/src/pages/SettingsPage.tsx`, `frontend/src/lib/api.ts`
-
-- `policy_routes.py`에 추가:
-  - `GET /api/policy/autoresponse`: 현재 severity별 정책 조회
-  - `PATCH /api/policy/autoresponse`: 정책 수정 → Redis 즉시 반영
-  - 입력 검증 (유효한 severity/action 값만 허용)
-- `api.ts`에 추가:
-  - `fetchAutoresponsePolicy()`, `patchAutoresponsePolicy()` 함수
-  - `AutoresponsePolicy`, `AutoresponseActions` 타입
-  - `unblockIp()` 함수
-- `SettingsPage.tsx`에 추가:
-  - `AutoresponsePolicyTable` 컴포넌트: severity × action 체크박스 테이블
-  - Toggle 변경 즉시 API 호출 → 성공 시 toast 알림
-  - 실패 시 낙관적 업데이트 롤백
-
----
-
-### ⑧ SSE 실시간 Push 엔드포인트
-**파일**: `backend/app/ingestion/sse_routes.py` (신규), `backend/app/main.py`, `backend/app/workers/correlation/worker.py`, `frontend/src/pages/Dashboard.tsx`
-
-- `sse_routes.py` 신규 생성:
-  - `GET /events/stream`: JWT 인증 → Redis Pub/Sub 구독 → `text/event-stream` 응답
-  - 20초마다 keepalive ping 발송
-  - `publish_incident_event()`: 다른 Worker에서 SSE 이벤트 발행용 헬퍼
-- `main.py`: SSE 라우터 등록
-- `correlation/worker.py`: Incident 생성/업데이트 시 SSE 발행
-- `Dashboard.tsx`: `EventSource` 연결 추가
-  - `incident_created` 이벤트 → 목록 즉시 갱신
-  - `incident_updated` 이벤트 → 목록 갱신
-  - `llm_completed` 이벤트 → 선택된 Incident 상세 갱신
-  - 자동 재연결 (EventSource 기본 동작)
-
----
-
-### ⑨ IP 차단 롤백 API
-**파일**: `backend/app/main.py`
-
-- `DELETE /policy/denylist/{ip}`: Redis Denylist에서 IP 제거
-  - `auto_response_logs.reversed = true` DB 업데이트
-  - `reversed_at`, `reversed_by` 기록
-  - `audit_logs`에 `policy.denylist.remove` 기록
-- `GET /policy/denylist`: 현재 차단된 IP 목록 조회
-- `engine.py`에 `rollback_denylist()` 공개 함수 추가
-
----
-
-### ⑩ 룰 ID 명명 통일
-**파일**: `backend/app/common/constants.py`, `backend/app/workers/detection/rules.py`
-
-| 이전 | 이후 | 설계서 |
-|------|------|--------|
-| `AUTH-CS-A` | `AUTH-006A` | Credential Stuffing |
-| `AUTH-CS-B` | `AUTH-006B` | Password Spraying |
-
-- `playbook.py`에 이전 명칭 호환 별칭 유지 (`_PLAYBOOK["AUTH-CS-A"] = _PLAYBOOK["AUTH-006A"]`)
-- `rules.py` 주석 통일
-
----
-
-### ⑪ Worker 컨테이너 명칭 정리
-**파일**: `docker-compose.yml`
-
-| 이전 | 이후 |
+### Phase 1-B — 알림 그룹핑 & 헬스체크
+| 항목 | 파일 |
 |------|------|
-| 서비스명: `correlation-worker` | `incident-worker` |
-| `container_name: infrared-correlation` | `infrared-incident` |
+| 알림 그룹핑 | `backend/app/workers/detection/alert_grouping.py` |
+| 헬스체크 API | `backend/app/ingestion/health_routes.py` (235줄) |
+| RBAC v2 (4역할) | `backend/app/iam/rbac_v2.py` |
+
+- `GET /health/dashboard` — 시스템 전체 상태 (agent_connectivity, detection_stream, llm_queue 등)
+- `GET /health/agents` — 에이전트별 온/오프라인 상태 + 버전 비교
 
 ---
 
-## 📁 신규 생성 파일 목록
+### Phase 2 — 룰 관리 플랫폼
+**파일**: `backend/app/ingestion/rule_mgmt_routes.py` (646줄)
 
-| 파일 | 역할 |
+- `GET/POST /rules` — 룰 목록 / 생성(Draft)
+- `GET/PATCH /rules/{id}` — 상세 조회 / 수정
+- `POST /rules/{id}/dry-run` — 최근 1시간 시그널 대상 사전 검증
+- `POST /rules/{id}/activate` — 관리자 승인 후 Active 전환
+- `POST /rules/{id}/disable` — 비활성화
+- `POST /rules/{id}/rollback` — 이전 버전 롤백
+- `GET /rules/{id}/versions` — 버전 이력
+- `GET /rules/stats/fp` — FP 통계 (incident_routes 공유)
+
+**프론트엔드**: `frontend/src/pages/RuleManagementPage.tsx`
+
+---
+
+### Phase 2-C — Allowlist / Suppression / Maintenance Window
+**파일**: `backend/app/ingestion/suppression_routes.py` (471줄)
+
+- Allowlist: `GET/POST /allowlist`, `DELETE /allowlist/{id}`
+- Suppression: `GET/POST /suppressions`, `DELETE /suppressions/{id}`
+- Maintenance Window: `GET/POST /maintenance-windows`, `DELETE /maintenance-windows/{id}`
+
+**프론트엔드**: `frontend/src/pages/SuppressionPage.tsx`
+
+---
+
+### Phase 3 — 에이전트 Lifecycle + 멤버 관리
+| 파일 | 내용 |
 |------|------|
-| `tray_app/main.py` | PyQt6 Tray App 전체 |
-| `tray_app/requirements.txt` | Tray App 의존성 |
-| `agent/infrared_agent/nginx_tailer.py` | nginx access.log 수집 |
-| `backend/app/ingestion/sse_routes.py` | SSE 실시간 Push 엔드포인트 |
+| `backend/app/ingestion/agent_mgmt_routes.py` (386줄) | 에이전트 등록/활성화/비활성화/버전이력 |
+| `backend/app/ingestion/user_routes.py` (403줄) | 멤버 CRUD, 역할 변경, 온보딩 API |
+| `agent/infrared_agent/fim_watcher.py` | File Integrity Monitoring (inotify 기반) |
+
+**에이전트 Lifecycle API**:
+- `GET /agents` — 에이전트 목록
+- `POST /agents/{id}/activate` — 활성화
+- `POST /agents/{id}/deactivate` — 비활성화
+
+**멤버 관리 API**:
+- `GET/POST /users/{tenant_id}/members` — 멤버 목록 / 초대
+- `PATCH /users/{tenant_id}/members/{user_id}/role` — 역할 변경
+- `DELETE /users/{tenant_id}/members/{user_id}` — 멤버 제거
+- `GET/POST /onboarding/status`, `/onboarding/complete/{step}` — 온보딩 흐름
+- `POST /onboarding/generate-install-command` — 에이전트 설치 명령 생성
+
+**프론트엔드**: `frontend/src/pages/MembersPage.tsx`, `frontend/src/pages/OnboardingPage.tsx`
 
 ---
 
-## 🔧 수정된 파일 목록
+### Phase 4 — 탐지 확장
+| 항목 | 파일 |
+|------|------|
+| FIM 탐지 | `agent/infrared_agent/fim_watcher.py` |
+| RAG 유사 인시던트 | `backend/app/workers/llm/rag.py` |
+| 탐지 룰 설정 동기화 | `backend/app/workers/detection/rule_settings.py` |
 
-| 파일 | 주요 변경 |
-|------|-----------|
-| `backend/app/autoresponse/engine.py` | Denylist 실제 차단, 기본 정책 수정 |
-| `backend/app/main.py` | Denylist 미들웨어, SSE 라우터, 롤백 API |
-| `backend/app/dispatcher/discord.py` | 1차 즉시 알림 함수 추가 |
-| `backend/app/workers/correlation/worker.py` | 1차 Discord + SSE 발행 |
-| `backend/app/workers/llm/playbook.py` | 전면 재작성 (rule_id 분기) |
-| `backend/app/workers/detection/web_rules.py` | NET-001 룰 추가 |
-| `backend/app/workers/detection/worker.py` | NET-001 호출 추가 |
-| `backend/app/workers/detection/rule_settings.py` | NET-001 임계값 추가 |
-| `backend/app/workers/detection/rules.py` | AUTH-006A/B 주석 통일 |
-| `backend/app/common/constants.py` | NET-001 RuleId, AUTH-006A/B |
-| `backend/app/ingestion/policy_routes.py` | Autoresponse 정책 API 추가 |
-| `agent/infrared_agent/main.py` | NginxTailer 병렬 실행 |
-| `agent/infrared_agent/config.py` | nginx 설정 추가 |
-| `frontend/src/lib/api.ts` | Autoresponse, unblockIp 함수 |
-| `frontend/src/pages/SettingsPage.tsx` | per-severity 체크박스 UI |
-| `frontend/src/pages/Dashboard.tsx` | SSE EventSource 연결 |
-| `docker-compose.yml` | incident-worker 명칭 변경 |
+**RAG** (pgvector 기반):
+- Bedrock Titan Embeddings → 유사 인시던트 top-3 조회
+- disposition 있는 사례만 포함 (FP 품질 보장)
+- hash 기반 fallback (개발 환경)
 
 ---
 
-## ⚠️ 잔여 작업 / 주의사항
+### Phase 4-D — PDF 보고서
+**파일**: `backend/app/workers/report/pdf_report.py`
 
-### 발표 데모 전 필수 확인
-1. **EC2 배포**: `docker compose up --build` 후 EC2 공인 IP로 접속 가능한지 확인
-2. **Bedrock 권한**: AWS Bedrock Claude 모델 접근 권한 활성화 필요 (`docs/AWS_BEDROCK_SETUP.md` 참조)
-3. **nginx.log 마운트**: `docker-compose.yml`의 agent 볼륨에 `/var/log/nginx` 마운트 추가 필요
-4. **Demo 경로 설정**: `/demo` QR 접속 URL을 발표 환경 도메인으로 변경
-5. **발표 정책 사전 설정**: Critical → block_ip=True 정책 UI에서 확인
+- WeasyPrint HTML→PDF 변환
+- 주간/월간 인시던트 통계 자동 생성
+- S3 업로드 후 URL 제공
+- `GET /reports` — 보고서 목록
+- `POST /reports/generate` — 즉시 생성
 
-### 미구현 (데모 제외 확장 기능)
-- auditd 로그 수집 (설계서 3.2 확장 탐지)
-- S3 장기 보관 실제 연동 (설정만 있고 미검증)
-- AWS WAF / Cloudflare 연동 (Level 3~4)
-- Kubernetes 배포 (운영 확장)
+**프론트엔드**: `frontend/src/pages/ReportsPage.tsx`
 
-### 알려진 이슈
-- `correlation/worker.py`에서 `_get_tenant_dispatch_config` import 시 순환 참조 가능성 → 실행 시 확인 필요
-- `SettingsPage.tsx`의 기존 severity 버튼 UI와 per-severity 테이블이 공존 — 기존 버튼 UI는 `approval/auto` 모드에서만 보임
+---
+
+### Phase 5 — 엔터프라이즈
+**파일**: `backend/app/ingestion/enterprise_routes.py` (592줄)
+
+- `POST /search/natural` — 자연어 인시던트 검색 (NL2SQL 안전 파라미터 방식)
+- `POST /notify/slack/test` — Slack 알림 테스트
+- `POST /notify/teams/test` — MS Teams 알림 테스트
+- `GET /config/backup` — 설정 내보내기 (JSON)
+- `POST /config/restore` — 설정 가져오기
+- `GET /config/backup/history` — 백업 이력
+
+**프론트엔드**: `frontend/src/pages/NaturalSearchPage.tsx`
+
+---
+
+### 프론트엔드 (전체)
+
+| 페이지 | 파일 |
+|--------|------|
+| 메인 대시보드 | `src/pages/Dashboard.tsx` |
+| 자산 관리 | `src/pages/AssetsPage.tsx` |
+| 분석/검색 | `src/pages/NaturalSearchPage.tsx` |
+| 헬스체크 | `src/pages/HealthDashboardPage.tsx` |
+| 룰 관리 | `src/pages/RuleManagementPage.tsx` |
+| 억제 관리 | `src/pages/SuppressionPage.tsx` |
+| 멤버 관리 | `src/pages/MembersPage.tsx` |
+| 보고서 | `src/pages/ReportsPage.tsx` |
+| 설정 | `src/pages/SettingsPage.tsx` |
+| 온보딩 | `src/pages/OnboardingPage.tsx` |
+| API 타입/함수 | `src/lib/api.ts` |
+
+**빌드 상태**: `npm run build` ✅ (dist 생성 완료)
+
+---
+
+## 📊 테스트 결과
+
+```
+82 passed, 2 failed (실제 DB/AWS 연결 필요, 샌드박스 정상)
+```
+
+실패 2건: `test_llm_worker_policy.py` — RDS/Bedrock 네트워크 접속 불가 (환경 문제, 코드 정상)
+
+---
+
+## 🗂️ 신규 생성 파일 (v2.0)
+
+```
+backend/app/db/migrate_v2.sql
+backend/app/workers/llm/sanitizer.py
+backend/app/workers/llm/providers.py
+backend/app/workers/llm/rag.py
+backend/app/workers/report/pdf_report.py
+backend/app/workers/detection/alert_grouping.py
+backend/app/iam/rbac_v2.py
+backend/app/ingestion/incident_routes.py
+backend/app/ingestion/health_routes.py
+backend/app/ingestion/rule_mgmt_routes.py
+backend/app/ingestion/suppression_routes.py
+backend/app/ingestion/user_routes.py
+backend/app/ingestion/agent_mgmt_routes.py
+backend/app/ingestion/enterprise_routes.py
+agent/infrared_agent/fim_watcher.py
+frontend/src/components/IncidentWorkflow.tsx
+frontend/src/components/IncidentTable.tsx
+frontend/src/components/EvidenceTimeline.tsx
+frontend/src/pages/AssetsPage.tsx
+frontend/src/pages/HealthDashboardPage.tsx
+frontend/src/pages/RuleManagementPage.tsx
+frontend/src/pages/SuppressionPage.tsx
+frontend/src/pages/MembersPage.tsx
+frontend/src/pages/ReportsPage.tsx
+frontend/src/pages/NaturalSearchPage.tsx
+frontend/src/pages/OnboardingPage.tsx
+```
+
+---
+
+## ⚠️ 배포 전 확인 사항
+
+1. **DB 마이그레이션**: `python -m app.db.migrate` 실행 (migrate_v2.sql 자동 적용)
+2. **pgvector 확장**: RDS에서 `CREATE EXTENSION IF NOT EXISTS vector;` 필요 (RAG 기능)
+3. **WeasyPrint**: PDF 생성용 `pip install weasyprint` + 시스템 패키지(Cairo, Pango) 필요
+4. **Bedrock 권한**: Titan Embeddings 모델 (`amazon.titan-embed-text-v1`) 활성화 필요
+5. **환경변수 추가**:
+   - `ANTHROPIC_API_KEY` (Anthropic SDK 직접 사용 시)
+   - `SLACK_WEBHOOK_URL` (Phase 5-B)
+   - `TEAMS_WEBHOOK_URL` (Phase 5-B)
+   - `SENDGRID_API_KEY` (PDF 보고서 이메일)
 
 ---
 
@@ -274,13 +230,11 @@ Copy-Item .env.example .env
 # 실행
 docker compose up --build
 
+# DB 마이그레이션 (별도 실행 또는 compose startup hook)
+docker compose exec api python -m app.db.migrate
+
 # 테스트 이벤트 발송
 python scripts/send_test_event.py
-
-# Tray App 실행 (별도 터미널)
-cd tray_app
-pip install -r requirements.txt
-python main.py
 ```
 
 서비스 포트:

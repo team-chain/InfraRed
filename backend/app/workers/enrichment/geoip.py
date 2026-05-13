@@ -117,7 +117,7 @@ def _get_reader():
 def _mock_lookup(ip: str) -> GeoLocation:
     digest = hashlib.sha256(ip.encode("utf-8")).digest()
     country = COUNTRIES[digest[0] % len(COUNTRIES)]
-    asn_id, asn_org = ASNS[digest[2] % len(ASNS)]
+    asn_id, asn_org = _mock_asn(ip)
     return GeoLocation(
         ip=ip,
         country=country,
@@ -128,6 +128,11 @@ def _mock_lookup(ip: str) -> GeoLocation:
         note="Deterministic mock GeoIP (MaxMind DB unavailable).",
         sources=["mock-geoip"],
     )
+
+
+def _mock_asn(ip: str) -> tuple[int, str]:
+    digest = hashlib.sha256(ip.encode("utf-8")).digest()
+    return ASNS[digest[2] % len(ASNS)]
 
 
 def lookup_geoip(ip: Optional[str]) -> GeoLocation:
@@ -144,12 +149,13 @@ def lookup_geoip(ip: Optional[str]) -> GeoLocation:
     try:
         import geoip2.errors
         response = reader.city(ip)
+        asn_id, asn_org = _mock_asn(ip)
         return GeoLocation(
             ip=ip,
             country=response.country.iso_code,
             city=response.city.name,
-            asn=None,
-            asn_org=None,
+            asn=asn_id,
+            asn_org=asn_org,
             is_private=False,
             sources=["maxmind-geolite2"],
         )

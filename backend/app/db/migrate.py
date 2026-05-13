@@ -16,6 +16,7 @@ import asyncpg
 
 DB_DIR = Path(__file__).parent
 SCHEMA_SQL = DB_DIR / "schema.sql"
+MIGRATE_V2_SQL = DB_DIR / "migrate_v2.sql"
 SEED_SQL = Path(__file__).parent.parent.parent.parent / "infra" / "postgres" / "seed.sql"
 DEFAULT_SEED_SQL = """
 INSERT INTO tenant_settings (tenant_id)
@@ -55,8 +56,93 @@ def _asyncpg_url(url: str) -> tuple[str, dict[str, object]]:
     return clean_url, kwargs
 
 
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split SQL into statements, respecting $$ dollar-quoted blocks and string literals."""
+    statements: list[str] = []
+    current: list[str] = []
+    i = 0
+    in_dollar_quote = False
+    dollar_tag = ""
+    in_single_quote = False
+
+    while i < len(sql):
+        ch = sql[i]
+
+        # Handle single-quoted strings
+        if in_single_quote:
+            current.append(ch)
+            if ch == "'" and (i + 1 >= len(sql) or sql[i + 1] != "'"):
+                in_single_quote = False
+            elif ch == "'" and sql[i + 1] == "'":
+                current.append(sql[i + 1])
+                i += 2
+                continue
+            i += 1
+            continue
+
+        # Handle dollar-quoted strings (e.g. $$ or $tag$)
+        if in_dollar_quote:
+            # Look for matching closing tag
+            if sql[i:].startswith(dollar_tag):
+                current.append(dollar_tag)
+                i += len(dollar_tag)
+                in_dollar_quote = False
+                dollar_tag = ""
+            else:
+                current.append(ch)
+                i += 1
+            continue
+
+        # Check for start of dollar-quote
+        if ch == "$":
+            end = sql.find("$", i + 1)
+            if end != -1:
+                tag = sql[i : end + 1]
+                # Valid dollar-quote tag: only letters, digits, underscore between $'s
+                inner = tag[1:-1]
+                if all(c.isalnum() or c == "_" for c in inner):
+                    in_dollar_quote = True
+                    dollar_tag = tag
+                    current.append(tag)
+                    i = end + 1
+                    continue
+
+        if ch == "'":
+            in_single_quote = True
+            current.append(ch)
+            i += 1
+            continue
+
+        if ch == ";":
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+            i += 1
+            continue
+
+        # Line comment
+        if ch == "-" and i + 1 < len(sql) and sql[i + 1] == "-":
+            end = sql.find("\n", i)
+            if end == -1:
+                break
+            current.append(sql[i:end])
+            i = end
+            continue
+
+        current.append(ch)
+        i += 1
+
+    # Flush any remaining
+    stmt = "".join(current).strip()
+    if stmt:
+        statements.append(stmt)
+
+    return statements
+
+
 async def _execute_script(conn: asyncpg.Connection, sql: str, label: str) -> None:
-    for statement in (part.strip() for part in sql.split(";")):
+    for statement in _split_sql_statements(sql):
         if not statement:
             continue
         try:
@@ -114,6 +200,11 @@ async def run_migration(database_url: str) -> None:
         schema = SCHEMA_SQL.read_text(encoding="utf-8")
         print("[migrate] applying schema.sql")
         await _execute_script(conn, schema, "schema.sql")
+
+        if MIGRATE_V2_SQL.exists():
+            migrate_v2 = MIGRATE_V2_SQL.read_text(encoding="utf-8")
+            print("[migrate] applying migrate_v2.sql (고도화 v2.0)")
+            await _execute_script(conn, migrate_v2, "migrate_v2.sql")
 
         seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
         print("[migrate] applying seed.sql")

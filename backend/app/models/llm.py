@@ -1,7 +1,7 @@
 """LLM request/response contracts."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -34,7 +34,7 @@ class LLMResult(BaseModel):
     # v5: pending/success/fallback 상태 흐름 (설계서 9.3)
     status: LLMStatus = LLMStatus.PENDING
     failure_reason: Optional[str] = None  # "timeout" | "api_error"
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class LLMPendingRow(BaseModel):

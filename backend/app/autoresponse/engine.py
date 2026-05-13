@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import text
 
 from app.autoresponse.actions import ActionType, build_actions_from_llm, should_auto_execute, should_queue_approval
+from app.common.logging import get_logger
 from app.db.connection import get_session
 from app.db.repositories import save_auto_response_log
 from app.models.auto_response import AutoResponseLog
@@ -28,7 +28,7 @@ from app.redis_kv import keys
 from app.redis_kv.client import get_redis
 
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # 안전장치: 사설/루프백 대역은 절대 차단하지 않음 (설계서 6.7)
 _SAFE_NETWORKS = [
@@ -121,7 +121,7 @@ async def _save_pending_action(tenant_id: str, incident_id: str, action: dict) -
             text("""
                 INSERT INTO pending_actions
                   (tenant_id, incident_id, action_type, target, payload, status)
-                VALUES (:tenant_id, :incident_id, :action_type, :target, :payload::jsonb, 'pending')
+                VALUES (:tenant_id, :incident_id, :action_type, :target, CAST(:payload AS JSONB), 'pending')
                 RETURNING action_id::text
             """),
             {

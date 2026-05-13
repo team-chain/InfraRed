@@ -16,17 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
+from app.common.logging import get_logger
 from app.iam.security import verify_user_token
 from app.redis_kv.client import get_redis
 
 
 router = APIRouter(tags=["sse"])
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _KEEPALIVE_INTERVAL = 20  # 초 — 연결 유지용 ping
 

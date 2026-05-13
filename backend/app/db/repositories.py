@@ -532,7 +532,12 @@ async def save_llm_result(result: LLMResult, tenant_id: str) -> None:
                 "confidence_note": result.confidence_note,
                 "model": result.model,
                 "cached": result.cached,
-                "generated_at": result.generated_at,
+                # asyncpg는 timezone-aware datetime을 요구함 (TIMESTAMPTZ)
+                "generated_at": (
+                    result.generated_at
+                    if result.generated_at.tzinfo is not None
+                    else result.generated_at.replace(tzinfo=timezone.utc)
+                ),
             },
         )
 

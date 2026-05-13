@@ -14,6 +14,8 @@ class AgentSettings(BaseSettings):
     backend_url: str = "http://ingestion:8000/ingest"
     heartbeat_url: str = "http://ingestion:8000/heartbeat"
     heartbeat_interval_sec: int = 30
+    agent_command_poll_interval_seconds: int = 30
+    agent_poll_interval_seconds: float = 2.0
     agent_offset_db: str = "/var/lib/infrared/offset.sqlite"
     agent_auth_log_path: str = "/host/var/log/auth.log"
     # nginx access.log 수집 설정 (설계서 2.1 — auth.log + nginx.log 수집)

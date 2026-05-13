@@ -27,20 +27,29 @@ export function AssetsPage() {
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [tab, setTab] = useState<"assets" | "pending">("assets");
   const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [a, p] = await Promise.all([fetchAssets(), fetchPendingActions()]);
-    setAssets(a);
-    setActions(p);
+    setError(null);
+    try {
+      const [a, p] = await Promise.all([fetchAssets(), fetchPendingActions()]);
+      setAssets(a);
+      setActions(p);
+    } catch (e: any) {
+      setError(e.message || "데이터 로드에 실패했습니다");
+    }
   }
 
   useEffect(() => { load(); }, []);
 
   async function handleApprove(actionId: string) {
     setBusy(actionId);
+    setError(null);
     try {
       await approveAction(actionId);
       setActions(prev => prev.filter(a => a.action_id !== actionId));
+    } catch (e: any) {
+      setError(e.message || "액션 승인에 실패했습니다");
     } finally {
       setBusy(undefined);
     }
@@ -48,9 +57,12 @@ export function AssetsPage() {
 
   async function handleReject(actionId: string) {
     setBusy(actionId);
+    setError(null);
     try {
       await rejectAction(actionId);
       setActions(prev => prev.filter(a => a.action_id !== actionId));
+    } catch (e: any) {
+      setError(e.message || "액션 거부에 실패했습니다");
     } finally {
       setBusy(undefined);
     }
@@ -58,6 +70,7 @@ export function AssetsPage() {
 
   return (
     <div style={{ padding: "1.5rem" }}>
+      {error && <div className="alert" style={{ marginBottom: 12 }}>{error}</div>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
         <h2 style={{ fontSize: 18, fontWeight: 500 }}>자산 관리</h2>
         {actions.length > 0 && (

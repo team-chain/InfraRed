@@ -79,7 +79,7 @@ async def report_command_result(
             await session.execute(
                 text("""
                     UPDATE pending_actions
-                    SET result = :result::jsonb,
+                    SET result = CAST(:result AS JSONB),
                         status = CASE WHEN :success THEN 'executed' ELSE 'failed' END,
                         resolved_at = :executed_at
                     WHERE action_id = (

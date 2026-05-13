@@ -1,4 +1,9 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+// 개발 서버(Vite proxy)에서는 상대 URL("")을 사용해 CORS를 우회합니다.
+// 프로덕션 빌드에서는 VITE_API_BASE_URL 환경변수를 설정하세요.
+const API_BASE_URL =
+  import.meta.env.DEV
+    ? ""
+    : (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000");
 
 export type AuthUser = {
   user_id?: string;
@@ -86,6 +91,22 @@ export type AuditLog = {
   metadata?: Record<string, unknown>;
 };
 
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`${response.status} ${message}`);
+  }
+  return response.json();
+}
+
 export async function login(
   tenantId: string,
   email: string,
@@ -106,22 +127,6 @@ export async function logout(): Promise<void> {
     method: "POST",
     credentials: "include",
   });
-}
-
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`${response.status} ${message}`);
-  }
-  return response.json();
 }
 
 export async function fetchIncidents(): Promise<IncidentListItem[]> {
@@ -168,23 +173,20 @@ export type TenantSettings = {
   response_mode: "manual" | "approval" | "auto";
   auto_block_min_severity: string;
   discord_webhook_url?: string;
+  slack_webhook_url?: string;
+  teams_webhook_url?: string;
   alert_email_to?: string;
-  // AUTH 기존 임계값
   auth_brute_force_threshold: number;
   auth_brute_force_window_sec: number;
   auth_invalid_user_threshold: number;
   auth_fail_then_success_threshold: number;
-  // WEB 기존 임계값
   web_admin_scan_threshold: number;
   web_404_threshold: number;
-  // AUTH-006 비업무시간대 로그인
   off_hours_enabled: boolean;
   off_hours_start_kst: number;
   off_hours_end_kst: number;
-  // AUTH-007 해외 IP 로그인
   foreign_login_enabled: boolean;
   allowed_countries: string;
-  // WEB-005~007 on/off
   web_sql_injection_enabled: boolean;
   web_path_traversal_enabled: boolean;
   web_cve_probe_enabled: boolean;
@@ -222,7 +224,7 @@ export async function revokeApiKey(keyId: string): Promise<void> {
   await apiFetch(`/api-keys/${keyId}`, { method: "DELETE" });
 }
 
-// ── 자동 대응 정책 (per-severity) — 설계서 5.2 ───────────────────────────────── //
+// ── 자동 대응 정책 ────────────────────────────────────────────────────────── //
 
 export type AutoresponseActions = {
   watchlist: boolean;
@@ -296,7 +298,8 @@ export async function fetchAssets(): Promise<Asset[]> {
   return data.items ?? [];
 }
 
-// ── Register (stub — user creation handled by admin/seed) ─────────────────── //
+// ── Register ─────────────────────────────────────────────────────────────── //
+
 export async function register(
   tenantId: string,
   email: string,
@@ -311,4 +314,435 @@ export async function register(
   });
   if (!response.ok) throw new Error("Registration failed");
   return response.json();
+}
+
+// ── Phase 1-A: 인시던트 워크플로우 ───────────────────────────────────────────── //
+
+export type IncidentComment = {
+  id: string;
+  author_id: string;
+  author_email?: string;
+  body: string;
+  created_at: string;
+};
+
+export type IncidentLink = {
+  id: string;
+  source_incident_id: string;
+  target_incident_id: string;
+  link_type: string;
+  target_severity?: string;
+  created_at: string;
+};
+
+export type StatusHistoryItem = {
+  id: string;
+  from_status?: string;
+  to_status: string;
+  changed_by?: string;
+  changed_by_email?: string;
+  reason?: string;
+  changed_at: string;
+};
+
+export async function transitionIncidentStatus(
+  incidentId: string,
+  status: string,
+  options?: { reason?: string; disposition?: string; close_reason?: string },
+): Promise<void> {
+  await apiFetch(`/incidents/${incidentId}/workflow-status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, ...options }),
+  });
+}
+
+export async function updateAssignee(incidentId: string, assigneeId: string | null): Promise<void> {
+  await apiFetch(`/incidents/${incidentId}/assignee`, {
+    method: "PATCH",
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  });
+}
+
+export async function fetchComments(incidentId: string): Promise<IncidentComment[]> {
+  const data = await apiFetch<{ items: IncidentComment[] }>(`/incidents/${incidentId}/comments`);
+  return data.items ?? [];
+}
+
+export async function addComment(incidentId: string, body: string): Promise<IncidentComment> {
+  return apiFetch(`/incidents/${incidentId}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function fetchStatusHistory(incidentId: string): Promise<StatusHistoryItem[]> {
+  const data = await apiFetch<{ items: StatusHistoryItem[] }>(`/incidents/${incidentId}/history`);
+  return data.items ?? [];
+}
+
+export async function fetchLinks(incidentId: string): Promise<IncidentLink[]> {
+  const data = await apiFetch<{ items: IncidentLink[] }>(`/incidents/${incidentId}/links`);
+  return data.items ?? [];
+}
+
+export async function createLink(
+  incidentId: string,
+  targetIncidentId: string,
+  linkType: string,
+): Promise<void> {
+  await apiFetch(`/incidents/${incidentId}/links`, {
+    method: "POST",
+    body: JSON.stringify({ target_incident_id: targetIncidentId, link_type: linkType }),
+  });
+}
+
+// ── Phase 1-B: FP 통계 & 시계열 ──────────────────────────────────────────── //
+
+export type FpStatItem = {
+  rule_id: string;
+  total: number;
+  fp: number;
+  fp_rate_pct: number;    // 0~100 백분율
+  review_recommended: boolean;
+  data_sufficient: boolean;
+};
+
+export async function fetchFpStats(days = 30): Promise<FpStatItem[]> {
+  const data = await apiFetch<{ items: FpStatItem[] }>(`/incidents/stats/fp?days=${days}`);
+  return data.items ?? [];
+}
+
+export type TimeseriesItem = {
+  bucket: string;       // ISO timestamp
+  count: number;
+  critical?: number;
+  high?: number;
+  medium?: number;
+  info?: number;
+};
+
+export async function fetchTimeseries(interval: "1h" | "1d" | "1w" = "1d"): Promise<TimeseriesItem[]> {
+  const hours = interval === "1h" ? 48 : interval === "1d" ? 30 * 24 : 90 * 24;
+  const data = await apiFetch<{ items: TimeseriesItem[] }>(
+    `/incidents/stats/timeseries?hours=${hours}&interval=${interval}`
+  );
+  return data.items ?? [];
+}
+
+// ── Phase 1-C: 헬스체크 ───────────────────────────────────────────────────── //
+
+export type HealthCheckDetail = {
+  ok: boolean;
+  [key: string]: any;
+};
+
+export type HealthDashboard = {
+  overall: "ok" | "warn" | "error";
+  checked_at: string;
+  checks: Record<string, HealthCheckDetail>;
+};
+
+export async function fetchHealthDashboard(): Promise<HealthDashboard> {
+  return apiFetch<HealthDashboard>("/health/dashboard");
+}
+
+export type AgentHealthItem = {
+  agent_id: string;
+  hostname?: string;
+  os?: string;
+  health_status: "online" | "offline" | "never_connected" | "deactivated";
+  agent_version?: string;
+  version_outdated?: boolean;
+  last_heartbeat_at?: string;   // ISO timestamp
+  seconds_offline?: number;
+};
+
+export async function fetchAgentHealth(): Promise<AgentHealthItem[]> {
+  const data = await apiFetch<{ items: AgentHealthItem[] }>("/health/agents");
+  return data.items ?? [];
+}
+
+// ── Phase 2-A: 룰 관리 라이프사이클 ──────────────────────────────────────── //
+
+export type RuleItem = {
+  rule_id: string;
+  name: string;
+  description?: string;
+  mitre_tactic?: string;
+  mitre_technique?: string;
+  condition_expr?: string;
+  severity?: string;
+  status: "draft" | "active" | "disabled" | "archived";
+  version?: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DryRunResult = {
+  matched_sample_count: number;     // 최근 1h 매칭 시그널 수
+  disposition_count: number;        // 판정 완료 건수
+  fp_rate?: number;                 // 0~100 백분율 (데이터 충분 시)
+  review_recommended: boolean;
+  data_sufficient_for_fp: boolean;
+};
+
+export async function fetchRules(status?: string): Promise<RuleItem[]> {
+  const qs = status ? `?status=${status}` : "";
+  const data = await apiFetch<{ items: RuleItem[] }>(`/rules${qs}`);
+  return data.items ?? [];
+}
+
+export async function createRule(payload: {
+  rule_id: string;
+  display_name: string;
+  source: string;
+  mitre_tactic?: string;
+  mitre_technique?: string;
+  severity?: string;
+  change_reason?: string;
+}): Promise<RuleItem> {
+  return apiFetch("/rules", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function dryRunRule(ruleId: string): Promise<DryRunResult> {
+  return apiFetch(`/rules/${ruleId}/dry-run`, { method: "POST" });
+}
+
+export async function activateRule(ruleId: string, changeReason?: string): Promise<void> {
+  await apiFetch(`/rules/${ruleId}/activate`, {
+    method: "POST",
+    body: JSON.stringify({ change_reason: changeReason || "Manual activation" }),
+  });
+}
+
+export async function disableRule(ruleId: string): Promise<void> {
+  await apiFetch(`/rules/${ruleId}/disable`, { method: "POST" });
+}
+
+export async function rollbackRule(
+  ruleId: string,
+  targetVersion: number,
+  reason: string = "Manual rollback",
+): Promise<void> {
+  await apiFetch(`/rules/${ruleId}/rollback`, {
+    method: "POST",
+    body: JSON.stringify({ target_version: targetVersion, reason }),
+  });
+}
+
+// ── Phase 2-C: Allowlist / Suppression / Maintenance Window ───────────────── //
+
+export type AllowlistEntry = {
+  id: string;
+  type: string;   // ip | account | asset_id
+  value: string;
+  reason?: string;
+  created_at: string;
+};
+
+export async function fetchAllowlist(): Promise<AllowlistEntry[]> {
+  const data = await apiFetch<{ items: Array<AllowlistEntry & { entry_type?: string; description?: string }> }>("/allowlist");
+  return (data.items ?? []).map((item) => ({
+    ...item,
+    type: item.type ?? item.entry_type ?? "ip",
+    reason: item.reason ?? item.description,
+  }));
+}
+
+export async function addAllowlistEntry(payload: {
+  type: string;
+  value: string;
+  reason?: string;
+}): Promise<AllowlistEntry> {
+  return apiFetch("/allowlist", {
+    method: "POST",
+    body: JSON.stringify({
+      entry_type: payload.type === "asset_id" ? "asset" : payload.type,
+      value: payload.value,
+      description: payload.reason || undefined,
+    }),
+  });
+}
+
+export async function deleteAllowlistEntry(id: string): Promise<void> {
+  await apiFetch(`/allowlist/${id}`, { method: "DELETE" });
+}
+
+export type SuppressionEntry = {
+  id: string;
+  rule_id?: string;
+  source_ip?: string;
+  reason?: string;
+  expires_at?: string;
+  created_at: string;
+};
+
+export async function fetchSuppressions(): Promise<SuppressionEntry[]> {
+  const data = await apiFetch<{ items: SuppressionEntry[] }>("/suppressions");
+  return data.items ?? [];
+}
+
+export async function addSuppression(payload: {
+  rule_id?: string;
+  source_ip?: string;
+  reason?: string;
+  expires_at?: string;
+}): Promise<SuppressionEntry> {
+  return apiFetch("/suppressions", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function deleteSuppression(id: string): Promise<void> {
+  await apiFetch(`/suppressions/${id}`, { method: "DELETE" });
+}
+
+export type MaintenanceWindow = {
+  id: string;
+  name: string;
+  start_at: string;
+  end_at: string;
+  reason?: string;
+  created_at: string;
+};
+
+export async function fetchMaintenanceWindows(): Promise<MaintenanceWindow[]> {
+  const data = await apiFetch<{ items: MaintenanceWindow[] }>("/maintenance-windows");
+  return data.items ?? [];
+}
+
+export async function addMaintenanceWindow(payload: {
+  name: string;
+  start_at: string;
+  end_at: string;
+  reason?: string;
+}): Promise<MaintenanceWindow> {
+  return apiFetch("/maintenance-windows", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function deleteMaintenanceWindow(id: string): Promise<void> {
+  await apiFetch(`/maintenance-windows/${id}`, { method: "DELETE" });
+}
+
+// ── Phase 3-C: 멤버십 관리 (RBAC v2) ──────────────────────────────────────── //
+
+export type Member = {
+  user_id: string;
+  email: string;
+  role: string;
+  created_at?: string;
+  last_login_at?: string;
+};
+
+export async function fetchTenantMembers(tenantId: string): Promise<Member[]> {
+  const data = await apiFetch<{ items: Member[] }>(`/users/${tenantId}/members`);
+  return data.items ?? [];
+}
+
+export async function inviteMember(tenantId: string, email: string, role: string): Promise<void> {
+  await apiFetch(`/users/${tenantId}/invite`, {
+    method: "POST",
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export async function changeMemberRole(
+  tenantId: string,
+  userId: string,
+  role: string,
+): Promise<void> {
+  await apiFetch(`/users/${tenantId}/members/${userId}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function removeMember(tenantId: string, userId: string): Promise<void> {
+  await apiFetch(`/users/${tenantId}/members/${userId}`, { method: "DELETE" });
+}
+
+// ── Phase 2-D: 온보딩 ────────────────────────────────────────────────────── //
+
+export type OnboardingStatus = {
+  current_step: number;
+  completed_steps: number[];
+  total_steps: number;
+  steps: Array<{ step: number; name: string; completed: boolean }>;
+  agent_connected: boolean;
+  completed: boolean;
+};
+
+export async function fetchOnboardingStatus(): Promise<OnboardingStatus> {
+  return apiFetch("/onboarding/status");
+}
+
+export async function completeOnboardingStep(step: number): Promise<void> {
+  await apiFetch(`/onboarding/complete/${step}`, { method: "POST" });
+}
+
+export async function generateInstallCommand(): Promise<{ command: string; token: string }> {
+  return apiFetch("/onboarding/generate-install-command", { method: "POST" });
+}
+
+// ── Phase 4-D: 보고서 ────────────────────────────────────────────────────── //
+
+export type ReportItem = {
+  id: string;
+  report_type: "weekly" | "monthly";
+  period_start?: string;
+  period_end?: string;
+  s3_key?: string;
+  download_url?: string;
+  file_size_bytes?: number;
+  email_sent_to?: string;
+  generated_at: string;
+};
+
+export async function fetchReports(): Promise<ReportItem[]> {
+  const data = await apiFetch<{ items: ReportItem[] }>("/reports");
+  return data.items ?? [];
+}
+
+export async function generateReport(reportType: "weekly" | "monthly"): Promise<ReportItem> {
+  return apiFetch(`/reports/generate?report_type=${reportType}`, { method: "POST" });
+}
+
+// ── Phase 5-A: 자연어 검색 ───────────────────────────────────────────────── //
+
+export async function naturalSearch(
+  query: string,
+  limit = 20,
+): Promise<IncidentListItem[]> {
+  const data = await apiFetch<{ items: IncidentListItem[]; parsed_params?: Record<string, string>; count?: number }>(
+    "/search/natural",
+    { method: "POST", body: JSON.stringify({ query, limit }) }
+  );
+  return data.items ?? [];
+}
+
+// ── Phase 5-B: 알림 연동 테스트 ──────────────────────────────────────────── //
+
+export async function testSlackNotification(message: string): Promise<{ sent: boolean }> {
+  return apiFetch("/notify/slack/test", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+export async function testTeamsNotification(message: string): Promise<{ sent: boolean }> {
+  return apiFetch("/notify/teams/test", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+// ── Phase 5-C: 설정 백업/복원 ────────────────────────────────────────────── //
+
+export async function exportConfig(): Promise<Record<string, unknown>> {
+  return apiFetch("/config/backup");
+}
+
+export async function importConfig(config: Record<string, unknown>): Promise<{ imported: string[]; errors: string[] }> {
+  return apiFetch("/config/restore", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
 }

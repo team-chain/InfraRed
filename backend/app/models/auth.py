@@ -26,5 +26,5 @@ class TokenResponse(BaseModel):
 class StatusUpdateRequest(BaseModel):
     status: str = Field(
         ...,
-        pattern="^(open|acknowledged|resolved|false_positive)$",
+        pattern="^(open|acknowledged|in_progress|contained|resolved|closed|false_positive)$",
     )

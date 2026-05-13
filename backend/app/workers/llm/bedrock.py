@@ -10,7 +10,7 @@ import boto3
 from app.common.logging import get_logger
 from app.config import get_settings
 from app.models.llm import LLMResult
-from app.workers.llm.playbook import summarize_with_playbook
+from app.workers.llm.playbook import playbook_from_contract, summarize_with_playbook
 
 
 log = get_logger(__name__)
@@ -164,7 +164,7 @@ def _invoke_bedrock(contract: dict[str, Any]) -> dict[str, Any]:
 
 async def analyze_with_bedrock(contract: dict[str, Any]) -> LLMResult:
     settings = get_settings()
-    fallback = summarize_with_playbook(contract)
+    fallback = playbook_from_contract(contract)
     if not settings.llm_enabled:
         return fallback
 

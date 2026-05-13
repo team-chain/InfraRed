@@ -1,19 +1,25 @@
 """InfraRed agent entrypoint.
 
-수집 소스 (설계서 2.1):
-  - auth.log    → SSH 이상 행위 탐지 (AUTH-001~006)
-  - nginx.log   → 웹 공격 탐지 (WEB-HNY-001, WEB-001~007, NET-001)
+수집 소스 (설계서 v2.0 Phase 4-A):
+  - auth.log       → SSH 이상 행위 탐지 (AUTH-001~006)
+  - nginx.log      → 웹 공격 탐지 (WEB-HNY-001, WEB-001~007, NET-001)
+  - FIM 감시       → authorized_keys / sshd_config / cron / sudoers 변경 감지
+  - auditd (opt)   → 의심 프로세스 실행 / 민감 파일 접근 (privileged mode)
+  - Windows (opt)  → 이벤트 ID 4625/4720 (Windows 에이전트)
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
+import uuid
 
 from infrared_agent.client import AgentClient
 from infrared_agent.commander import Commander
 from infrared_agent.config import AgentSettings
+from infrared_agent.fim_watcher import AuditdWatcher, FIMWatcher, WindowsEventLogWatcher
 from infrared_agent.nginx_tailer import NginxLogTailer
 from infrared_agent.offset_store import OffsetStore
 from infrared_agent.s3_uploader import S3LogUploader
@@ -71,16 +77,28 @@ async def run() -> None:
     commander = Commander(settings, client)
     s3 = S3LogUploader(settings)
 
+    # Phase 4-A: FIM / auditd / Windows 감시자 초기화
+    fim_enabled = getattr(settings, "agent_fim_enabled", True)
+    fim_watcher = FIMWatcher(settings) if fim_enabled else None
+    auditd_enabled = getattr(settings, "agent_auditd_enabled", False)
+    auditd_watcher = AuditdWatcher(settings) if auditd_enabled else None
+    windows_watcher = WindowsEventLogWatcher(settings)
+
     last_heartbeat = 0.0
     last_command_poll = 0.0
+    last_fim_check = 0.0
     last_event_id: str | None = None
 
+    _fim_check_interval = getattr(settings, "agent_fim_interval_seconds", 60)
+
     log.info(
-        "agent_started auth_log=%s nginx_log=%s nginx_enabled=%s s3=%s",
+        "agent_started auth_log=%s nginx_log=%s nginx_enabled=%s s3=%s fim=%s auditd=%s",
         settings.agent_auth_log_path,
         settings.agent_nginx_log_path,
         settings.agent_nginx_enabled,
         settings.s3_enabled,
+        fim_enabled,
+        auditd_enabled,
     )
 
     try:
@@ -106,7 +124,7 @@ async def run() -> None:
 
             # -- Heartbeat (설정 간격마다) ---------------------------------------
             now = time.monotonic()
-            if now - last_heartbeat >= settings.agent_heartbeat_interval_seconds:
+            if now - last_heartbeat >= settings.heartbeat_interval_sec:
                 try:
                     await client.send_heartbeat()
                     last_heartbeat = now
@@ -116,10 +134,45 @@ async def run() -> None:
             # -- Command poll ---------------------------------------------------
             if now - last_command_poll >= settings.agent_command_poll_interval_seconds:
                 try:
-                    await commander.poll()
+                    await commander.poll_and_execute()
                     last_command_poll = now
                 except Exception:
                     log.exception("command poll failed")
+
+            # -- Phase 4-A: FIM 감시 (60초 간격) --------------------------------
+            if fim_watcher and (now - last_fim_check >= _fim_check_interval):
+                try:
+                    changes = fim_watcher.check_changes()
+                    for change in changes:
+                        envelope = _build_fim_envelope(change, settings)
+                        await client.send_event(envelope)
+                        log.warning(
+                            "fim_change_detected rule=%s path=%s",
+                            change.get("rule_id"),
+                            change.get("path"),
+                        )
+                    last_fim_check = now
+                except Exception:
+                    log.exception("fim check failed")
+
+            # -- Phase 4-A: auditd 감시 (있으면) ---------------------------------
+            if auditd_watcher:
+                try:
+                    auditd_events = auditd_watcher.read_new_events()
+                    for evt in auditd_events:
+                        envelope = _build_fim_envelope(evt, settings)
+                        await client.send_event(envelope)
+                except Exception:
+                    log.exception("auditd watch failed")
+
+            # -- Phase 4-A: Windows Event Log ------------------------------------
+            try:
+                win_events = windows_watcher.read_new_events()
+                for evt in win_events:
+                    envelope = _build_fim_envelope(evt, settings)
+                    await client.send_event(envelope)
+            except Exception:
+                pass  # Windows 이벤트는 선택적
 
             await asyncio.sleep(settings.agent_poll_interval_seconds)
 
@@ -130,6 +183,26 @@ async def run() -> None:
             await client.close()
         except Exception:
             pass
+
+
+def _build_fim_envelope(change: dict, settings: AgentSettings) -> dict:
+    """FIM/auditd 이벤트를 Ingestion API 형식으로 변환."""
+    return {
+        "event_id": f"FIM-{uuid.uuid4().hex[:12]}",
+        "agent_id": settings.agent_id,
+        "tenant_id": settings.tenant_id,
+        "asset_id": settings.asset_id,
+        "event_type": change.get("event_type", "fim_change"),
+        "timestamp": change.get("detected_at"),
+        "raw_source": "fim",
+        "rule_id": change.get("rule_id"),
+        "mitre_technique": change.get("mitre_technique"),
+        "description": change.get("description"),
+        "payload": {
+            k: v for k, v in change.items()
+            if k not in {"detected_at", "event_type", "rule_id", "mitre_technique", "description"}
+        },
+    }
 
 
 def main() -> None:

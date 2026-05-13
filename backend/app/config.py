@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://infrared:infrared-dev-pw@postgres:5432/infrared"
     )
 
-    llm_provider: Literal["auto", "static", "bedrock"] = "auto"
+    llm_provider: Literal["auto", "static", "bedrock", "anthropic"] = "auto"
     bedrock_region: str = "us-east-1"
     bedrock_model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
     aws_access_key_id: str = ""
@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     aws_session_token: str = ""
     aws_profile: str = ""
     llm_cache_ttl_seconds: int = 3600
+
+    # Anthropic Direct (Phase 3-A: 비용 최적화 환경)
+    anthropic_api_key: str = ""
+    anthropic_model_id: str = "claude-haiku-4-5-20251001"
+
+    # SendGrid (Phase 4-D: 리포트 메일)
+    sendgrid_api_key: str = ""
+    report_email_from: str = "report@infrared.local"
+
+    # AWS S3 (Phase 4-D: 리포트 저장)
+    s3_bucket: str = ""
+    s3_region: str = "ap-northeast-2"
 
     discord_webhook_url: str = ""
     smtp_host: str = ""
@@ -126,9 +138,13 @@ class Settings(BaseSettings):
             return False
         if self.llm_provider == "bedrock":
             return True
+        if self.llm_provider == "anthropic":
+            return bool(self.anthropic_api_key)
+        # auto: Bedrock 또는 Anthropic 설정 있으면 활성화
         return bool(
             (self.aws_access_key_id and self.aws_secret_access_key)
             or self.aws_profile
+            or self.anthropic_api_key
         )
 
 
