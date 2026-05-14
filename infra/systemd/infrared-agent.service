@@ -1,0 +1,76 @@
+# InfraRed Security Agent — systemd 유닛 파일
+# 설계서 v2.0 Phase 3-D: 에이전트 Lifecycle 관리 / Cgroup 리소스 제한
+#
+# 설치:
+#   sudo cp infra/systemd/infrared-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infrared-agent
+#
+# 상태 확인:
+#   sudo systemctl status infrared-agent
+#   journalctl -u infrared-agent -f
+
+[Unit]
+Description=InfraRed Security Agent
+Documentation=https://github.com/your-org/infrared
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# 실행 경로 — pip install 또는 venv 환경에 맞게 조정
+ExecStart=/usr/local/bin/infrared-agent
+
+# 환경 변수 파일 (배포 환경에 맞게 경로 수정)
+EnvironmentFile=/etc/infrared/agent.env
+
+# 작업 디렉토리 및 상태 파일 경로
+WorkingDirectory=/var/lib/infrared
+StateDirectory=infrared
+RuntimeDirectory=infrared
+
+# ── 재시작 정책 ─────────────────────────────────────────────────────────────
+# 비정상 종료 시 자동 재시작
+Restart=on-failure
+RestartSec=5s
+
+# StartLimitInterval=200초 내에 StartLimitBurst=5회 연속 실패 시 재시작 중단
+# → 에이전트는 main.py에서 SIGTERM 수신 시 status=deactivated heartbeat 전송
+StartLimitInterval=200
+StartLimitBurst=5
+
+# 최종 실패(Deactivated) 시 Discord / 관제 시스템에 알림이 오도록
+# 백엔드는 heartbeat 90초 무응답을 감지해 offline 처리함
+ExecStopPost=/bin/sh -c 'systemctl is-failed infrared-agent && logger -t infrared-agent "DEACTIVATED: StartLimitBurst exceeded (5 consecutive failures)" || true'
+
+# ── Cgroup 리소스 제한 (설계서 명세) ────────────────────────────────────────
+# CPU: 전체의 5% 이하 사용 (고객사 서버 부하 최소화)
+CPUQuota=5%
+
+# Memory: 최대 100 MiB (초과 시 OOM kill → Restart 트리거)
+MemoryMax=100M
+MemorySwapMax=0        # 스왑 사용 금지 (실시간 탐지 응답성 유지)
+
+# I/O: 낮은 우선순위 (고객사 서버 I/O 영향 최소화)
+IOWeight=10
+
+# ── 보안 강화 (최소 권한 원칙) ───────────────────────────────────────────────
+# root 권한 없이 실행 (auth.log 읽기 권한은 adm 그룹으로 해결)
+User=infrared-agent
+Group=adm
+
+# 불필요한 권한 제거
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/infrared /run/infrared
+ReadOnlyPaths=/var/log
+PrivateTmp=yes
+PrivateDevices=yes
+
+# 네트워크: 아웃바운드(백엔드 API 호출)만 허용
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

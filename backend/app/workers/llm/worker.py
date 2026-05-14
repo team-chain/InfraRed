@@ -14,7 +14,7 @@ from app.models.llm import LLMPendingRow
 from app.redis_kv import streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.autoresponse.engine import run_autoresponse
-from app.dispatcher.discord import send_discord_autoresponse_result
+from app.dispatcher.discord import send_discord_response_result
 from app.workers.llm.service import analyze_contract_with_cache
 
 
@@ -91,6 +91,18 @@ async def process_incident(
         await update_llm_status(incident_id, status="fallback", failure_reason=failure_reason)
 
     dispatch_attempted = severity in AUTO_ANALYZE_SEVERITIES and not refresh
+
+    # ── 중복 발송 방지: 동일 incident_id에 대해 최초 1회만 dispatch ────────────
+    # save_or_merge_incident가 여러 시그널을 같은 incident로 합칠 때
+    # refresh=false 메시지가 중복 발행될 수 있음 → Redis NX로 차단
+    if dispatch_attempted:
+        _redis = get_redis()
+        _dispatch_key = f"dispatch:done:{incident_id}"
+        _is_first = await _redis.set(_dispatch_key, "1", nx=True, ex=3600)
+        if not _is_first:
+            dispatch_attempted = False
+            log.info("dispatch_dedup_skipped", incident_id=incident_id)
+
     discord_sent = False
     email_sent = False
     autoresponse_summary: dict = {}
@@ -116,10 +128,11 @@ async def process_incident(
             mode = autoresponse_summary.get("mode", "manual")
             if mode in ("auto", "approval"):
                 try:
-                    await send_discord_autoresponse_result(
+                    await send_discord_response_result(
                         incident_id=incident_id,
                         tenant_id=tenant_id,
                         severity=severity,
+                        asset_name=incident.get("asset_id", ""),
                         mode=mode,
                         actions_taken=autoresponse_summary.get("actions_taken", []),
                         actions_queued=autoresponse_summary.get("actions_queued", []),

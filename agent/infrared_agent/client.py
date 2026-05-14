@@ -30,18 +30,33 @@ class AgentClient:
         )
         response.raise_for_status()
 
-    async def send_heartbeat(self, last_event_id: str | None = None) -> None:
+    async def send_heartbeat(
+        self,
+        last_event_id: str | None = None,
+        status: str = "online",
+        deactivation_reason: str | None = None,
+    ) -> None:
+        """Heartbeat 전송.
+
+        설계서 v2.0 Phase 3-D:
+        - status="online"      : 정상 Heartbeat (기본값)
+        - status="deactivated" : StartLimitBurst(5회) 초과 종료 직전 최종 보고
+        """
+        payload: dict = {
+            "tenant_id": self.settings.tenant_id,
+            "agent_id": self.settings.agent_id,
+            "asset_id": self.settings.asset_id,
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "agent_version": __version__,
+            "pending_buffered_events": 0,
+            "last_event_id": last_event_id,
+            "status": status,
+        }
+        if deactivation_reason:
+            payload["deactivation_reason"] = deactivation_reason
         response = await self._client.post(
             self.settings.heartbeat_url,
             headers=self._headers,
-            json={
-                "tenant_id": self.settings.tenant_id,
-                "agent_id": self.settings.agent_id,
-                "asset_id": self.settings.asset_id,
-                "sent_at": datetime.now(timezone.utc).isoformat(),
-                "agent_version": __version__,
-                "pending_buffered_events": 0,
-                "last_event_id": last_event_id,
-            },
+            json=payload,
         )
         response.raise_for_status()

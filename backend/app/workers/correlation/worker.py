@@ -30,7 +30,7 @@ from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.correlation.builder import build_incident
 from app.workers.dlq import reclaim_pending
-from app.workers.llm.playbook import get_first_alert_summary
+from app.workers.llm.playbook import get_first_alert_summary, get_rule_title
 from app.ingestion.sse_routes import publish_incident_event
 
 
@@ -130,6 +130,8 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
                 tenant_id=incident.tenant_id,
                 severity=incident.severity,
                 rule_id=signal.rule_id.value,
+                rule_description=get_rule_title(signal.rule_id.value),
+                asset_name=getattr(signal, "asset_id", "") or "",
                 source_ip=signal.source_ip,
                 playbook_summary=playbook_summary,
                 webhook_url=discord_url,

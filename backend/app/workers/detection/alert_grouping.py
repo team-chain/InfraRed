@@ -166,6 +166,101 @@ async def mark_group_notified(group_id: str) -> None:
         log.warning("mark_group_notified_failed", group_id=group_id, error=str(exc))
 
 
+_MULTI_IP_THRESHOLD = 3          # 이 이상의 서로 다른 IP가 공격하면 상관관계 경보
+_MULTI_IP_WINDOW_SECONDS = 300  # 5분 윈도우 (기본 그룹 윈도우와 동일)
+
+
+def _multi_ip_key(tenant_id: str, asset_id: str) -> str:
+    """복수 IP 추적용 Redis 키."""
+    return f"multi_ip:{tenant_id}:{asset_id}"
+
+
+async def check_and_record_multi_ip(
+    tenant_id: str,
+    asset_id: str,
+    source_ip: str,
+    incident_id: str,
+) -> dict | None:
+    """단시간 내 복수 IP가 동일 자산을 공격하는 상관관계를 감지한다.
+
+    Redis Hash 에 {ip: first_seen_at ISO 문자열} 형태로 기록하고,
+    서로 다른 IP 수가 _MULTI_IP_THRESHOLD 에 도달하면 아래 dict 를 반환.
+    미달이면 None 반환.
+
+    반환 dict 구조 (send_discord_correlation_alert 파라미터와 1:1 대응):
+        {
+            "source_ips"     : list[str],   # 공격 참여 IP 전체 목록
+            "first_seen_at"  : str,          # 최초 탐지 ISO 8601
+            "last_seen_at"   : str,          # 최근 탐지 ISO 8601
+            "duration_sec"   : int,          # first → last 경과 시간(초)
+            "incident_count" : int,          # 지금까지 누적된 IP 수 (= len(source_ips))
+        }
+
+    이미 임계값을 초과한 상태에서 새 IP 가 추가되면 계속 반환하므로
+    호출 측에서 중복 경보 방지 로직(예: notified 플래그 등)을 관리해야 한다.
+    """
+    redis = get_redis()
+    key = _multi_ip_key(tenant_id, asset_id)
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    # IP → first_seen_at 기록 (이미 있으면 덮어쓰지 않음)
+    existing = await redis.hget(key, source_ip)
+    if not existing:
+        await redis.hset(key, source_ip, now_iso)
+        await redis.expire(key, _MULTI_IP_WINDOW_SECONDS * 2)
+
+    # 전체 IP 목록 조회
+    all_entries: dict[bytes, bytes] = await redis.hgetall(key)
+
+    # TTL 만료 체크 — 윈도우 밖 항목 제거
+    cutoff = now.timestamp() - _MULTI_IP_WINDOW_SECONDS
+    active_ips: dict[str, str] = {}
+    for ip_b, seen_b in all_entries.items():
+        ip = ip_b.decode() if isinstance(ip_b, bytes) else ip_b
+        seen_str = seen_b.decode() if isinstance(seen_b, bytes) else seen_b
+        try:
+            seen_ts = datetime.fromisoformat(seen_str).timestamp()
+        except (ValueError, TypeError):
+            seen_ts = now.timestamp()
+        if seen_ts >= cutoff:
+            active_ips[ip] = seen_str
+        else:
+            await redis.hdel(key, ip)
+
+    if len(active_ips) < _MULTI_IP_THRESHOLD:
+        return None
+
+    # 임계값 초과 → 상관관계 경보 데이터 조립
+    seen_times = []
+    for seen_str in active_ips.values():
+        try:
+            seen_times.append(datetime.fromisoformat(seen_str))
+        except (ValueError, TypeError):
+            seen_times.append(now)
+
+    first_dt = min(seen_times)
+    last_dt  = max(seen_times)
+    duration = int((last_dt - first_dt).total_seconds())
+
+    log.warning(
+        "multi_ip_correlation_detected",
+        tenant_id=tenant_id,
+        asset_id=asset_id,
+        ip_count=len(active_ips),
+        duration_sec=duration,
+        incident_id=incident_id,
+    )
+
+    return {
+        "source_ips":    sorted(active_ips.keys()),
+        "first_seen_at": first_dt.isoformat(),
+        "last_seen_at":  last_dt.isoformat(),
+        "duration_sec":  duration,
+        "incident_count": len(active_ips),
+    }
+
+
 async def list_alert_groups(tenant_id: str, limit: int = 50) -> list[dict]:
     """현재 활성 알림 그룹 목록."""
     async with get_session() as session:

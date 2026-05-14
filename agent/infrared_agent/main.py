@@ -10,9 +10,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
+import signal
 import time
 import uuid
 
@@ -28,6 +28,12 @@ from infrared_agent.tailer import AuthLogTailer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("infrared_agent")
+
+# 설계서 v2.0 Phase 3-D: StartLimitBurst=5 대응
+# systemd가 이 값을 초과하는 연속 실패를 감지하면 재시작을 중단(Deactivated)함.
+# Python 레벨에서도 동일 임계값을 추적해 조기 경고 로그를 남기고
+# 종료 직전 status=deactivated heartbeat를 전송함.
+_CONSECUTIVE_FAILURE_LIMIT = 5
 
 
 async def _send_log_events(
@@ -61,6 +67,24 @@ async def _send_log_events(
     return last_event_id
 
 
+async def _report_deactivated(client: AgentClient, reason: str) -> None:
+    """설계서 v2.0 Phase 3-D: 종료 직전 status=deactivated heartbeat 전송.
+
+    systemd의 StartLimitBurst(5회 연속 실패) 초과로 재시작이 중단될 때,
+    백엔드 DB에 deactivated_at / deactivation_reason을 기록해
+    헬스체크 대시보드에 즉시 반영함.
+    """
+    try:
+        log.warning("agent_deactivating reason=%s", reason)
+        await client.send_heartbeat(
+            status="deactivated",
+            deactivation_reason=reason,
+        )
+        log.warning("deactivated_heartbeat_sent")
+    except Exception:
+        log.exception("deactivated_heartbeat_failed — backend may mark agent offline via timeout")
+
+
 async def run() -> None:
     settings = AgentSettings()
     if not settings.agent_token:
@@ -91,6 +115,27 @@ async def run() -> None:
 
     _fim_check_interval = getattr(settings, "agent_fim_interval_seconds", 60)
 
+    # 설계서 v2.0 Phase 3-D: 연속 실패 카운터
+    consecutive_failures = 0
+
+    # ── SIGTERM / SIGINT 핸들러 ────────────────────────────────────────────────
+    # systemd가 StartLimitBurst(5회) 초과 후 SIGTERM을 보내기 전,
+    # 또는 운영자가 `systemctl stop`을 실행할 때 호출됨.
+    # 최종 heartbeat(status=deactivated)를 전송해 헬스체크 대시보드에 즉시 반영.
+    shutdown_event = asyncio.Event()
+
+    def _handle_shutdown(sig_name: str) -> None:
+        log.info("signal_received signal=%s initiating_graceful_shutdown", sig_name)
+        shutdown_event.set()
+
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, _handle_shutdown, sig.name)
+        except (NotImplementedError, RuntimeError):
+            # Windows 환경에서는 add_signal_handler 미지원 — 무시
+            pass
+
     log.info(
         "agent_started auth_log=%s nginx_log=%s nginx_enabled=%s s3=%s fim=%s auditd=%s",
         settings.agent_auth_log_path,
@@ -102,83 +147,119 @@ async def run() -> None:
     )
 
     try:
-        while True:
-            # ── auth.log 수집 ─────────────────────────────────────────────────
-            ev_id = await _send_log_events(
-                auth_tailer, client, store,
-                settings.agent_auth_log_path,
-                s3=s3, s3_enabled=settings.s3_enabled,
-            )
-            if ev_id:
-                last_event_id = ev_id
+        while not shutdown_event.is_set():
+            loop_failed = False
 
-            # -- nginx.log 수집 ------------------------------------------------
-            if nginx_tailer is not None:
+            try:
+                # ── auth.log 수집 ─────────────────────────────────────────────
                 ev_id = await _send_log_events(
-                    nginx_tailer, client, store,
-                    settings.agent_nginx_log_path,
+                    auth_tailer, client, store,
+                    settings.agent_auth_log_path,
                     s3=s3, s3_enabled=settings.s3_enabled,
                 )
                 if ev_id:
                     last_event_id = ev_id
 
-            # -- Heartbeat (설정 간격마다) ---------------------------------------
-            now = time.monotonic()
-            if now - last_heartbeat >= settings.heartbeat_interval_sec:
-                try:
-                    await client.send_heartbeat()
-                    last_heartbeat = now
-                except Exception:
-                    log.exception("heartbeat failed")
+                # -- nginx.log 수집 --------------------------------------------
+                if nginx_tailer is not None:
+                    ev_id = await _send_log_events(
+                        nginx_tailer, client, store,
+                        settings.agent_nginx_log_path,
+                        s3=s3, s3_enabled=settings.s3_enabled,
+                    )
+                    if ev_id:
+                        last_event_id = ev_id
 
-            # -- Command poll ---------------------------------------------------
-            if now - last_command_poll >= settings.agent_command_poll_interval_seconds:
-                try:
-                    await commander.poll_and_execute()
-                    last_command_poll = now
-                except Exception:
-                    log.exception("command poll failed")
+                # -- Heartbeat (설정 간격마다) -----------------------------------
+                now = time.monotonic()
+                if now - last_heartbeat >= settings.heartbeat_interval_sec:
+                    try:
+                        await client.send_heartbeat(last_event_id=last_event_id)
+                        last_heartbeat = now
+                    except Exception:
+                        log.exception("heartbeat failed")
 
-            # -- Phase 4-A: FIM 감시 (60초 간격) --------------------------------
-            if fim_watcher and (now - last_fim_check >= _fim_check_interval):
-                try:
-                    changes = fim_watcher.check_changes()
-                    for change in changes:
-                        envelope = _build_fim_envelope(change, settings)
-                        await client.send_event(envelope)
-                        log.warning(
-                            "fim_change_detected rule=%s path=%s",
-                            change.get("rule_id"),
-                            change.get("path"),
-                        )
-                    last_fim_check = now
-                except Exception:
-                    log.exception("fim check failed")
+                # -- Command poll -----------------------------------------------
+                if now - last_command_poll >= settings.agent_command_poll_interval_seconds:
+                    try:
+                        await commander.poll_and_execute()
+                        last_command_poll = now
+                    except Exception:
+                        log.exception("command poll failed")
 
-            # -- Phase 4-A: auditd 감시 (있으면) ---------------------------------
-            if auditd_watcher:
+                # -- Phase 4-A: FIM 감시 (60초 간격) ----------------------------
+                if fim_watcher and (now - last_fim_check >= _fim_check_interval):
+                    try:
+                        changes = fim_watcher.check_changes()
+                        for change in changes:
+                            envelope = _build_fim_envelope(change, settings)
+                            await client.send_event(envelope)
+                            log.warning(
+                                "fim_change_detected rule=%s path=%s",
+                                change.get("rule_id"),
+                                change.get("path"),
+                            )
+                        last_fim_check = now
+                    except Exception:
+                        log.exception("fim check failed")
+
+                # -- Phase 4-A: auditd 감시 (있으면) -----------------------------
+                if auditd_watcher:
+                    try:
+                        auditd_events = auditd_watcher.read_new_events()
+                        for evt in auditd_events:
+                            envelope = _build_fim_envelope(evt, settings)
+                            await client.send_event(envelope)
+                    except Exception:
+                        log.exception("auditd watch failed")
+
+                # -- Phase 4-A: Windows Event Log --------------------------------
                 try:
-                    auditd_events = auditd_watcher.read_new_events()
-                    for evt in auditd_events:
+                    win_events = windows_watcher.read_new_events()
+                    for evt in win_events:
                         envelope = _build_fim_envelope(evt, settings)
                         await client.send_event(envelope)
                 except Exception:
-                    log.exception("auditd watch failed")
+                    pass  # Windows 이벤트는 선택적
 
-            # -- Phase 4-A: Windows Event Log ------------------------------------
-            try:
-                win_events = windows_watcher.read_new_events()
-                for evt in win_events:
-                    envelope = _build_fim_envelope(evt, settings)
-                    await client.send_event(envelope)
+                # 정상 실행 — 연속 실패 카운터 초기화
+                consecutive_failures = 0
+
             except Exception:
-                pass  # Windows 이벤트는 선택적
+                loop_failed = True
+                consecutive_failures += 1
+                log.exception(
+                    "main_loop_error consecutive_failures=%d limit=%d",
+                    consecutive_failures,
+                    _CONSECUTIVE_FAILURE_LIMIT,
+                )
 
-            await asyncio.sleep(settings.agent_poll_interval_seconds)
+                # 설계서 v2.0 Phase 3-D: StartLimitBurst=5 임박 경고
+                if consecutive_failures >= _CONSECUTIVE_FAILURE_LIMIT:
+                    reason = (
+                        f"Consecutive failure limit reached "
+                        f"({consecutive_failures}/{_CONSECUTIVE_FAILURE_LIMIT}). "
+                        "Agent will be deactivated by systemd (StartLimitBurst exceeded)."
+                    )
+                    await _report_deactivated(client, reason)
+                    # systemd가 재시작을 중단하도록 비정상 종료 코드로 exit
+                    raise SystemExit(1)
+
+            if not loop_failed:
+                await asyncio.sleep(settings.agent_poll_interval_seconds)
+            else:
+                # 실패 시 재시작 전 짧은 대기 (백오프)
+                backoff = min(5.0 * consecutive_failures, 30.0)
+                log.info("retry_backoff seconds=%.1f", backoff)
+                await asyncio.sleep(backoff)
 
     except asyncio.CancelledError:
-        log.info("agent_stopped")
+        log.info("agent_cancelled")
     finally:
+        # ── 종료 시 최종 heartbeat 전송 ───────────────────────────────────────
+        # shutdown_event가 설정된 경우: 정상 종료(systemctl stop 등) → 별도 보고 불필요
+        # 그 외(예외 등): deactivated 보고는 루프 내에서 이미 처리됨
+        log.info("agent_stopping closing_client")
         try:
             await client.close()
         except Exception:

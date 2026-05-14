@@ -806,25 +806,58 @@ async def is_known_ip_for_user(
 
 
 async def touch_heartbeat(heartbeat: Heartbeat) -> None:
+    """Heartbeat 수신 처리.
+
+    설계서 v2.0 Phase 3-D:
+    - status="online"     → 정상 갱신 (last_heartbeat, agent_version 업데이트)
+    - status="deactivated" → StartLimitBurst(5회) 초과 종료 직전 보고.
+                             deactivated_at / deactivation_reason 기록,
+                             헬스체크 대시보드에 즉시 반영.
+    """
     now = datetime.now(timezone.utc)
     async with get_session() as session:
-        await session.execute(
-            text(
-                """
-                UPDATE agents
-                SET status = 'online',
-                    last_heartbeat = :last_heartbeat,
-                    agent_version = :agent_version
-                WHERE tenant_id = :tenant_id AND agent_id = :agent_id
-                """
-            ),
-            {
-                "last_heartbeat": heartbeat.sent_at or now,
-                "agent_version": heartbeat.agent_version,
-                "tenant_id": heartbeat.tenant_id,
-                "agent_id": heartbeat.agent_id,
-            },
-        )
+        if heartbeat.status == "deactivated":
+            # 에이전트가 5회 연속 실패 후 systemd에 의해 Deactivated 되기 직전 보고
+            reason = heartbeat.deactivation_reason or "StartLimitBurst exceeded (5 consecutive failures)"
+            await session.execute(
+                text(
+                    """
+                    UPDATE agents
+                    SET status           = 'deactivated',
+                        last_heartbeat   = :last_heartbeat,
+                        agent_version    = :agent_version,
+                        deactivated_at   = :deactivated_at,
+                        deactivation_reason = :reason
+                    WHERE tenant_id = :tenant_id AND agent_id = :agent_id
+                    """
+                ),
+                {
+                    "last_heartbeat": heartbeat.sent_at or now,
+                    "agent_version": heartbeat.agent_version,
+                    "tenant_id": heartbeat.tenant_id,
+                    "agent_id": heartbeat.agent_id,
+                    "deactivated_at": now,
+                    "reason": reason,
+                },
+            )
+        else:
+            await session.execute(
+                text(
+                    """
+                    UPDATE agents
+                    SET status         = 'online',
+                        last_heartbeat = :last_heartbeat,
+                        agent_version  = :agent_version
+                    WHERE tenant_id = :tenant_id AND agent_id = :agent_id
+                    """
+                ),
+                {
+                    "last_heartbeat": heartbeat.sent_at or now,
+                    "agent_version": heartbeat.agent_version,
+                    "tenant_id": heartbeat.tenant_id,
+                    "agent_id": heartbeat.agent_id,
+                },
+            )
 
 
 async def save_demo_signal(signal: DemoSignal) -> None:

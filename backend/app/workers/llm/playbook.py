@@ -202,6 +202,15 @@ _DEFAULT_PLAYBOOK = {
 }
 
 
+def get_rule_title(rule_id: str) -> str:
+    """룰 ID에 해당하는 한국어 이벤트 유형명 반환.
+
+    Discord 알림 제목에서 rule_id 대신 사람이 읽기 좋은 이름으로 표시하기 위해 사용.
+    알 수 없는 rule_id는 rule_id 그대로 반환.
+    """
+    return _PLAYBOOK.get(rule_id, _DEFAULT_PLAYBOOK).get("title", rule_id)
+
+
 def get_first_alert_summary(
     *,
     rule_id: str,
@@ -209,11 +218,10 @@ def get_first_alert_summary(
     source_ip: str | None = None,
     username: str | None = None,
 ) -> str:
-    """Discord 1차 즉시 알림용 한 줄 요약 반환."""
+    """Discord 1차 즉시 알림용 Static Playbook 요약 반환."""
     entry = _PLAYBOOK.get(rule_id, _DEFAULT_PLAYBOOK)
-    title = entry["title"]
     summary = _render(entry["summary"], source_ip=source_ip, username=username)
-    return f"[{severity.upper()}] {title}\n{summary}"
+    return summary
 
 
 def summarize_with_playbook(

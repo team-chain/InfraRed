@@ -134,6 +134,17 @@ services:
     volumes:
       - ./infra/sample-logs:/host/var/log:ro
       - agent-state:/var/lib/infrared
+    # 설계서 v2.0 Phase 3-D: Cgroup 리소스 제한
+    # systemd 환경: infra/systemd/infrared-agent.service 참조 (CPUQuota=5%, MemoryMax=100M)
+    # Docker 환경: 아래 deploy.resources로 동일한 제한 적용
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"      # CPUQuota=5% 대응
+          memory: 100M      # MemoryMax=100M 대응
+        reservations:
+          memory: 50M
+    restart: on-failure     # Restart=on-failure (StartLimitBurst=5는 main.py에서 추적)
 
   frontend:
     build:
