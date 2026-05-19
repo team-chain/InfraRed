@@ -1,0 +1,115 @@
+# InfraRed BAS — Detection Regression Assertions
+# 설계서 v3.0 §9.3 기준
+# runner.py가 이 파일을 읽어 각 시나리오의 예상 결과를 검증한다.
+
+scenarios:
+
+  auth_bruteforce:
+    fixture: "fixtures/scenarios/auth_bruteforce.jsonl"
+    must_create_incident: true
+    expected_rule_ids:
+      - "AUTH-001"
+    expected_severity: "HIGH"
+    expected_confidence_min: 0.65
+    max_detection_latency_seconds: 60
+    description: "SSH 브루트포스 — AUTH-001 반복 Signal → HIGH Incident"
+
+  ssh_failed_then_success:
+    fixture: "fixtures/scenarios/ssh_failed_then_success.jsonl"
+    must_create_incident: true
+    expected_rule_ids:
+      - "AUTH-001"
+      - "AUTH-004"
+    expected_severity: "HIGH"
+    expected_confidence_min: 0.80
+    description: "SSH 실패 후 성공 — AUTH-001 + AUTH-004 체인 → Incident"
+
+  ssh_compromise_with_persistence:
+    fixture: "fixtures/scenarios/ssh_compromise_with_persistence.jsonl"
+    must_create_incident: true
+    expected_scenario_id: "SSH_ACCOUNT_COMPROMISE_WITH_PERSISTENCE"
+    expected_severity: "CRITICAL"
+    expected_confidence_min: 0.85
+    expected_response_actions:
+      - "watchlist"
+      - "iptables_block"
+    max_detection_latency_seconds: 60
+    description: "SSH 브루트포스 → 성공 → authorized_keys 변경 — CRITICAL 체인 인시던트"
+
+  webshell_infiltration:
+    fixture: "fixtures/scenarios/webshell_infiltration.jsonl"
+    must_create_incident: true
+    expected_scenario_id: "WEBSHELL_INFILTRATION"
+    expected_severity: "CRITICAL"
+    expected_confidence_min: 0.80
+    expected_rule_ids:
+      - "WEB-HNY-001"
+      - "WEB-001"
+      - "EXEC-002"
+    description: "허니팟 접근 → 웹셸 업로드 → RCE — WEBSHELL_INFILTRATION 시나리오"
+
+  privilege_escalation:
+    fixture: "fixtures/scenarios/privilege_escalation.jsonl"
+    must_create_incident: true
+    expected_scenario_id: "PRIVILEGE_ESCALATION"
+    expected_severity: "CRITICAL"
+    expected_confidence_min: 0.80
+    description: "로그인 성공 → sudoers/passwd 변경 — PRIVILEGE_ESCALATION 시나리오"
+
+  ransomware_precursor:
+    fixture: "fixtures/scenarios/ransomware_precursor.jsonl"
+    must_create_incident: true
+    expected_scenario_id: "RANSOMWARE_PRECURSOR"
+    expected_severity: "CRITICAL"
+    expected_confidence_min: 0.75
+    expected_response_actions:
+      - "escalate_to_manager"
+    must_not_auto_block: true
+    description: "/tmp 실행 + 대량 파일 변경 — RANSOMWARE_PRECURSOR, 자동 차단 금지"
+
+  lateral_movement:
+    fixture: "fixtures/scenarios/lateral_movement.jsonl"
+    must_create_incident: true
+    expected_scenario_id: "LATERAL_MOVEMENT"
+    expected_severity: "HIGH"
+    expected_confidence_min: 0.70
+    description: "동일 IP/계정이 3개+ 자산에 연속 접근 — LATERAL_MOVEMENT 시나리오"
+
+  tamper_agent_stop:
+    fixture: "fixtures/scenarios/tamper_agent_stop.jsonl"
+    must_create_incident: true
+    expected_rule_ids:
+      - "TAMPER-001"
+    expected_severity: "CRITICAL"
+    expected_confidence_min: 0.70
+    description: "에이전트 비정상 종료 → Watchdog TAMPER-001 Signal → CRITICAL Incident"
+
+
+benign:
+
+  deploy_traffic:
+    fixture: "fixtures/benign/deploy_traffic.jsonl"
+    must_not_create_incident_with_severity:
+      - "CRITICAL"
+      - "HIGH"
+    description: "CI/CD allowlisted IP 배포 트래픽 — CRITICAL/HIGH 미생성"
+
+  maintenance_window_traffic:
+    fixture: "fixtures/benign/admin_maintenance_window.jsonl"
+    expected_signals_suppressed: true
+    must_not_create_incident_with_severity:
+      - "CRITICAL"
+    description: "유지보수 창 중 관리자 작업 — 신호 억제, CRITICAL 미생성"
+
+  internal_monitoring:
+    fixture: "fixtures/benign/internal_monitoring.jsonl"
+    must_not_block: true
+    must_not_create_incident: true
+    description: "내부 모니터링 allowlist IP — 차단 금지, Incident 미생성"
+
+  legitimate_admin_login:
+    fixture: "fixtures/benign/legitimate_admin_login.jsonl"
+    must_not_create_incident_with_severity:
+      - "CRITICAL"
+      - "HIGH"
+    description: "정상 관리자 로그인 — False Positive 없어야 함"

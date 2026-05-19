@@ -8,6 +8,10 @@ class ActionType(str, Enum):
     LOCK_ACCOUNT     = "lock_account"     # passwd -l via Agent
     ESCALATE         = "escalate"         # severity 상향, 추가 알림
     NOTIFY           = "notify"           # Discord/Email 알림만
+    ISOLATE_SERVER   = "isolate_server"   # NIC 비활성화 또는 iptables ALL DROP
+    KILL_PROCESS     = "kill_process"     # PID로 악성 프로세스 종료
+    COLLECT_FORENSICS = "collect_forensics"  # 포렌식 수집 트리거
+    RESTORE_FILE     = "restore_file"     # 파일 복원 (안전 정책 포함)
 
 
 SEVERITY_RANK = {"info": 0, "medium": 1, "high": 2, "critical": 3}

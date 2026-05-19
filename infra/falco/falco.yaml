@@ -1,0 +1,19 @@
+# InfraRed Falco Integration Configuration
+# 설치: sudo apt install falco
+# 실행: sudo falco -c /etc/falco/falco.yaml
+
+rules_file:
+  - /etc/falco/falco_rules.yaml
+  - /etc/falco/infrared_rules.yaml
+
+# InfraRed HTTP output 설정
+http_output:
+  enabled: true
+  url: "http://localhost:8080/api/v1/ingest/falco"
+  user_agent: "falcosecurity/falco"
+
+json_output: true
+json_include_output_property: true
+log_stderr: true
+log_syslog: false
+log_level: info

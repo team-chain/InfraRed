@@ -19,6 +19,13 @@ SCHEMA_SQL = DB_DIR / "schema.sql"
 MIGRATE_V2_SQL = DB_DIR / "migrate_v2.sql"
 MIGRATE_V3_SQL = DB_DIR / "migrate_v3_freetier.sql"   # FTS GIN + Lambda AI 테이블
 MIGRATE_V4_SQL = DB_DIR / "migrate_v4_v3_schema.sql"  # v3.0 설계서: 캠페인/Watchdog/자산 중요도
+MIGRATE_V5_SQL  = DB_DIR / "migrate_v5_billing.sql"    # v4.0 Billing: Stripe 과금 + UEBA 테이블
+MIGRATE_V6_SQL  = DB_DIR / "migrate_v6_response.sql"  # 자동 대응 로그
+MIGRATE_V7_SQL  = DB_DIR / "migrate_v7_gdpr.sql"      # GDPR 데이터 거버넌스
+MIGRATE_V7B_SQL = DB_DIR / "migrate_v7_ops_quality.sql"  # OPS 품질
+MIGRATE_V8_SQL  = DB_DIR / "migrate_v8_security.sql"  # v7 Dead Man's Switch, UEBA Drift
+MIGRATE_V9_SQL  = DB_DIR / "migrate_v9_timescale.sql" # TimescaleDB hypertable
+MIGRATE_V10_SQL = DB_DIR / "migrate_v10_v8_tables.sql" # v8.0 심화: TRAVEL/EXEC-FIRST/JIT-SSH/HoneyKey/CanaryPack
 SEED_SQL = Path(__file__).parent.parent.parent.parent / "infra" / "postgres" / "seed.sql"
 DEFAULT_SEED_SQL = """
 INSERT INTO tenant_settings (tenant_id)
@@ -231,6 +238,35 @@ async def run_migration(database_url: str) -> None:
             migrate_v4 = MIGRATE_V4_SQL.read_text(encoding="utf-8")
             print("[migrate] applying migrate_v4_v3_schema.sql (v3.0 설계서: 캠페인/Watchdog/자산 중요도)")
             await _execute_script(conn, migrate_v4, "migrate_v4_v3_schema.sql")
+
+        if MIGRATE_V5_SQL.exists():
+            migrate_v5 = MIGRATE_V5_SQL.read_text(encoding="utf-8")
+            print("[migrate] applying migrate_v5_billing.sql (v4.0 Billing: Stripe 과금 + UEBA 테이블)")
+            await _execute_script(conn, migrate_v5, "migrate_v5_billing.sql")
+
+        if MIGRATE_V6_SQL.exists():
+            print("[migrate] applying migrate_v6_response.sql (자동 대응 로그)")
+            await _execute_script(conn, MIGRATE_V6_SQL.read_text(encoding="utf-8"), "migrate_v6_response.sql")
+
+        if MIGRATE_V7_SQL.exists():
+            print("[migrate] applying migrate_v7_gdpr.sql (GDPR 데이터 거버넌스)")
+            await _execute_script(conn, MIGRATE_V7_SQL.read_text(encoding="utf-8"), "migrate_v7_gdpr.sql")
+
+        if MIGRATE_V7B_SQL.exists():
+            print("[migrate] applying migrate_v7_ops_quality.sql (OPS 품질)")
+            await _execute_script(conn, MIGRATE_V7B_SQL.read_text(encoding="utf-8"), "migrate_v7_ops_quality.sql")
+
+        if MIGRATE_V8_SQL.exists():
+            print("[migrate] applying migrate_v8_security.sql (v7 Dead Man's Switch, UEBA Drift)")
+            await _execute_script(conn, MIGRATE_V8_SQL.read_text(encoding="utf-8"), "migrate_v8_security.sql")
+
+        if MIGRATE_V9_SQL.exists():
+            print("[migrate] applying migrate_v9_timescale.sql (TimescaleDB hypertable)")
+            await _execute_script(conn, MIGRATE_V9_SQL.read_text(encoding="utf-8"), "migrate_v9_timescale.sql")
+
+        if MIGRATE_V10_SQL.exists():
+            print("[migrate] applying migrate_v10_v8_tables.sql (v8.0: TRAVEL/EXEC-FIRST/JIT-SSH/HoneyKey/CanaryPack)")
+            await _execute_script(conn, MIGRATE_V10_SQL.read_text(encoding="utf-8"), "migrate_v10_v8_tables.sql")
 
         seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
         print("[migrate] applying seed.sql")

@@ -1,0 +1,97 @@
+name: SIGMA Rule Sync
+
+on:
+  # 매주 월요일 새벽 3시 (KST = UTC+9 → UTC 18:00 일요일)
+  schedule:
+    - cron: "0 18 * * 0"
+  # 수동 트리거 (dry_run 선택 가능)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (DB에 저장하지 않음)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      environment:
+        description: "대상 환경"
+        required: false
+        default: "staging"
+        type: choice
+        options: ["dev", "staging", "prod"]
+
+jobs:
+  sigma-sync:
+    name: Sync SigmaHQ Rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt requests pyyaml
+
+      - name: Run SIGMA Sync (dry-run check)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          cd backend
+          python -c "
+          from app.workers.sigma.syncer import sync_sigma_rules
+          result = sync_sigma_rules(db_upsert_fn=None)
+          print('Dry-run result:', result)
+          assert result['errors'] < result.get('synced', 1) * 0.2, 'Too many errors'
+          "
+        env:
+          SIGMA_SYNC_ENABLED: "true"
+          DATABASE_URL: ${{ secrets.DATABASE_URL_STAGING }}
+
+      - name: Trigger SIGMA Sync via API
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          if [ "$ENV" = "prod" ]; then
+            API_BASE="${{ secrets.API_BASE_PROD }}"
+            TOKEN="${{ secrets.INFRARED_OWNER_TOKEN_PROD }}"
+          else
+            API_BASE="${{ secrets.API_BASE_STAGING }}"
+            TOKEN="${{ secrets.INFRARED_OWNER_TOKEN_STAGING }}"
+          fi
+
+          echo "Triggering SIGMA sync on $ENV..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${API_BASE}/api/v1/sigma/sync?dry_run=false" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::SIGMA sync failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          SYNCED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('synced',0))")
+          echo "::notice::SIGMA sync complete. Synced: $SYNCED rules"
+
+      - name: Report sync results
+        if: always()
+        run: |
+          echo "## SIGMA Sync Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: ${{ github.event.inputs.environment || 'staging (scheduled)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dry Run: ${{ github.event.inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Time: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY

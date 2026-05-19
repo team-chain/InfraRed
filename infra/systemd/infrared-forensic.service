@@ -1,0 +1,55 @@
+# InfraRed Forensic 컴포넌트 — systemd 유닛 파일
+# 설계서 v7.0 §4: Agent 권한 분리 5컴포넌트 구조
+#
+# 역할: 인시던트 발생 시 증거 수집 + S3 Object Lock 업로드 (루트 권한)
+#   - CAP_DAC_READ_SEARCH: 임의 파일 읽기 (증거 수집)
+#   - S3 Put 권한 (IAM 역할로 부여)
+#   - UDS로 collector의 포렌식 요청 수신
+#   - 네트워크 접근: S3 업로드만 허용 (인바운드 없음)
+#
+# 설치:
+#   sudo cp infra/systemd/infrared-forensic.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infrared-forensic
+
+[Unit]
+Description=InfraRed Forensic Component
+Documentation=https://github.com/your-org/infrared
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/infrared/venv/bin/python -m infrared_agent.components.forensic
+EnvironmentFile=/etc/infrared/agent.env
+WorkingDirectory=/var/lib/infrared
+RuntimeDirectory=infrared
+
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=200
+StartLimitBurst=5
+
+# ── Cgroup 리소스 제한 ────────────────────────────────────────────────────────
+# 포렌식 수집은 일시적으로 CPU/메모리 사용이 높을 수 있음
+CPUQuota=10%
+MemoryMax=256M
+MemorySwapMax=0
+IOWeight=20
+
+# ── 보안: 필요한 Capabilities만 허용 ─────────────────────────────────────────
+User=root
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/infrared /var/lib/infrared/forensic
+PrivateTmp=yes
+PrivateDevices=yes
+
+# 네트워크: S3 아웃바운드 + UDS
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

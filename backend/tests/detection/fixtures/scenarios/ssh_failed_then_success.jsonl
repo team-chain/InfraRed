@@ -1,0 +1,15 @@
+{"timestamp": "2026-05-01T03:00:00Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 1}
+{"timestamp": "2026-05-01T03:00:08Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 2}
+{"timestamp": "2026-05-01T03:00:16Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 3}
+{"timestamp": "2026-05-01T03:00:24Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 4}
+{"timestamp": "2026-05-01T03:00:32Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 5}
+{"timestamp": "2026-05-01T03:00:40Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 6}
+{"timestamp": "2026-05-01T03:00:48Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 7}
+{"timestamp": "2026-05-01T03:00:56Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 8}
+{"timestamp": "2026-05-01T03:01:04Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 9}
+{"timestamp": "2026-05-01T03:01:12Z", "log_source": "auth.log", "event_type": "ssh_login_failed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "attempt": 10}
+{"timestamp": "2026-05-01T03:01:20Z", "log_source": "auth.log", "event_type": "ssh_login_success", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "rule_trigger": "AUTH-004", "session_id": "sess-4f8a2c"}
+{"timestamp": "2026-05-01T03:01:22Z", "log_source": "auth.log", "event_type": "ssh_session_opened", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "session_id": "sess-4f8a2c"}
+{"timestamp": "2026-05-01T03:01:45Z", "log_source": "process.log", "event_type": "command_executed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "command": "id", "session_id": "sess-4f8a2c"}
+{"timestamp": "2026-05-01T03:02:00Z", "log_source": "process.log", "event_type": "command_executed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "command": "whoami", "session_id": "sess-4f8a2c"}
+{"timestamp": "2026-05-01T03:02:30Z", "log_source": "auth.log", "event_type": "ssh_session_closed", "source_ip": "192.168.50.200", "user": "deploy", "asset_id": "asset-prod-api-01", "session_id": "sess-4f8a2c", "duration_seconds": 70}

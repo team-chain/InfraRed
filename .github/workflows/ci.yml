@@ -1,0 +1,188 @@
+name: InfraRed CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Backend: 린트 + BAS 회귀 테스트 (설계서 v3 §9.4)
+  # ─────────────────────────────────────────────────────────────
+  backend-test:
+    name: Backend Tests & Lint
+    runs-on: ubuntu-22.04
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://infrared:infrared@localhost:5432/infrared_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret
+      AGENT_COMMAND_SECRET: ci-agent-secret
+      BEDROCK_REGION: us-east-1
+      OTX_API_KEY: ci-dummy-key
+      STRIPE_SECRET_KEY: sk_test_dummy
+      WORKOS_API_KEY: ci-dummy
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        working-directory: backend
+        run: |
+          pip install ruff
+          ruff check app/ --select E,F,W,I --ignore E501
+
+      - name: Run unit & BAS regression tests
+        working-directory: backend
+        run: |
+          pytest tests/ \
+            --ignore=tests/test_llm_worker_policy.py \
+            -v \
+            --tb=short \
+            -q \
+            2>&1
+
+  # ─────────────────────────────────────────────────────────────
+  # Agent: 린트
+  # ─────────────────────────────────────────────────────────────
+  agent-lint:
+    name: Agent Lint
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: agent/requirements.txt
+
+      - name: Install dependencies
+        working-directory: agent
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint (ruff)
+        working-directory: agent
+        run: |
+          ruff check infrared_agent/ --select E,F,W,I --ignore E501
+
+  # ─────────────────────────────────────────────────────────────
+  # Frontend: 타입체크 + 빌드
+  # ─────────────────────────────────────────────────────────────
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: TypeScript type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # ─────────────────────────────────────────────────────────────
+  # BAS 탐지 회귀 테스트 — 시나리오 8종 + benign 4종 (설계서 v3 §9)
+  # "모든 공격 시나리오가 CRITICAL Incident를 생성하고,
+  #  모든 benign 케이스는 Critical을 생성하지 않아야 한다"
+  # ─────────────────────────────────────────────────────────────
+  bas-regression:
+    name: BAS Detection Regression
+    runs-on: ubuntu-22.04
+    needs: [backend-test]
+
+    env:
+      DATABASE_URL: postgresql://infrared:infrared@localhost:5432/infrared_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret
+      AGENT_COMMAND_SECRET: ci-agent-secret
+      OTX_API_KEY: ci-dummy-key
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: BAS regression — 탐지 회귀 테스트
+        working-directory: backend
+        run: |
+          pytest tests/test_bas_regression.py -v --tb=long 2>&1
+
+      - name: BAS summary report
+        if: always()
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  InfraRed BAS Regression Result"
+          echo "  Scenarios: auth_bruteforce, ssh_compromise_with_persistence,"
+          echo "             webshell_infiltration, privilege_escalation,"
+          echo "             ransomware_precursor, lateral_movement,"
+          echo "             tamper_agent_stop, ssh_failed_then_success"
+          echo "  Benign:    deploy_traffic, admin_maintenance_window,"
+          echo "             internal_monitoring, legitimate_admin_login"
+          echo "═══════════════════════════════════════"

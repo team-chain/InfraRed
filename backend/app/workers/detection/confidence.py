@@ -132,7 +132,7 @@ def calculate_detection_confidence(
         "asset_bonus": asset_bonus,
         "novelty_bonus": novelty_bonus,
         "ti_bonus": ti_bonus,
-        "penalty": penalty,
+        "penalty": -penalty,  # 음수: 점수를 낮추는 방향
         "raw": round(raw, 3),
         "final": final,
     }

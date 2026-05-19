@@ -1,9 +1,6 @@
-"""RBAC v2: 4역할 체계 + tenant_memberships 기반 (Phase 2-C).
+"""RBAC v2: 4-role system + tenant_memberships based (Phase 2-C).
 
-설계서 2-C: role은 user 자체 속성이 아닌 테넌트 내 역할.
-한 사용자가 여러 테넌트에 다른 역할로 소속 가능.
-
-역할 계층:
+Role hierarchy:
   owner > security_manager > analyst > viewer
 """
 from __future__ import annotations
@@ -14,69 +11,44 @@ from app.iam.security import require_permission, verify_user_token
 
 
 # ============================================================
-# 역할 권한 매트릭스 (설계서 2-C-1)
+# Role permission matrix
 # ============================================================
 
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "owner": {
-        "incident:read",
-        "incident:write",
-        "rule:read",
-        "rule:write",
-        "policy:read",
-        "policy:write",
-        "user:read",
-        "user:write",
-        "audit:read",
-        "report:read",
-        "block:execute",
-        "config:backup",
-        "config:restore",
-        "agent:command",
+        "incident:read", "incident:write",
+        "rule:read", "rule:write",
+        "policy:read", "policy:write",
+        "user:read", "user:write",
+        "audit:read", "report:read",
+        "block:execute", "config:backup", "config:restore", "agent:command",
     },
     "security_manager": {
-        "incident:read",
-        "incident:write",
-        "rule:read",
-        "rule:write",
-        "policy:read",
-        "policy:write",
-        "audit:read",
-        "report:read",
-        "block:execute",   # 제한적 차단 실행
-        "agent:command",
+        "incident:read", "incident:write",
+        "rule:read", "rule:write",
+        "policy:read", "policy:write",
+        "audit:read", "report:read",
+        "block:execute", "agent:command",
     },
     "analyst": {
-        "incident:read",
-        "incident:write",   # 코멘트, 담당자 자기 지정, disposition
-        "rule:read",
-        "report:read",
+        "incident:read", "incident:write",
+        "rule:read", "report:read",
     },
     "viewer": {
-        "incident:read",
-        "report:read",
+        "incident:read", "report:read",
     },
-    # 내부 시스템 역할
+    # Internal system role
     "agent": {
-        "event:write",
-        "heartbeat:write",
+        "event:write", "heartbeat:write",
     },
-    # 하위 호환: 기존 admin 역할
+    # Legacy compatibility: existing admin role
     "admin": {
-        "incident:read",
-        "incident:write",
-        "rule:read",
-        "rule:write",
-        "policy:read",
-        "policy:write",
-        "user:read",
-        "user:write",
-        "audit:read",
-        "report:read",
-        "block:execute",
-        "config:backup",
-        "config:restore",
-        "agent:command",
+        "incident:read", "incident:write",
+        "rule:read", "rule:write",
+        "policy:read", "policy:write",
+        "user:read", "user:write",
+        "audit:read", "report:read",
+        "block:execute", "config:backup", "config:restore", "agent:command",
     },
 }
 
@@ -94,33 +66,41 @@ def has_permission(role: str, permission: str) -> bool:
 
 
 def has_min_role(user_role: str, min_role: str) -> bool:
-    """user_role이 min_role 이상인지 확인."""
+    """Check if user_role is at least min_role."""
     return _ROLE_RANK.get(user_role, -1) >= _ROLE_RANK.get(min_role, 0)
 
 
 def require_role(min_role: str):
-    """최소 역할 검사 Depends 팩토리."""
+    """Depends factory: require minimum role level."""
     async def _check(claims: dict = Depends(verify_user_token)) -> dict:
         role = claims.get("role", "viewer")
         if not has_min_role(role, min_role):
             raise HTTPException(
                 status_code=403,
-                detail=f"이 작업은 {min_role} 이상 권한이 필요합니다",
+                detail=f"Requires '{min_role}' or higher role",
             )
         return claims
     return _check
 
 
-def require_any_role(*roles: str):
-    """지정된 역할 중 하나 이상인지 확인."""
-    role_set = set(roles)
+def require_any_role(*roles):
+    """Depends factory: require any one of the specified roles.
+
+    Accepts varargs or a single list/tuple:
+        require_any_role("owner", "admin")
+        require_any_role(["owner", "admin"])
+    """
+    if len(roles) == 1 and isinstance(roles[0], (list, tuple)):
+        role_set = set(roles[0])
+    else:
+        role_set = set(roles)
 
     async def _check(claims: dict = Depends(verify_user_token)) -> dict:
         role = claims.get("role", "viewer")
         if role not in role_set:
             raise HTTPException(
                 status_code=403,
-                detail=f"이 작업은 {role_set} 중 하나의 권한이 필요합니다",
+                detail=f"Requires one of {sorted(role_set)} roles",
             )
         return claims
     return _check

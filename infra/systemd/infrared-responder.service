@@ -1,0 +1,53 @@
+# InfraRed Responder 컴포넌트 — systemd 유닛 파일
+# 설계서 v7.0 §4: Agent 권한 분리 5컴포넌트 구조
+#
+# 역할: iptables 차단, SSH 키 주입(JIT SSH) 등 특권 명령 실행 (루트 권한)
+#   - CAP_NET_ADMIN: iptables 조작
+#   - CAP_SETUID/CAP_SETGID: 계정 잠금/잠금 해제
+#   - UDS로 collector 명령 수신
+#   - 네트워크 통신 없음 (명령 실행만 담당)
+#   - HMAC 서명이 없는 명령은 거부
+#
+# 설치:
+#   sudo cp infra/systemd/infrared-responder.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infrared-responder
+
+[Unit]
+Description=InfraRed Responder Component
+Documentation=https://github.com/your-org/infrared
+After=local-fs.target network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/infrared/venv/bin/python -m infrared_agent.components.responder
+EnvironmentFile=/etc/infrared/agent.env
+WorkingDirectory=/var/lib/infrared
+RuntimeDirectory=infrared
+
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=200
+StartLimitBurst=5
+
+# ── Cgroup 리소스 제한 ────────────────────────────────────────────────────────
+CPUQuota=2%
+MemoryMax=32M
+MemorySwapMax=0
+IOWeight=5
+
+# ── 보안: 필요한 Capabilities만 허용 ─────────────────────────────────────────
+User=root
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_KILL
+AmbientCapabilities=CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_KILL
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/infrared /etc/ssh/authorized_keys.d
+PrivateTmp=yes
+
+# 네트워크 없음 (UDS만 허용)
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

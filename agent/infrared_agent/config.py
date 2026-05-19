@@ -49,3 +49,14 @@ class AgentSettings(BaseSettings):
     # v3.0: Watchdog 설정
     watchdog_token: str = ""
     infrared_server_url: str = "http://localhost:8000"
+
+    # v7.0: mTLS (상호 TLS 인증) 설정
+    # 미설정 시 기존 Bearer 토큰 방식으로 폴백
+    mtls_enabled: bool = False
+    mtls_cert_path: str = "/etc/infrared/certs/agent.crt"    # 에이전트 클라이언트 인증서
+    mtls_key_path: str = "/etc/infrared/certs/agent.key"     # 에이전트 클라이언트 개인키
+    mtls_ca_path: str = "/etc/infrared/certs/ca.crt"         # 서버 인증서 검증용 CA
+    mtls_verify_server: bool = True                           # 서버 인증서 검증 여부 (prod=True)
+
+    # v7.0: 에이전트 버전 (Updater 컴포넌트 사용)
+    agent_version: str = "0.0.0"

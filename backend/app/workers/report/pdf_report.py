@@ -332,6 +332,33 @@ def _report_plain_text(
     return lines
 
 
+def html_to_pdf_bytes(html_content: str, title: str = "InfraRed Report") -> bytes:
+    """범용 HTML → PDF 변환 함수 (v7 ComplianceReport 등에서 사용).
+
+    WeasyPrint가 설치된 경우 사용하고, 없으면 내장 폴백 PDF를 반환한다.
+
+    Args:
+        html_content: 완전한 HTML 문자열 (<!DOCTYPE html> 포함).
+        title: PDF 메타데이터 제목 (폴백 PDF 첫 줄 사용).
+
+    Returns:
+        PDF 바이트.
+    """
+    try:
+        from weasyprint import HTML  # noqa: PLC0415
+        return HTML(string=html_content).write_pdf()
+    except ImportError:
+        log.warning("weasyprint_not_installed — falling back to simple PDF for: %s", title)
+        import re  # noqa: PLC0415
+        # HTML 태그 제거 후 텍스트만 추출
+        text = re.sub(r"<[^>]+>", " ", html_content)
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()][:52]
+        return _simple_pdf_bytes([title, ""] + lines)
+    except Exception as exc:
+        log.error("html_to_pdf_bytes failed: %s", exc)
+        return _simple_pdf_bytes([title, f"PDF 생성 실패: {exc}"])
+
+
 def _pdf_escape(text_value: object) -> str:
     text = str(text_value)
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

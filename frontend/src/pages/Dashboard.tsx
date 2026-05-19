@@ -15,6 +15,8 @@ import { MembersPage } from "./MembersPage";
 import { ReportsPage } from "./ReportsPage";
 import { NaturalSearchPage } from "./NaturalSearchPage";
 import { CampaignsPage } from "./CampaignsPage";
+import { ThreatHuntingPage } from "./ThreatHuntingPage";
+import { SigmaMarketplacePage } from "./SigmaMarketplacePage";
 import { IncidentWorkflow } from "../components/IncidentWorkflow";
 import {
   analyzeIncident, approveBlock, rejectBlock, extendBlock,
@@ -28,7 +30,9 @@ import {
 type Props = { user: AuthUser; onLogout: () => void; onOpenOnboarding: () => void };
 type Tab =
   | "incidents" | "assets" | "rules" | "audit" | "settings"
-  | "health" | "rule_mgmt" | "suppression" | "members" | "reports" | "search" | "campaigns";
+  | "health" | "rule_mgmt" | "suppression" | "members" | "reports" | "search" | "campaigns"
+  | "threat_hunting"
+  | "sigma_marketplace";
 
 const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, info: 1 };
 
@@ -215,10 +219,12 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   ] as const;
 
   const operationTabs = [
-    { key: "rule_mgmt",   icon: <BookOpen size={15}/>, name: "룰 관리", desc: "라이프사이클" },
-    { key: "suppression", icon: <VolumeX size={15}/>,  name: "억제", desc: "Allowlist·점검창" },
-    { key: "health",      icon: <Heart size={15}/>,    name: "헬스체크", desc: "시스템 상태" },
-    { key: "campaigns",   icon: <Target size={15}/>,   name: "캠페인", desc: "공격 캠페인 뷰" },
+    { key: "rule_mgmt",     icon: <BookOpen size={15}/>, name: "룰 관리",   desc: "라이프사이클" },
+    { key: "suppression",   icon: <VolumeX size={15}/>,  name: "억제",      desc: "Allowlist·점검창" },
+    { key: "health",        icon: <Heart size={15}/>,    name: "헬스체크",  desc: "시스템 상태" },
+    { key: "campaigns",     icon: <Target size={15}/>,   name: "캠페인",    desc: "공격 캠페인 뷰" },
+    { key: "threat_hunting", icon: <Search size={15}/>,  name: "위협 헌팅", desc: "시그널·CTI·재생" },
+    { key: "sigma_marketplace", icon: <Shield size={15}/>,  name: "SIGMA 마켓", desc: "커뮤니티 룰 탐색·활성화" },
   ] as const;
 
   const adminTabs = [
@@ -846,6 +852,10 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
 
       {/* ══ CAMPAIGNS ══ */}
       {tab === "campaigns" && <CampaignsPage />}
+
+      {/* ══ THREAT HUNTING ══ */}
+      {tab === "threat_hunting" && <ThreatHuntingPage />}
+      {tab === "sigma_marketplace" && <SigmaMarketplacePage />}
 
       {/* ══ SETTINGS ══ */}
       {tab === "settings" && <SettingsPage />}

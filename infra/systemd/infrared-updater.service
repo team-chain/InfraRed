@@ -1,0 +1,56 @@
+# InfraRed Updater 컴포넌트 — systemd 유닛 파일
+# 설계서 v7.0 §4: Agent 권한 분리 5컴포넌트 구조
+#
+# 역할: 에이전트 자동 업데이트 (코드 서명 검증 + 롤백) (루트 권한)
+#   - ECDSA P-256 서명 검증 후 업데이트 설치
+#   - 실패 시 이전 버전으로 자동 롤백
+#   - 네트워크 접근: 업데이트 서버 다운로드만 허용
+#   - UDS로 collector의 업데이트 확인 요청 수신
+#
+# 설치:
+#   sudo cp infra/systemd/infrared-updater.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infrared-updater
+
+[Unit]
+Description=InfraRed Updater Component
+Documentation=https://github.com/your-org/infrared
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/infrared/venv/bin/python -m infrared_agent.components.updater
+EnvironmentFile=/etc/infrared/agent.env
+WorkingDirectory=/var/lib/infrared
+RuntimeDirectory=infrared
+
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=300
+StartLimitBurst=3
+
+# ── Cgroup 리소스 제한 ────────────────────────────────────────────────────────
+CPUQuota=5%
+MemoryMax=128M
+MemorySwapMax=0
+IOWeight=10
+
+# ── 보안 ─────────────────────────────────────────────────────────────────────
+# 설치 권한이 필요하므로 root로 실행
+User=root
+# 업데이트 설치 시 모든 파일 시스템 작업 필요
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER
+AmbientCapabilities=CAP_DAC_OVERRIDE CAP_FOWNER
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+
+# 업데이트 서버 다운로드 + UDS
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# 설치 디렉터리 쓰기 허용
+ReadWritePaths=/opt/infrared /run/infrared
+
+[Install]
+WantedBy=multi-user.target

@@ -89,6 +89,21 @@ RULE_META = {
         "subtechnique": "T1110.004",
         "stage": KillChainStage.CREDENTIAL_ACCESS,
     },
+    # DECEPTION 룰 (설계서 v6)
+    RuleId.DECEPTION_HONEYTOKEN_FILE: {
+        "name": "Honeytoken File Access",
+        "tactic": "Discovery",
+        "technique": "T1083",
+        "subtechnique": None,
+        "stage": KillChainStage.RECONNAISSANCE,
+    },
+    RuleId.DECEPTION_HONEYTOKEN_ACCOUNT: {
+        "name": "Honeytoken Account Login",
+        "tactic": "Initial Access",
+        "technique": "T1078",
+        "subtechnique": None,
+        "stage": KillChainStage.INITIAL_ACCESS,
+    },
 }
 
 

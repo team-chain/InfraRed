@@ -63,6 +63,9 @@ class RuleId(str, Enum):
     AUTH_PASSWORD_SPRAYING = "AUTH-006B"
     # 네트워크 공격 탐지 (설계서 3.1)
     NET_HTTP_FLOOD = "NET-001"
+    # Deception (설계서 v6)
+    DECEPTION_HONEYTOKEN_FILE = "DECEPTION-001"
+    DECEPTION_HONEYTOKEN_ACCOUNT = "DECEPTION-002"
 
 
 class LLMStatus(str, Enum):

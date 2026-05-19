@@ -8,17 +8,26 @@ Agent가 5초마다 polling:
   GET  /actions/pending              →  승인 대기 목록
   POST /actions/{action_id}/approve  →  승인 → Agent 큐에 push
   POST /actions/{action_id}/reject   →  거부
+
+v7.0: nonce 기반 명령 보안 계약
+  - 명령 발행 시 nonce + timestamp + HMAC 서명 추가
+  - Redis에 nonce 저장 (TTL=300초), 재사용 시 거부 (Replay Attack 방어)
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
+import secrets
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.config import get_settings
 from app.db.connection import get_session
 from app.iam.security import require_permission, verify_agent_token
 from app.redis_kv.client import get_redis
@@ -26,6 +35,50 @@ from app.redis_kv.client import get_redis
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# v7.0: nonce 기반 명령 보안 계약
+# ---------------------------------------------------------------------------
+
+def generate_command_nonce() -> str:
+    """암호학적으로 안전한 16바이트 hex nonce 생성."""
+    return secrets.token_hex(16)
+
+
+def sign_command(command: dict, secret_key: str) -> dict:
+    """명령에 nonce + timestamp + HMAC-SHA256 서명 추가.
+
+    payload = "{action_type}:{target}:{nonce}:{timestamp}"
+    signature = HMAC-SHA256(secret_key, payload)
+    """
+    nonce = generate_command_nonce()
+    timestamp = int(time.time())
+    action_type = command.get("action_type", "")
+    target = command.get("target", "")
+    payload = f"{action_type}:{target}:{nonce}:{timestamp}"
+    sig = hmac.new(
+        secret_key.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {
+        **command,
+        "nonce": nonce,
+        "timestamp": timestamp,
+        "signature": sig,
+    }
+
+
+async def verify_nonce_not_replayed(redis, nonce: str) -> bool:
+    """nonce가 이미 사용됐는지 확인 (Replay Attack 방어).
+
+    Redis SET NX (Not eXists) 를 이용해 nonce를 300초 TTL로 저장.
+    처음 사용이면 True, 재사용이면 False 반환.
+    """
+    key = f"used_nonce:{nonce}"
+    result = await redis.set(key, "1", ex=300, nx=True)
+    return result is True
 
 
 # ── Agent polling ──────────────────────────────────────────────────────────── #
@@ -167,12 +220,15 @@ async def approve_action(
 
     if asset_row:
         redis = get_redis()
-        command = {
+        settings = get_settings()
+        raw_command = {
             "action_type": record["action_type"],
             "target": record["target"],
             "payload": record["payload"],
             "issued_at": datetime.now(timezone.utc).isoformat(),
         }
+        # v7.0: nonce + timestamp + HMAC 서명 추가
+        command = sign_command(raw_command, settings.jwt_secret)
         key = f"tenant:{tenant_id}:commands:{asset_row['asset_id']}"
         await redis.lpush(key, json.dumps(command))
         await redis.expire(key, 3600)

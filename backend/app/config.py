@@ -116,6 +116,47 @@ class Settings(BaseSettings):
     late_event_threshold_seconds: int = 300
     late_event_max_seconds: int = 86400
 
+    # SQS (v4.0)
+    sqs_events_url: str = ""      # SQS queue URL for infrared-events
+    sqs_signals_url: str = ""     # SQS queue URL for infrared-signals
+    sqs_incidents_url: str = ""   # SQS queue URL for infrared-incidents
+    sqs_enabled: bool = False     # SQS 사용 여부 (False면 Redis만 사용)
+
+    # WorkOS SSO (v4.0)
+    workos_api_key: str = ""
+    workos_client_id: str = ""
+
+    # Stripe (v4.0)
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_growth: str = ""
+    stripe_price_enterprise: str = ""
+
+    # UEBA (v4.0)
+    ueba_enabled: bool = False
+    ueba_model_bucket: str = "infrared-models"
+    ueba_silent_days: int = 7   # 학습만 하는 기간
+
+    # SIGMA (v4.0)
+    sigma_sync_enabled: bool = False
+
+    # Fernet encryption key for sensitive data
+    fernet_key: str = ""
+
+    # Status Page
+    status_page_url: str = "https://status.infrared.io"
+    dashboard_url: str = "http://localhost:3000"
+
+    # v7.0: mTLS (상호 TLS 인증) 설정
+    # Nginx/Traefik 프록시가 클라이언트 인증서 검증 후 헤더로 전달하는 방식 지원
+    mtls_enabled: bool = False
+    mtls_require_agent_cn: bool = False     # True이면 인증서 CN을 agent_id와 대조
+    # uvicorn 직접 TLS 모드 (프록시 없이 직접 mTLS 처리할 때)
+    tls_certfile: str = ""                  # 서버 인증서 경로
+    tls_keyfile: str = ""                   # 서버 개인키 경로
+    tls_ca_certs: str = ""                  # 클라이언트 인증서 검증용 CA 경로
+
+
     def model_post_init(self, __context: object) -> None:
         # JWT secret default value warning
         if self.jwt_secret == _JWT_DEFAULT:

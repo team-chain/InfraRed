@@ -50,6 +50,49 @@ from app.ingestion.tamper_routes import router as tamper_router
 from app.ingestion.block_approval_routes import router as block_approval_router
 from app.ingestion.campaign_routes import router as campaign_router
 from app.ingestion.asset_criticality_routes import router as asset_criticality_router
+# v3.0 CTI 수동 조회 라우터
+from app.ingestion.cti_routes import router as cti_router
+# v3.0 Debug / 재생 라우터 (dev/staging 전용)
+from app.ingestion.debug_routes import router as debug_router
+# v4.0 Falco/eBPF 연동 라우터
+from app.ingestion.falco_routes import router as falco_router
+# v7.0 Zeek/Suricata 네트워크 센서 연동 라우터
+from app.ingestion.network_sensor_routes import router as network_sensor_router
+# v8.0 Canary API Route (미끼 엔드포인트 — 공격자 탐지용)
+from app.ingestion.canary_api_routes import router as canary_api_router
+# v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
+from app.auth.routes import router as auth_enterprise_router
+# v7.0 mTLS 미들웨어
+from app.middleware.mtls import MTLSMiddleware
+# v4.0 Stripe 과금 라우터
+from app.billing.routes import router as billing_router
+# v4.0 UEBA 행동 분석 라우터
+from app.ingestion.ueba_routes import router as ueba_router
+# v4.0 Integration Hub 테스트 라우터
+from app.ingestion.integrations_routes import router as integrations_router
+# v7 GDPR 삭제 충돌 해결 라우터
+from app.ingestion.gdpr_routes import router as gdpr_router
+# v4.0 SIGMA 룰 관리 라우터
+from app.ingestion.sigma_routes import router as sigma_router
+# v5.0 포렌식·취약점 스캐너 라우터
+from app.ingestion.forensic_routes import router as forensic_router
+from app.ingestion.vuln_routes import router as vuln_router
+# v6.0 운영 품질·보안 KPI 라우터
+from app.ingestion.compliance_routes import router as compliance_router
+from app.ingestion.kpi_routes import router as kpi_router
+from app.ingestion.deception_routes import router as deception_router
+# v6.0 CIS Benchmark 라우터
+from app.ingestion.cis_routes import router as cis_router
+# v6.0 SSL 인증서 모니터링 라우터
+from app.ingestion.ssl_routes import router as ssl_router
+# v7.0 Break-Glass·Dead Man's Switch 라우터
+from app.ingestion.breakglass_routes import router as breakglass_router
+from app.ingestion.deadman_routes import router as deadman_router
+# v8.0 신규 라우터
+from app.ingestion.first_exec_routes import router as first_exec_router
+from app.ingestion.honey_key_routes import router as honey_key_router
+from app.ingestion.jit_ssh_routes import router as jit_ssh_router
+from app.ingestion.canary_pack_routes import router as canary_pack_router
 from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
 from app.models.llm import LLMResult
 from app.workers.llm.service import analyze_contract_with_cache
@@ -66,6 +109,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+# v7.0: mTLS 클라이언트 인증서 검증 미들웨어
+# 프로덕션에서 MTLS_ENABLED=true + Nginx ssl_verify_client on 설정 필요
+app.add_middleware(
+    MTLSMiddleware,
+    mtls_enabled=settings.mtls_enabled,
+    require_agent_cn=settings.mtls_require_agent_cn,
 )
 
 REQUEST_COUNT = Counter(
@@ -135,6 +185,44 @@ app.include_router(tamper_router)
 app.include_router(block_approval_router)
 app.include_router(campaign_router)
 app.include_router(asset_criticality_router)
+# v3.0 CTI 수동 조회
+app.include_router(cti_router)
+# v3.0 Debug / replay-events (dev/staging 전용)
+app.include_router(debug_router)
+# v4.0 Falco/eBPF 연동 라우터
+app.include_router(falco_router, prefix="/api/v1")
+app.include_router(network_sensor_router, prefix="/api/v1")
+app.include_router(canary_api_router, prefix="/api/v1")  # v8.0 Canary API (숨김)
+# v4.0 엔터프라이즈 인증 (SSO/MFA)
+app.include_router(auth_enterprise_router)
+# v4.0 Stripe 과금
+app.include_router(billing_router)
+# v4.0 UEBA 행동 분석
+app.include_router(ueba_router)
+# v4.0 Integration Hub 테스트 (Slack/PagerDuty/Jira/Splunk)
+app.include_router(integrations_router)
+# v4.0 SIGMA 룰 관리
+app.include_router(sigma_router)
+app.include_router(gdpr_router, prefix="/api/v1")
+# v8.0 신규 라우터
+app.include_router(first_exec_router)    # EXEC-FIRST-001/002 binary hash API
+app.include_router(honey_key_router)     # DECEPTION-003 AWS Honey Key API
+app.include_router(jit_ssh_router)       # JIT SSH API
+app.include_router(canary_pack_router)   # Canary Pack 배포 관리 API
+# v5.0 포렌식·취약점 스캐너 라우터
+app.include_router(forensic_router)
+app.include_router(vuln_router)
+# v6.0 운영 품질·보안 KPI 라우터
+app.include_router(compliance_router)
+app.include_router(kpi_router)
+app.include_router(deception_router)
+# v6.0 CIS Benchmark 라우터
+app.include_router(cis_router)
+# v6.0 SSL 인증서 모니터링 라우터
+app.include_router(ssl_router)
+# v7.0 Break-Glass·Dead Man's Switch 라우터
+app.include_router(breakglass_router)
+app.include_router(deadman_router)
 
 
 @app.get("/healthz")
@@ -400,7 +488,6 @@ async def unblock_ip(
 async def list_denylist(
     claims: dict = Depends(require_permission("incident:read")),
 ) -> dict[str, object]:
-    """GET /policy/denylist -- 현재 차단된 IP 목록 조회."""
     tenant_id = claims["tenant_id"]
     redis = get_redis()
     ips = await redis.smembers(redis_keys.policy_denylist(tenant_id))

@@ -1,0 +1,73 @@
+# InfraRed Custom Falco Rules
+# MITRE ATT&CK 기반 커널 레벨 탐지
+
+- list: web_server_binaries
+  items: [nginx, apache, apache2, httpd, php-fpm, lighttpd]
+
+- list: shell_binaries
+  items: [bash, sh, dash, zsh, csh, ksh, fish]
+
+- list: trusted_processes
+  items: [passwd, chage, shadow]
+
+- rule: Shell Spawned by Webserver (InfraRed EXEC-002)
+  desc: Web server process spawned a shell - strong evidence of webshell execution
+  condition: >
+    spawned_process and proc.pname in (web_server_binaries)
+    and proc.name in (shell_binaries)
+  output: >
+    [INFRARED] Web server spawned shell
+    (user=%user.name cmd=%proc.cmdline parent=%proc.pname container=%container.name)
+  priority: CRITICAL
+  tags: [T1505.003, infrared, exec-002]
+
+- rule: Process from Suspicious Directory (InfraRed EXEC-001)
+  desc: Process executed from /tmp or /dev/shm - common malware execution location
+  condition: >
+    spawned_process and (
+      proc.exepath startswith /tmp/ or
+      proc.exepath startswith /dev/shm/ or
+      proc.exepath startswith /var/tmp/
+    ) and not proc.name in (postdrop)
+  output: >
+    [INFRARED] Process from suspicious directory
+    (user=%user.name cmd=%proc.cmdline dir=%proc.exepath)
+  priority: HIGH
+  tags: [T1059, infrared, exec-001]
+
+- rule: Sensitive File Read (InfraRed ESCALATE-001)
+  desc: Read of sensitive system files - potential privilege escalation
+  condition: >
+    open_read and (
+      fd.name = /etc/shadow or
+      fd.name = /etc/sudoers or
+      fd.name startswith /etc/sudoers.d/
+    ) and not proc.name in (trusted_processes)
+    and not proc.pname in (sudo, su)
+  output: >
+    [INFRARED] Sensitive file read
+    (user=%user.name cmd=%proc.cmdline file=%fd.name)
+  priority: CRITICAL
+  tags: [T1078, T1548, infrared, escalate-001]
+
+- rule: Network Connection from Unexpected Process (InfraRed NET)
+  desc: Unexpected outbound network connection - potential C2 communication
+  condition: >
+    outbound and not proc.name in (curl, wget, apt, pip, npm, java, python3, python)
+    and fd.sport > 1024 and fd.dport in (4444, 8888, 9999, 1337, 31337)
+  output: >
+    [INFRARED] Suspicious outbound connection
+    (user=%user.name cmd=%proc.cmdline dest=%fd.rip dport=%fd.dport)
+  priority: HIGH
+  tags: [T1071, infrared, net]
+
+- rule: Setuid/Setgid Execution (InfraRed ESCALATE)
+  desc: Setuid or setgid binary execution - privilege escalation attempt
+  condition: >
+    spawned_process and (proc.is_suid=true or proc.is_sgid=true)
+    and not proc.name in (sudo, su, passwd, ping, mount, umount)
+  output: >
+    [INFRARED] Setuid/setgid execution
+    (user=%user.name cmd=%proc.cmdline parent=%proc.pname)
+  priority: HIGH
+  tags: [T1548.001, infrared, escalate]

@@ -84,6 +84,18 @@ async def ingest_event(
         maxlen=settings.redis_stream_maxlen,
         approximate=True,
     )
+    # v4.0: SQS 발행 (enabled 시)
+    if settings.sqs_enabled and settings.sqs_events_url:
+        import asyncio
+        from app.sqs.publisher import get_sqs_publisher
+        publisher = get_sqs_publisher()
+        await asyncio.to_thread(
+            publisher.publish_event,
+            envelope.model_dump(mode="json"),
+            settings.sqs_events_url,
+            envelope.tenant_id,
+            "INFO",
+        )
     return {"accepted": True, "stream_id": stream_id, "event_id": envelope.event_id}
 
 

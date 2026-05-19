@@ -577,3 +577,149 @@ class TestDetectionRulesBASSimulation:
         signals = await evaluate_web_rules(fake_redis, event)
         rule_ids = {s.rule_id for s in signals}
         assert RuleId.WEB_SHELL_ACCESS not in rule_ids
+
+
+# ---------------------------------------------------------------------------
+# Section 5: Benign 픽스처 — False Positive 방지 테스트 (설계서 v3 §9.3)
+#
+# "benign 케이스는 Critical/High Incident를 생성하지 않아야 한다"
+# 각 픽스처 파일이 존재하고, 정상 트래픽 패턴을 담고 있음을 검증한다.
+# ---------------------------------------------------------------------------
+
+class TestBenignFixtures:
+    """Benign 픽스처 파일 존재 여부 + confidence 패널티 동작 검증.
+
+    설계서 v3 §9.1:
+      - deploy_traffic.jsonl           → CI/CD allowlisted IP, no Critical
+      - admin_maintenance_window.jsonl → Maintenance Window 중 정상 작업, 억제 필요
+      - internal_monitoring.jsonl      → Prometheus/K8s 내부 allowlisted IP, 차단 금지
+      - legitimate_admin_login.jsonl   → 정상 관리자 로그인, False Positive 없어야 함
+    """
+
+    FIXTURES_DIR = (
+        Path(__file__).resolve().parent
+        / "detection" / "fixtures" / "benign"
+    )
+
+    # ── 픽스처 파일 존재 확인 ──────────────────────────────────────────────
+
+    def test_deploy_traffic_fixture_exists(self) -> None:
+        """deploy_traffic.jsonl 픽스처 파일이 존재해야 한다."""
+        assert (self.FIXTURES_DIR / "deploy_traffic.jsonl").exists()
+
+    def test_admin_maintenance_window_fixture_exists(self) -> None:
+        """admin_maintenance_window.jsonl 픽스처 파일이 존재해야 한다."""
+        assert (self.FIXTURES_DIR / "admin_maintenance_window.jsonl").exists()
+
+    def test_internal_monitoring_fixture_exists(self) -> None:
+        """internal_monitoring.jsonl 픽스처 파일이 존재해야 한다."""
+        assert (self.FIXTURES_DIR / "internal_monitoring.jsonl").exists()
+
+    def test_legitimate_admin_login_fixture_exists(self) -> None:
+        """legitimate_admin_login.jsonl 픽스처 파일이 존재해야 한다."""
+        assert (self.FIXTURES_DIR / "legitimate_admin_login.jsonl").exists()
+
+    # ── 픽스처 내용 유효성 확인 ───────────────────────────────────────────
+
+    def test_all_benign_fixtures_are_valid_jsonl(self) -> None:
+        """모든 benign JSONL 픽스처가 유효한 JSON Lines 형식이어야 한다."""
+        import json
+        for fixture_file in self.FIXTURES_DIR.glob("*.jsonl"):
+            with open(fixture_file) as f:
+                lines = [ln.strip() for ln in f if ln.strip()]
+            assert len(lines) > 0, f"{fixture_file.name}: 빈 파일"
+            for i, line in enumerate(lines, 1):
+                try:
+                    json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise AssertionError(
+                        f"{fixture_file.name}:{i} — 유효하지 않은 JSON: {exc}"
+                    )
+
+    def test_admin_maintenance_window_fixture_has_maintenance_flag(self) -> None:
+        """admin_maintenance_window.jsonl 이벤트는 maintenance_window=true 플래그를 가져야 한다."""
+        import json
+        fixture = self.FIXTURES_DIR / "admin_maintenance_window.jsonl"
+        with open(fixture) as f:
+            events = [json.loads(ln) for ln in f if ln.strip()]
+        maintenance_flagged = [e for e in events if e.get("maintenance_window")]
+        assert len(maintenance_flagged) >= 5, (
+            f"유지보수 창 플래그가 충분하지 않음: {len(maintenance_flagged)}개"
+        )
+
+    def test_internal_monitoring_fixture_has_allowlisted_flag(self) -> None:
+        """internal_monitoring.jsonl 이벤트는 allowlisted=true 플래그를 가져야 한다."""
+        import json
+        fixture = self.FIXTURES_DIR / "internal_monitoring.jsonl"
+        with open(fixture) as f:
+            events = [json.loads(ln) for ln in f if ln.strip()]
+        allowlisted = [e for e in events if e.get("allowlisted")]
+        assert len(allowlisted) >= 5, (
+            f"Allowlist 플래그가 충분하지 않음: {len(allowlisted)}개"
+        )
+
+    # ── Confidence 패널티 동작 검증 ────────────────────────────────────────
+
+    def test_allowlist_penalty_suppresses_critical_threshold(self) -> None:
+        """Allowlist 트래픽은 confidence 패널티로 Critical 임계값(0.85) 미만이어야 한다.
+
+        설계서 v3 §3.1: in_allowlist → penalty += 0.60
+        AUTH-001 base=0.70: 0.70 - 0.60 = 0.10 → 자동 차단 임계값 미달
+        """
+        score, breakdown = calculate_detection_confidence(
+            "AUTH-001",
+            in_allowlist=True,
+        )
+        assert score < 0.85, (
+            f"Allowlist 트래픽이 Critical 임계값을 초과함: {score:.3f}"
+        )
+        assert breakdown["penalty"] < 0, "Allowlist 패널티는 음수여야 한다"
+
+    def test_maintenance_window_penalty_suppresses_score(self) -> None:
+        """Maintenance Window 트래픽은 신뢰도가 충분히 낮아야 한다.
+
+        설계서 v3 §3.1: in_maintenance_window → penalty += 0.30
+        AUTH-001 base=0.70: 0.70 - 0.30 = 0.40 → alert 임계값 미달 가능
+        """
+        score, breakdown = calculate_detection_confidence(
+            "AUTH-001",
+            in_maintenance_window=True,
+        )
+        assert score <= 0.50, (
+            f"Maintenance Window 트래픽 신뢰도가 너무 높음: {score:.3f}"
+        )
+
+    def test_benign_pattern_penalty_reduces_score(self) -> None:
+        """정상 배포 패턴은 benign_pattern 패널티를 받아야 한다.
+
+        설계서 v3 §3.1: matches_benign_pattern → penalty += 0.20
+        """
+        score_with_penalty, _ = calculate_detection_confidence(
+            "AUTH-001",
+            matches_benign_pattern=True,
+        )
+        score_without_penalty, _ = calculate_detection_confidence(
+            "AUTH-001",
+            matches_benign_pattern=False,
+        )
+        assert score_with_penalty < score_without_penalty, (
+            "Benign 패턴 패널티가 점수를 낮춰야 한다"
+        )
+
+    def test_deploy_traffic_no_honeypot_path(self) -> None:
+        """deploy_traffic.jsonl의 경로는 Honeypot 탐지 대상이 아니어야 한다."""
+        import json
+        fixture = self.FIXTURES_DIR / "deploy_traffic.jsonl"
+        honeypot_patterns = {
+            "/.env", "/phpmyadmin", "/wp-admin", "/wp-login.php",
+            "/admin.php", "/shell.php", "/.git/config",
+        }
+        with open(fixture) as f:
+            events = [json.loads(ln) for ln in f if ln.strip()]
+        web_events = [e for e in events if "path" in e]
+        for event in web_events:
+            path = event["path"]
+            for pattern in honeypot_patterns:
+                assert pattern not in path, (
+                    f"deploy_traffic 픽스처에 Honeypot 경로 포함됨: {path}"
+                )

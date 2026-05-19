@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Bot, Bell, BellOff, CheckCircle, Cpu, SlidersHorizontal, ShieldCheck, Key,
-  Copy, Check, Trash2, Plus,
+  Copy, Check, Trash2, Plus, Link2, Send, CreditCard, ShieldAlert, QrCode,
 } from "lucide-react";
 import {
   fetchSettings, updateSettings, fetchApiKeys, createApiKey, revokeApiKey,
@@ -17,7 +17,10 @@ const NAV = [
   },
   {
     group: "알림",
-    items: [{ id: "notify",   icon: Bell,              label: "알림 채널",       desc: "Discord · Email" }],
+    items: [
+      { id: "notify",         icon: Bell,              label: "알림 채널",       desc: "Discord · Email" },
+      { id: "integrations",   icon: Link2,             label: "Integration Hub", desc: "Slack · PagerDuty · Jira" },
+    ],
   },
   {
     group: "탐지 규칙",
@@ -27,12 +30,20 @@ const NAV = [
     ],
   },
   {
+    group: "보안",
+    items: [{ id: "mfa",      icon: ShieldAlert,       label: "MFA / SSO",       desc: "2단계 인증 · SAML" }],
+  },
+  {
+    group: "과금",
+    items: [{ id: "billing",  icon: CreditCard,        label: "플랜 & 과금",     desc: "구독 · 에이전트 사용량" }],
+  },
+  {
     group: "개발자",
     items: [{ id: "keys",     icon: Key,               label: "API Keys",        desc: "SDK 연동용 키 관리" }],
   },
 ] as const;
 
-type TabId = "response" | "notify" | "rules" | "advanced" | "keys";
+type TabId = "response" | "notify" | "integrations" | "rules" | "advanced" | "mfa" | "billing" | "keys";
 
 /* ── Per-severity 정책 체크박스 컴포넌트 (설계서 5.2) ──────────────────────── */
 const SEV_LABELS: Record<string, { label: string; color: string }> = {
@@ -411,6 +422,11 @@ export function SettingsPage() {
           </>
         )}
 
+        {/* ── Integration Hub (설계서 v4 §10) ──────────────────── */}
+        {tab === "integrations" && (
+          <IntegrationHubSection settings={settings} save={save} />
+        )}
+
         {/* ── 탐지 임계값 ─────────────────────────────────── */}
         {tab === "rules" && (
           <>
@@ -554,6 +570,12 @@ export function SettingsPage() {
             </div>
           </>
         )}
+
+        {/* ── MFA / SSO ────────────────────────────────────── */}
+        {tab === "mfa" && <MfaSsoSection />}
+
+        {/* ── Billing ──────────────────────────────────────── */}
+        {tab === "billing" && <BillingSection />}
 
         {/* ── API Keys ─────────────────────────────────────── */}
         {tab === "keys" && (
@@ -724,5 +746,611 @@ function CountryInput({
         저장
       </button>
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Integration Hub Section (설계서 v4 §10 — Slack / PagerDuty / Jira)
+   ───────────────────────────────────────────────────────────────────────── */
+
+interface IntegrationCardProps {
+  name: string;
+  description: string;
+  logo: React.ReactNode;
+  fields: Array<{
+    key: string;
+    label: string;
+    placeholder: string;
+    secret?: boolean;
+    helpText?: string;
+  }>;
+  values: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  onSave: () => void;
+  onTest?: () => void;
+  saving: boolean;
+  testStatus?: "idle" | "testing" | "ok" | "fail";
+}
+
+function IntegrationCard({
+  name, description, logo, fields, values, onChange, onSave, onTest,
+  saving, testStatus = "idle",
+}: IntegrationCardProps) {
+  return (
+    <div className="setting-group" style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 8,
+          background: "var(--c-gray-100)", border: "1px solid var(--border)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {logo}
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-1)" }}>{name}</div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>{description}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {fields.map((field) => (
+          <div key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-2)" }}>
+              {field.label}
+            </label>
+            <input
+              type={field.secret ? "password" : "text"}
+              className="input"
+              placeholder={field.placeholder}
+              value={values[field.key] ?? ""}
+              onChange={(e) => onChange(field.key, e.target.value)}
+              style={{ fontFamily: field.secret ? "monospace" : undefined }}
+            />
+            {field.helpText && (
+              <span style={{ fontSize: 11, color: "var(--text-4)" }}>{field.helpText}</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <button
+          className="btn btn-primary"
+          onClick={onSave}
+          disabled={saving}
+          style={{ minWidth: 72 }}
+        >
+          {saving ? "저장 중…" : "저장"}
+        </button>
+        {onTest && (
+          <button
+            className="btn"
+            onClick={onTest}
+            disabled={testStatus === "testing"}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <Send size={13} />
+            {testStatus === "testing" ? "전송 중…"
+              : testStatus === "ok" ? "✅ 성공"
+              : testStatus === "fail" ? "❌ 실패"
+              : "테스트 전송"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function IntegrationHubSection({
+  settings,
+  save,
+}: {
+  settings: TenantSettings;
+  save: (patch: Partial<TenantSettings>) => void;
+}) {
+  // Slack
+  const [slackValues, setSlackValues] = useState<Record<string, string>>({
+    slack_webhook_url: (settings as any).slack_webhook_url ?? "",
+    slack_channel: (settings as any).slack_channel ?? "",
+  });
+  const [slackSaving, setSlackSaving] = useState(false);
+  const [slackTestStatus, setSlackTestStatus] = useState<"idle"|"testing"|"ok"|"fail">("idle");
+
+  // PagerDuty
+  const [pdValues, setPdValues] = useState<Record<string, string>>({
+    pagerduty_routing_key: (settings as any).pagerduty_routing_key ?? "",
+    pagerduty_severity_threshold: (settings as any).pagerduty_severity_threshold ?? "critical",
+  });
+  const [pdSaving, setPdSaving] = useState(false);
+  const [pdTestStatus, setPdTestStatus] = useState<"idle"|"testing"|"ok"|"fail">("idle");
+
+  // Jira
+  const [jiraValues, setJiraValues] = useState<Record<string, string>>({
+    jira_server_url: (settings as any).jira_server_url ?? "",
+    jira_email: (settings as any).jira_email ?? "",
+    jira_api_token: (settings as any).jira_api_token ?? "",
+    jira_project_key: (settings as any).jira_project_key ?? "",
+  });
+  const [jiraSaving, setJiraSaving] = useState(false);
+
+  async function testSlack() {
+    setSlackTestStatus("testing");
+    try {
+      const res = await fetch("/api/v1/integrations/slack/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json",
+                   "Authorization": `Bearer ${localStorage.getItem("ir_token") ?? ""}` },
+        body: JSON.stringify({ webhook_url: slackValues.slack_webhook_url }),
+      });
+      setSlackTestStatus(res.ok ? "ok" : "fail");
+    } catch {
+      setSlackTestStatus("fail");
+    }
+    setTimeout(() => setSlackTestStatus("idle"), 4000);
+  }
+
+  async function testPagerDuty() {
+    setPdTestStatus("testing");
+    try {
+      const res = await fetch("/api/v1/integrations/pagerduty/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json",
+                   "Authorization": `Bearer ${localStorage.getItem("ir_token") ?? ""}` },
+        body: JSON.stringify({ routing_key: pdValues.pagerduty_routing_key }),
+      });
+      setPdTestStatus(res.ok ? "ok" : "fail");
+    } catch {
+      setPdTestStatus("fail");
+    }
+    setTimeout(() => setPdTestStatus("idle"), 4000);
+  }
+
+  return (
+    <>
+      <div className="settings-section-title">Integration Hub</div>
+      <div className="settings-section-desc">
+        외부 서비스와 연동하여 인시던트를 실시간으로 전달합니다.
+        설정 후 <strong>테스트 전송</strong>으로 연결을 확인하세요.
+      </div>
+
+      {/* Slack */}
+      <IntegrationCard
+        name="Slack"
+        description="Critical/High 인시던트 탐지 시 Slack 채널로 알림 블록을 전송합니다."
+        logo={<span style={{ fontWeight: 700, fontSize: 13, color: "#4a154b" }}>S</span>}
+        fields={[
+          {
+            key: "slack_webhook_url",
+            label: "Webhook URL",
+            placeholder: "https://hooks.slack.com/services/…",
+            secret: true,
+            helpText: "Slack 앱 → Incoming Webhooks에서 URL을 복사하세요.",
+          },
+          {
+            key: "slack_channel",
+            label: "채널 (선택)",
+            placeholder: "#security-alerts",
+            helpText: "비워두면 Webhook 기본 채널로 전송됩니다.",
+          },
+        ]}
+        values={slackValues}
+        onChange={(k, v) => setSlackValues((p) => ({ ...p, [k]: v }))}
+        onSave={async () => {
+          setSlackSaving(true);
+          try { save(slackValues as any); } finally { setSlackSaving(false); }
+        }}
+        onTest={testSlack}
+        saving={slackSaving}
+        testStatus={slackTestStatus}
+      />
+
+      {/* PagerDuty */}
+      <IntegrationCard
+        name="PagerDuty"
+        description="Critical 인시던트를 PagerDuty 온콜 팀에 즉시 에스컬레이션합니다."
+        logo={<span style={{ fontWeight: 700, fontSize: 13, color: "#25c151" }}>PD</span>}
+        fields={[
+          {
+            key: "pagerduty_routing_key",
+            label: "Integration Routing Key",
+            placeholder: "a1b2c3d4e5f6…",
+            secret: true,
+            helpText: "PagerDuty → Services → Integrations → Events API v2에서 복사하세요.",
+          },
+          {
+            key: "pagerduty_severity_threshold",
+            label: "에스컬레이션 임계값",
+            placeholder: "critical",
+            helpText: "이 심각도 이상의 인시던트만 PagerDuty로 전달됩니다. (critical / high)",
+          },
+        ]}
+        values={pdValues}
+        onChange={(k, v) => setPdValues((p) => ({ ...p, [k]: v }))}
+        onSave={async () => {
+          setPdSaving(true);
+          try { save(pdValues as any); } finally { setPdSaving(false); }
+        }}
+        onTest={testPagerDuty}
+        saving={pdSaving}
+        testStatus={pdTestStatus}
+      />
+
+      {/* Jira */}
+      <IntegrationCard
+        name="Jira"
+        description="인시던트 발생 시 Jira 프로젝트에 티켓을 자동으로 생성합니다."
+        logo={<span style={{ fontWeight: 700, fontSize: 13, color: "#0052cc" }}>J</span>}
+        fields={[
+          { key: "jira_server_url", label: "Jira Server URL",
+            placeholder: "https://yourcompany.atlassian.net" },
+          { key: "jira_email", label: "계정 이메일",
+            placeholder: "admin@yourcompany.com" },
+          { key: "jira_api_token", label: "API Token",
+            placeholder: "ATATT3xFfGF0…", secret: true,
+            helpText: "Atlassian 계정 → 보안 → API 토큰에서 생성하세요." },
+          { key: "jira_project_key", label: "프로젝트 키",
+            placeholder: "SEC",
+            helpText: "티켓이 생성될 Jira 프로젝트 키입니다. (예: SEC, OPS)" },
+        ]}
+        values={jiraValues}
+        onChange={(k, v) => setJiraValues((p) => ({ ...p, [k]: v }))}
+        onSave={async () => { setJiraSaving(true); try { save(jiraValues as any); } finally { setJiraSaving(false); } }}
+        saving={jiraSaving}
+      />
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MFA / SSO Section (설계서 v4 §9 — TOTP MFA + WorkOS SSO)
+   ───────────────────────────────────────────────────────────────────────── */
+
+function MfaSsoSection() {
+  const [mfaEmail, setMfaEmail] = useState("");
+  const [mfaSetup, setMfaSetup] = useState<{
+    qr_code_base64: string;
+    encrypted_secret: string;
+    backup_codes: string[];
+    totp_uri: string;
+  } | null>(null);
+  const [verifyToken, setVerifyToken] = useState("");
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "ok" | "fail">("idle");
+  const [loading, setLoading] = useState(false);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+
+  const token = localStorage.getItem("ir_token") ?? "";
+
+  async function setupMfa() {
+    if (!mfaEmail) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/auth/mfa/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ user_email: mfaEmail }),
+      });
+      if (res.ok) setMfaSetup(await res.json());
+    } catch { /* ignore */ }
+    setLoading(false);
+  }
+
+  async function verifyMfa() {
+    if (!mfaSetup || !verifyToken) return;
+    const res = await fetch("/auth/mfa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ encrypted_secret: mfaSetup.encrypted_secret, token: verifyToken }),
+    });
+    setVerifyStatus(res.ok ? "ok" : "fail");
+  }
+
+  async function initiateSso() {
+    const res = await fetch(`/auth/sso/authorize?tenant_id=current`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const { authorization_url } = await res.json();
+      window.location.href = authorization_url;
+    }
+  }
+
+  return (
+    <>
+      <div className="settings-section-title">MFA (다단계 인증)</div>
+      <div className="settings-section-desc">
+        TOTP 기반 2단계 인증을 설정합니다. Google Authenticator, Authy 등의 앱과 호환됩니다.
+      </div>
+
+      <div className="setting-group">
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <input
+            className="form-input"
+            placeholder="사용자 이메일"
+            value={mfaEmail}
+            onChange={(e) => setMfaEmail(e.target.value)}
+          />
+          <button className="btn btn-primary" onClick={setupMfa} disabled={loading || !mfaEmail} style={{ flexShrink: 0 }}>
+            {loading ? "생성 중…" : "MFA 설정 시작"}
+          </button>
+        </div>
+
+        {mfaSetup && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* QR Code */}
+            <div style={{ padding: 16, background: "var(--c-gray-50)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>QR 코드 스캔</div>
+              <img
+                src={`data:image/png;base64,${mfaSetup.qr_code_base64}`}
+                alt="MFA QR Code"
+                style={{ width: 180, height: 180, display: "block" }}
+              />
+              <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-3)", fontFamily: "var(--mono)", wordBreak: "break-all" }}>
+                {mfaSetup.totp_uri}
+              </div>
+            </div>
+
+            {/* 백업 코드 */}
+            <div style={{ padding: 16, background: "var(--c-amber-50)", borderRadius: 8, border: "1px solid var(--c-amber-200)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--c-amber-700)" }}>
+                백업 코드 (안전한 곳에 보관하세요)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                {mfaSetup.backup_codes.map((code) => (
+                  <code key={code} style={{ fontSize: 12, padding: "2px 6px", background: "#fff", borderRadius: 4, border: "1px solid var(--c-amber-300)" }}>
+                    {code}
+                  </code>
+                ))}
+              </div>
+            </div>
+
+            {/* 검증 */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                className="form-input"
+                placeholder="앱에 표시된 6자리 코드 입력"
+                value={verifyToken}
+                onChange={(e) => setVerifyToken(e.target.value)}
+                maxLength={6}
+                style={{ fontFamily: "var(--mono)", letterSpacing: "0.2em" }}
+              />
+              <button className="btn btn-primary" onClick={verifyMfa} disabled={verifyToken.length < 6} style={{ flexShrink: 0 }}>
+                검증
+              </button>
+              {verifyStatus === "ok" && <span style={{ color: "var(--c-green-600)", fontSize: 13 }}>✅ 성공</span>}
+              {verifyStatus === "fail" && <span style={{ color: "var(--c-red-600)", fontSize: 13 }}>❌ 실패</span>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="settings-section-title" style={{ marginTop: 32 }}>SSO (단일 로그인)</div>
+      <div className="settings-section-desc">
+        WorkOS 기반 SAML 2.0 / OIDC SSO를 통해 기업 IdP와 연동합니다.
+        WORKOS_API_KEY 환경 변수 설정이 필요합니다.
+      </div>
+
+      <div className="setting-group">
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>SSO 로그인 활성화</div>
+            <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+              활성화 시 이메일/비밀번호 로그인 대신 SSO 인증으로 전환됩니다.
+            </div>
+          </div>
+          <label style={{ position: "relative", display: "inline-block", width: 40, height: 22, marginLeft: "auto", flexShrink: 0 }}>
+            <input type="checkbox" checked={ssoEnabled} onChange={(e) => setSsoEnabled(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+            <span style={{
+              position: "absolute", cursor: "pointer", inset: 0,
+              background: ssoEnabled ? "var(--c-blue-600)" : "var(--c-gray-300)",
+              borderRadius: 11, transition: "0.2s",
+            }}>
+              <span style={{
+                position: "absolute", content: "", height: 16, width: 16,
+                left: ssoEnabled ? 20 : 3, bottom: 3,
+                background: "#fff", borderRadius: "50%", transition: "0.2s",
+              }} />
+            </span>
+          </label>
+        </div>
+
+        {ssoEnabled && (
+          <button className="btn btn-primary" onClick={initiateSso} style={{ marginTop: 12 }}>
+            SSO 로그인 시작 (WorkOS)
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Billing Section (설계서 v4 §11 — Stripe 과금)
+   ───────────────────────────────────────────────────────────────────────── */
+
+const PLAN_INFO: Record<string, { name: string; agents: string; retention: string; price: string; color: string }> = {
+  trial:      { name: "Trial",      agents: "최대 3",   retention: "7일",   price: "무료",       color: "var(--c-gray-500)" },
+  starter:    { name: "Starter",    agents: "최대 3",   retention: "7일",   price: "$49/월",     color: "var(--c-blue-600)" },
+  growth:     { name: "Growth",     agents: "무제한",   retention: "90일",  price: "$199/월",    color: "var(--c-green-600)" },
+  enterprise: { name: "Enterprise", agents: "무제한",   retention: "1년",   price: "협의",       color: "var(--c-purple-600)" },
+};
+
+function BillingSection() {
+  const [status, setStatus] = useState<any>(null);
+  const [usage, setUsage] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [subscribing, setSubscribing] = useState(false);
+  const [email, setEmail] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState("growth");
+  const [canceling, setCanceling] = useState(false);
+
+  const token = localStorage.getItem("ir_token") ?? "";
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const [statusRes, usageRes] = await Promise.all([
+          fetch("/api/v1/billing/status", { headers }),
+          fetch("/api/v1/billing/usage", { headers }),
+        ]);
+        if (statusRes.ok) setStatus(await statusRes.json());
+        if (usageRes.ok) {
+          const d = await usageRes.json();
+          setUsage(d.usage_history || []);
+        }
+      } catch { /* ignore */ }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  async function subscribe() {
+    if (!email) return;
+    setSubscribing(true);
+    try {
+      const res = await fetch("/api/v1/billing/subscribe", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ plan: selectedPlan, email }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setStatus(d);
+      }
+    } catch { /* ignore */ }
+    setSubscribing(false);
+  }
+
+  async function cancel() {
+    if (!confirm("구독을 취소하시겠습니까? 현재 결제 기간 종료 후 서비스가 중단됩니다.")) return;
+    setCanceling(true);
+    try {
+      const res = await fetch("/api/v1/billing/cancel", { method: "POST", headers });
+      if (res.ok) setStatus(await res.json());
+    } catch { /* ignore */ }
+    setCanceling(false);
+  }
+
+  if (loading) return <div style={{ padding: 32, color: "var(--text-3)" }}>로딩 중…</div>;
+
+  const plan = status?.plan || "trial";
+  const planInfo = PLAN_INFO[plan] || PLAN_INFO.trial;
+  const trialEnd = status?.trial_ends_at ? new Date(status.trial_ends_at).toLocaleDateString("ko-KR") : null;
+
+  return (
+    <>
+      <div className="settings-section-title">플랜 & 과금</div>
+      <div className="settings-section-desc">
+        현재 구독 플랜과 에이전트 사용량을 확인합니다.
+      </div>
+
+      {/* 현재 플랜 카드 */}
+      <div className="setting-group" style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{
+            padding: "4px 12px", borderRadius: 20,
+            background: planInfo.color, color: "#fff",
+            fontSize: 12, fontWeight: 700,
+          }}>
+            {planInfo.name.toUpperCase()}
+          </div>
+          {trialEnd && (
+            <span style={{ fontSize: 12, color: "var(--c-amber-600)" }}>
+              트라이얼 종료: {trialEnd}
+            </span>
+          )}
+          {status?.stripe_subscription_id && (
+            <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--mono)" }}>
+              {status.stripe_subscription_id}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
+          {[
+            { label: "에이전트 한도", value: planInfo.agents },
+            { label: "로그 보존",     value: planInfo.retention },
+            { label: "가격",          value: planInfo.price },
+          ].map(({ label, value }) => (
+            <div key={label} style={{ padding: 12, background: "var(--c-gray-50)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        {status?.stripe_subscription_id && plan !== "trial" && (
+          <button className="btn btn-sm" onClick={cancel} disabled={canceling} style={{ color: "var(--c-red-600)", borderColor: "var(--c-red-300)" }}>
+            {canceling ? "취소 중…" : "구독 취소"}
+          </button>
+        )}
+      </div>
+
+      {/* 플랜 업그레이드 */}
+      {(plan === "trial" || plan === "starter") && (
+        <div className="setting-group" style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>플랜 업그레이드</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {["starter", "growth", "enterprise"].map((p) => (
+              <button
+                key={p}
+                onClick={() => setSelectedPlan(p)}
+                style={{
+                  padding: "6px 14px", borderRadius: 6, border: "1px solid",
+                  borderColor: selectedPlan === p ? PLAN_INFO[p].color : "var(--border)",
+                  background: selectedPlan === p ? `${PLAN_INFO[p].color}15` : "transparent",
+                  color: selectedPlan === p ? PLAN_INFO[p].color : "var(--text-2)",
+                  fontSize: 13, fontWeight: 500, cursor: "pointer",
+                }}
+              >
+                {PLAN_INFO[p].name}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="form-input"
+              placeholder="결제 이메일"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+            />
+            <button className="btn btn-primary" onClick={subscribe} disabled={subscribing || !email} style={{ flexShrink: 0 }}>
+              {subscribing ? "처리 중…" : "구독 시작"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 에이전트 사용량 히스토리 */}
+      {usage.length > 0 && (
+        <div className="setting-group">
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>에이전트 사용량 (최근 30일)</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>에이전트 수</th>
+                  <th>Stripe 보고</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.slice(0, 10).map((u, i) => (
+                  <tr key={i}>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+                      {new Date(u.reported_at).toLocaleDateString("ko-KR")}
+                    </td>
+                    <td><strong>{u.agent_count}</strong></td>
+                    <td>{u.stripe_reported ? "✅" : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -1,0 +1,55 @@
+# InfraRed Collector 컴포넌트 — systemd 유닛 파일
+# 설계서 v7.0 §4: Agent 권한 분리 5컴포넌트 구조
+#
+# 역할: 로그/이벤트 수집 → backend 전송 (비특권)
+#   - sensor로부터 UDS로 이벤트 수신
+#   - ComponentBridge로 responder/forensic/updater에 명령 위임
+#   - HTTP/mTLS로 backend 통신
+#
+# 설치:
+#   sudo cp infra/systemd/infrared-collector.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infrared-collector
+
+[Unit]
+Description=InfraRed Collector Component
+Documentation=https://github.com/your-org/infrared
+After=network-online.target infrared-sensor.service infrared-responder.service
+Wants=network-online.target
+Requires=infrared-sensor.service infrared-responder.service
+
+[Service]
+Type=simple
+ExecStart=/opt/infrared/venv/bin/python -m infrared_agent.components.collector
+EnvironmentFile=/etc/infrared/agent.env
+WorkingDirectory=/var/lib/infrared
+StateDirectory=infrared
+RuntimeDirectory=infrared
+
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=200
+StartLimitBurst=5
+
+# ── Cgroup 리소스 제한 ────────────────────────────────────────────────────────
+CPUQuota=5%
+MemoryMax=128M
+MemorySwapMax=0
+IOWeight=10
+
+# ── 보안: 비특권 실행 ─────────────────────────────────────────────────────────
+User=infrared-agent
+Group=infrared-agent
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/infrared /run/infrared
+ReadOnlyPaths=/var/log
+PrivateTmp=yes
+PrivateDevices=yes
+
+# 네트워크: 아웃바운드(backend API + UDS) 허용
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

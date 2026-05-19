@@ -57,9 +57,10 @@ SCENARIOS: list[AttackScenario] = [
         auto_severity="critical",
         confidence_bonus=0.35,
         stages=[
+            # v8.0: TRAVEL-001 추가 — Impossible Travel이 있으면 계정 탈취 신뢰도 대폭 상승
             ScenarioStage(
                 name="initial_auth_attempt",
-                rule_ids=["AUTH-001", "AUTH-006A", "AUTH-006B"],
+                rule_ids=["AUTH-001", "AUTH-006A", "AUTH-006B", "TRAVEL-001"],
                 required=True,
             ),
             ScenarioStage(
@@ -131,8 +132,30 @@ SCENARIOS: list[AttackScenario] = [
             ),
             ScenarioStage(
                 name="encryption_prep",
-                rule_ids=["EXEC-003"],
+                # v8.0: TAMPER-LOG-001 추가 — 로그 엔트로피 폭등은 랜섬웨어 암호화의 확정 신호
+                rule_ids=["EXEC-003", "TAMPER-LOG-001"],
                 required=True,
+            ),
+        ],
+    ),
+    # v8.0 신규: 공급망 바이너리 교체 (설계서 §10)
+    # EXEC-FIRST-001(시스템 바이너리 첫 실행)만 있어도 즉시 CRITICAL
+    AttackScenario(
+        id="SUPPLY_CHAIN_BINARY_REPLACEMENT",
+        display_name="공급망 바이너리 교체",
+        window_seconds=3600,
+        auto_severity="critical",
+        confidence_bonus=0.45,
+        stages=[
+            ScenarioStage(
+                name="binary_replaced",
+                rule_ids=["EXEC-FIRST-001"],
+                required=True,
+            ),
+            ScenarioStage(
+                name="persistence_or_lateral",
+                rule_ids=["PERSIST-001", "PERSIST-002", "PERSIST-003"],
+                required=False,  # 단독으로도 CRITICAL (설계서: auto_severity=CRITICAL)
             ),
         ],
     ),
@@ -145,6 +168,32 @@ SCENARIOS: list[AttackScenario] = [
         stages=[
             ScenarioStage(
                 name="multi_asset_auth",
+                rule_ids=["AUTH-004"],
+                required=True,
+                min_distinct_assets=3,
+            ),
+        ],
+    ),
+    # v7.0: 6번째 시나리오 — 다중 자격증명 내부 확산 (Pass-the-Hash 포함)
+    AttackScenario(
+        id="CRED_SPREAD",
+        display_name="다중 자격증명 내부 확산",
+        window_seconds=3600,
+        auto_severity="critical",
+        confidence_bonus=0.40,
+        stages=[
+            ScenarioStage(
+                name="초기 자격증명 침해",
+                rule_ids=["AUTH-001", "AUTH-006A", "AUTH-006B"],
+                required=True,
+            ),
+            ScenarioStage(
+                name="자격증명 덤프",
+                rule_ids=["EXEC-001", "ESCALATE-001"],
+                required=True,
+            ),
+            ScenarioStage(
+                name="횡이동",
                 rule_ids=["AUTH-004"],
                 required=True,
                 min_distinct_assets=3,
@@ -213,6 +262,16 @@ class AttackChainMatcher:
                     return scenario, scenario.confidence_bonus
                 continue
 
+            # v7.0: CRED_SPREAD — 자격증명 침해 + 덤프 + 다중 자산 횡이동
+            if scenario.id == "CRED_SPREAD":
+                result = await self._process_cred_spread(
+                    tenant_id, signal_rule_id, source_ip, asset_id,
+                    scenario, stage_idx, now,
+                )
+                if result:
+                    return scenario, scenario.confidence_bonus
+                continue
+
             # 일반 시나리오 처리
             result = await self._process_scenario_stage(
                 tenant_id, signal_rule_id, source_ip, asset_id,
@@ -226,6 +285,76 @@ class AttackChainMatcher:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _process_cred_spread(
+        self,
+        tenant_id: str,
+        signal_rule_id: str,
+        source_ip: str,
+        asset_id: str,
+        scenario: AttackScenario,
+        stage_idx: int,
+        now: float,
+    ) -> bool:
+        """CRED_SPREAD 시나리오 처리.
+
+        스테이지 0/1 (자격증명 침해 + 덤프): 일반 순서 진행 추적
+        스테이지 2 (횡이동): LATERAL_MOVEMENT와 동일하게 다중 asset 집합 추적
+        """
+        stage = scenario.stages[stage_idx]
+
+        # 횡이동 스테이지 (AUTH-004, min_distinct_assets=3)
+        if stage_idx == 2:
+            # 앞 단계(자격증명 침해, 덤프)가 완료된 경우에만 횡이동 추적
+            state_key = keys.scenario_state(scenario.id, tenant_id, source_ip)
+            raw = await self.redis.get(state_key)
+            if raw is None:
+                # 앞 단계 미완성 → 일반 stage 처리로 위임 (상태 시작)
+                return await self._process_scenario_stage(
+                    tenant_id, signal_rule_id, source_ip, asset_id,
+                    scenario, stage_idx, now,
+                )
+
+            state_dict = json.loads(raw)
+            completed: list[str] = state_dict.get("completed_stages", [])
+
+            # 이전 required 단계 완료 확인
+            if not self._can_advance_to(scenario, stage_idx, completed):
+                return False
+
+            # 다중 asset 집합 추적 (LATERAL_MOVEMENT와 동일한 패턴)
+            assets_key = f"scenario:cred_spread:{tenant_id}:{source_ip}:assets"
+            pipe = self.redis.pipeline()
+            pipe.sadd(assets_key, asset_id)
+            pipe.expire(assets_key, scenario.window_seconds)
+            pipe.scard(assets_key)
+            results = await pipe.execute()
+            distinct_count: int = results[2]
+
+            required_assets = stage.min_distinct_assets
+            if distinct_count >= required_assets:
+                # 횡이동 스테이지 완료 → 전체 시나리오 완성 체크
+                if stage.name not in completed:
+                    completed.append(stage.name)
+                new_state = {
+                    "completed_stages": completed,
+                    "first_seen_at": state_dict.get("first_seen_at", now),
+                    "source_ip": source_ip,
+                    "asset_id": asset_id,
+                }
+                await self.redis.set(
+                    state_key,
+                    json.dumps(new_state),
+                    ex=scenario.window_seconds,
+                )
+                return self._is_scenario_complete(scenario, completed)
+            return False
+
+        # 스테이지 0, 1: 일반 순서 진행 처리
+        return await self._process_scenario_stage(
+            tenant_id, signal_rule_id, source_ip, asset_id,
+            scenario, stage_idx, now,
+        )
 
     async def _process_lateral_movement(
         self,

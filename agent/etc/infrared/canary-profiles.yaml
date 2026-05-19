@@ -1,0 +1,69 @@
+# InfraRed Canary Pack 프로필 정의
+# 설계서: InfraRed_v8_보안심화_설계서.md §8.2
+#
+# 사용법:
+#   sudo infrared canary install --profile web-server
+#   sudo infrared canary install --profile aws --dry-run
+#   infrared canary status
+#   sudo infrared canary uninstall
+
+profiles:
+
+  web-server:
+    description: "Linux 웹서버 (Nginx/Apache) 기준 미끼 세트"
+    honeytokens:
+      - type: file
+        path: /var/www/html/.env
+        content_template: fake_env_web
+      - type: file
+        path: /var/www/html/backup.zip.bak
+        content_template: fake_binary
+      - type: file
+        path: /opt/app/config-prod.bak
+        content_template: fake_env_app
+      - type: file
+        path: /home/deploy/.aws/credentials_backup
+        content_template: fake_aws_credentials   # DECEPTION-003 연동 가능
+    web_canary_routes:
+      - /.env
+      - /backup.zip
+      - /admin-backup.zip
+      - /db.sql
+      - /.git/config
+      - /config.php.bak
+
+  aws:
+    description: "AWS 환경 (EC2 + IAM) 기준 미끼 세트"
+    honeytokens:
+      - type: file
+        path: /home/deploy/.aws/credentials_backup
+        content_template: fake_aws_credentials
+      - type: file
+        path: /opt/app/.env.backup
+        content_template: fake_env_app
+      - type: file
+        path: /root/.aws/credentials_backup
+        content_template: fake_aws_credentials
+
+  docker:
+    description: "Docker/K8s 환경 기준 미끼 세트"
+    honeytokens:
+      - type: file
+        path: /root/.docker/config_backup.json
+        content_template: fake_docker_credentials
+      - type: file
+        path: /etc/kubernetes/admin_backup.conf
+        content_template: fake_kubeconfig
+      - type: file
+        path: /home/deploy/.kube/config_backup
+        content_template: fake_kubeconfig
+
+  minimal:
+    description: "계정 생성 없이 파일만 배포 (보수적 고객용)"
+    honeytokens:
+      - type: file
+        path: /home/deploy/.aws/credentials_backup
+        content_template: fake_aws_credentials
+      - type: file
+        path: /opt/app/.env.backup
+        content_template: fake_env_app

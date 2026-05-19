@@ -138,6 +138,24 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+    restart: unless-stopped
+
+  # v4.0 §12 — UEBA Autoencoder (사용자 행동 기반 이상탐지)
+  ueba-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-ueba
+    command: ["python", "-m", "app.workers.ueba.worker"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
 
   agent:
     build:
@@ -254,49 +272,6 @@ services:
       prometheus:
         condition: service_started
 
-
-  step-ca:
-    image: smallstep/step-ca:latest
-    container_name: infrared-step-ca
-    mem_limit: 80m
-    restart: unless-stopped
-    volumes:
-      - step-ca-data:/home/step
-    environment:
-      - DOCKER_STEPCA_INIT_NAME=InfraRed CA
-      - DOCKER_STEPCA_INIT_DNS_NAMES=step-ca,localhost
-      - DOCKER_STEPCA_INIT_ADDRESS=:9000
-      - DOCKER_STEPCA_INIT_PROVISIONER_NAME=infrared-provisioner
-    expose:
-      - "9000"
-
-volumes:
-  postgres-data:
-  redis-data:
-  agent-state:
-  grafana-data:
-  fluentbit-db:
-  step-ca-data:
-rometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    depends_on:
-      ingestion:
-        condition: service_started
-
-  grafana:
-    image: grafana/grafana:11.2.2
-    container_name: infrared-grafana
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3001:3000"
-    depends_on:
-      prometheus:
-        condition: service_started
 
   step-ca:
     image: smallstep/step-ca:latest
