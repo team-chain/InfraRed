@@ -22,6 +22,8 @@ import json
 import os
 import platform
 import stat
+import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -396,3 +398,182 @@ class WindowsEventLogWatcher:
             pass
 
         return events
+
+
+# ============================================================
+# EXEC-001: /tmp 실행 파일 탐지 (v3.0)
+# ============================================================
+
+class TmpExecutionMonitor:
+    """룰 ID: EXEC-001, MITRE: T1059.
+    /proc/*/exe 심볼릭 링크가 /tmp, /var/tmp, /dev/shm을 가리키는 프로세스 탐지.
+    10초 주기 폴링.
+    """
+
+    SUSPICIOUS_DIRS = ["/tmp/", "/var/tmp/", "/dev/shm/"]
+
+    def check(self) -> list[dict]:
+        events = []
+        my_pid = str(os.getpid())
+        for pid_dir in Path("/proc").iterdir():
+            if not pid_dir.name.isdigit():
+                continue
+            # 자기 자신(watchdog/에이전트 프로세스) 제외
+            if pid_dir.name == my_pid:
+                continue
+            try:
+                exe_path = str((pid_dir / "exe").resolve())
+                if any(exe_path.startswith(d) for d in self.SUSPICIOUS_DIRS):
+                    try:
+                        cmdline = (
+                            (pid_dir / "cmdline")
+                            .read_bytes()
+                            .replace(b"\x00", b" ")
+                            .decode(errors="replace")
+                            .strip()
+                        )
+                    except Exception:
+                        cmdline = ""
+                    events.append({
+                        "event_type": "suspicious_process_execution",
+                        "rule_id": "EXEC-001",
+                        "mitre_technique": "T1059",
+                        "description": "/tmp 계열 경로에서 실행 중인 의심 프로세스 탐지",
+                        "pid": pid_dir.name,
+                        "exe_path": exe_path,
+                        "cmdline": cmdline[:200],
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
+                    })
+            except (PermissionError, FileNotFoundError, OSError):
+                continue
+        return events
+
+
+# ============================================================
+# EXEC-002: 웹서버 Child Process Shell 감지 (v3.0)
+# ============================================================
+
+class WebServerChildProcessMonitor:
+    """룰 ID: EXEC-002, MITRE: T1505.003.
+    nginx/apache2/php-fpm의 자식 프로세스 중 shell이 포함된 것 탐지.
+    """
+
+    WEB_PROCESS_NAMES = {"nginx", "apache2", "apache", "httpd", "php-fpm", "php"}
+    SHELL_NAMES = {"bash", "sh", "dash", "zsh", "python", "python3", "perl", "ruby", "nc", "ncat"}
+
+    def _get_process_name(self, pid_str: str) -> str:
+        try:
+            return Path(f"/proc/{pid_str}/comm").read_text().strip()
+        except (PermissionError, FileNotFoundError):
+            return ""
+
+    def _get_children(self, pid_str: str) -> list[str]:
+        children = []
+        try:
+            for pid_dir in Path("/proc").iterdir():
+                if not pid_dir.name.isdigit():
+                    continue
+                try:
+                    status = (pid_dir / "status").read_text()
+                    for line in status.splitlines():
+                        if line.startswith("PPid:") and line.split()[1] == pid_str:
+                            children.append(pid_dir.name)
+                except (PermissionError, FileNotFoundError):
+                    pass
+        except (PermissionError, OSError):
+            pass
+        return children
+
+    def check(self) -> list[dict]:
+        events = []
+        try:
+            for pid_dir in Path("/proc").iterdir():
+                if not pid_dir.name.isdigit():
+                    continue
+                name = self._get_process_name(pid_dir.name)
+                if name not in self.WEB_PROCESS_NAMES:
+                    continue
+                for child_pid in self._get_children(pid_dir.name):
+                    child_name = self._get_process_name(child_pid)
+                    if child_name in self.SHELL_NAMES:
+                        try:
+                            cmdline = (
+                                Path(f"/proc/{child_pid}/cmdline")
+                                .read_bytes()
+                                .replace(b"\x00", b" ")
+                                .decode(errors="replace")
+                                .strip()
+                            )
+                        except Exception:
+                            cmdline = ""
+                        events.append({
+                            "event_type": "webserver_shell_spawn",
+                            "rule_id": "EXEC-002",
+                            "mitre_technique": "T1505.003",
+                            "description": "웹서버 자식 프로세스에서 shell 실행 감지 — 웹셸 가능성",
+                            "parent_pid": pid_dir.name,
+                            "parent_process": name,
+                            "child_pid": child_pid,
+                            "child_process": child_name,
+                            "cmdline": cmdline[:200],
+                            "detected_at": datetime.now(timezone.utc).isoformat(),
+                        })
+        except (PermissionError, OSError):
+            pass
+        return events
+
+
+# ============================================================
+# EXEC-003: 대량 파일 변경 감지 (랜섬웨어 전조) (v3.0)
+# ============================================================
+
+class BulkFileModificationMonitor:
+    """룰 ID: EXEC-003, MITRE: T1486.
+    60초 슬라이딩 윈도우에서 100건 이상 파일 변경 시 경보.
+    inotify 없으면 mtime 폴링으로 대체.
+    """
+
+    WINDOW_SECONDS = 60
+    THRESHOLD = 100
+    WATCH_DIRS = ["/home", "/var/www", "/opt"]
+
+    def __init__(self):
+        self._event_times: deque = deque()
+        self._last_mtimes: dict[str, float] = {}
+
+    def check(self) -> list[dict]:
+        now = time.time()
+        # 윈도우 밖 이벤트 제거
+        while self._event_times and self._event_times[0] < now - self.WINDOW_SECONDS:
+            self._event_times.popleft()
+
+        # mtime 폴링으로 변경 감지
+        for watch_dir in self.WATCH_DIRS:
+            if not Path(watch_dir).exists():
+                continue
+            try:
+                for root, _, files in os.walk(watch_dir):
+                    for fname in files:
+                        fpath = os.path.join(root, fname)
+                        try:
+                            mtime = os.path.getmtime(fpath)
+                            prev = self._last_mtimes.get(fpath)
+                            if prev is not None and mtime > prev:
+                                self._event_times.append(now)
+                            self._last_mtimes[fpath] = mtime
+                        except OSError:
+                            pass
+            except (PermissionError, OSError):
+                pass
+
+        if len(self._event_times) >= self.THRESHOLD:
+            return [{
+                "event_type": "bulk_file_modification",
+                "rule_id": "EXEC-003",
+                "mitre_technique": "T1486",
+                "description": "60초 내 대량 파일 변경 감지 — 랜섬웨어 전조 가능성",
+                "change_count": len(self._event_times),
+                "window_seconds": self.WINDOW_SECONDS,
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+            }]
+        return []

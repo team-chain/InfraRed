@@ -77,3 +77,52 @@ resource "aws_ssm_parameter" "agent_command_secret" {
   value       = var.agent_command_secret
   tags        = { Name = "${local.name_prefix}-agent-command-secret" }
 }
+
+# ── step-ca Root CA 비밀번호 — v3.0 PKI ──────────────────────
+# ec2.tf user_data에서 $SSM_PREFIX/step-ca-password 로 참조함.
+# 비워두면 EC2 초기화 시 openssl rand -hex 32 로 자동 생성하지만
+# 재배포/재부팅 시 CA 비밀번호 불일치 문제가 생길 수 있으므로
+# terraform.tfvars에 명시적으로 지정하는 것을 권장.
+resource "aws_ssm_parameter" "step_ca_password" {
+  name        = "/${local.name_prefix}/step-ca-password"
+  description = "step-ca Root CA 비밀번호 (v3.0 에이전트 mTLS PKI)"
+  type        = "SecureString"
+  value       = var.step_ca_password != "" ? var.step_ca_password : "change-me-set-in-tfvars"
+  tags        = { Name = "${local.name_prefix}-step-ca-password" }
+}
+
+# ── Watchdog JWT 토큰 — v3.0 AgentWatchdog ───────────────────
+# agent/infrared_agent/watchdog.py 가 WATCHDOG_TOKEN 환경변수로
+# 서버의 /api/v1/tamper-report 엔드포인트에 인증하는 별도 JWT.
+# scripts/generate_jwt.py --role watchdog 로 생성.
+resource "aws_ssm_parameter" "watchdog_token" {
+  name        = "/${local.name_prefix}/watchdog-token"
+  description = "AgentWatchdog 전용 JWT 토큰 (v3.0 Tamper Detection)"
+  type        = "SecureString"
+  value       = var.watchdog_token
+  tags        = { Name = "${local.name_prefix}-watchdog-token" }
+}
+
+# ── step-ca Root CA 비밀번호 — v3.0 PKI ──────────────────────
+# ec2.tf user_data에서 $SSM_PREFIX/step-ca-password 로 참조함.
+# 재배포/재부팅 시 CA 비밀번호 불일치 방지를 위해 terraform.tfvars에 명시 권장.
+resource "aws_ssm_parameter" "step_ca_password" {
+  name        = "/${local.name_prefix}/step-ca-password"
+  description = "step-ca Root CA 비밀번호 (v3.0 에이전트 mTLS PKI)"
+  type        = "SecureString"
+  value       = var.step_ca_password != "" ? var.step_ca_password : "change-me-set-in-tfvars"
+  tags        = { Name = "${local.name_prefix}-step-ca-password" }
+}
+
+# ── Watchdog JWT 토큰 — v3.0 AgentWatchdog ───────────────────
+# agent/infrared_agent/watchdog.py 가 WATCHDOG_TOKEN 환경변수로 인증.
+# 에이전트 JWT(agent_token)와 별개의 토큰 사용 → 에이전트 토큰이 탈취되어도
+# watchdog 보고 채널은 독립적으로 유지됨.
+# scripts/generate_jwt.py --role watchdog 로 생성.
+resource "aws_ssm_parameter" "watchdog_token" {
+  name        = "/${local.name_prefix}/watchdog-token"
+  description = "AgentWatchdog 전용 JWT 토큰 (v3.0 Tamper Detection)"
+  type        = "SecureString"
+  value       = var.watchdog_token
+  tags        = { Name = "${local.name_prefix}-watchdog-token" }
+}

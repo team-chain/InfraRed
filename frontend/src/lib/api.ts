@@ -42,6 +42,17 @@ export type LlmResult = {
   generated_at: string;
 };
 
+export type PendingBlockAction = {
+  action_id: string;
+  incident_id: string;
+  action_type: string;
+  target_ip?: string;
+  requested_by?: string;
+  ttl_seconds?: number;
+  expires_at?: string;
+  approval_required: boolean;
+};
+
 export type IncidentContract = {
   incident: IncidentListItem & {
     cti_enrichment?: {
@@ -55,6 +66,16 @@ export type IncidentContract = {
       note?: string;
     };
     signal_ids?: string[];
+    scenario_id?: string;
+    confidence_breakdown?: {
+      base_score: number;
+      asset_multiplier: number;
+      cti_bonus: number;
+      exception_penalty: number;
+      final_score: number;
+      [key: string]: number;
+    };
+    pending_block?: PendingBlockAction | null;
   };
   evidence_timeline: Array<{
     timestamp: string;
@@ -281,6 +302,27 @@ export async function approveAction(actionId: string): Promise<void> {
 
 export async function rejectAction(actionId: string): Promise<void> {
   await apiFetch(`/ingest/actions/${actionId}/reject`, { method: "POST" });
+}
+
+export async function approveBlock(incidentId: string, extendTtlSeconds?: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/v1/incidents/${incidentId}/approve-block`, {
+    method: "POST",
+    body: JSON.stringify({ extend_ttl_seconds: extendTtlSeconds ?? null }),
+  });
+}
+
+export async function rejectBlock(incidentId: string, reason?: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/v1/incidents/${incidentId}/reject-block`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? "" }),
+  });
+}
+
+export async function extendBlock(incidentId: string, additionalTtlSeconds?: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/v1/incidents/${incidentId}/extend-block`, {
+    method: "POST",
+    body: JSON.stringify({ additional_ttl_seconds: additionalTtlSeconds ?? 3600 }),
+  });
 }
 
 // ── Assets ───────────────────────────────────────────────────────────────── //
@@ -749,4 +791,35 @@ export async function importConfig(config: Record<string, unknown>): Promise<{ i
     method: "POST",
     body: JSON.stringify(config),
   });
+}
+
+// ── Campaigns ────────────────────────────────────────────────────────────── //
+
+export type Campaign = {
+  id: string;
+  tenant_id: string;
+  campaign_type: string;
+  source_asn?: string;
+  source_ips?: string[];
+  affected_asset_ids?: string[];
+  incident_ids?: string[];
+  first_seen_at: string;
+  last_seen_at: string;
+  total_signals?: number;
+  status: string;  // active / contained / closed
+  campaign_label?: string;
+};
+
+export async function fetchCampaigns(status?: string): Promise<Campaign[]> {
+  const qs = status ? `?status=${status}` : "";
+  const data = await apiFetch<{ items: Campaign[] }>(`/api/v1/campaigns${qs}`);
+  return data.items ?? [];
+}
+
+export async function fetchCampaign(id: string): Promise<Campaign> {
+  return apiFetch<Campaign>(`/api/v1/campaigns/${id}`);
+}
+
+export async function containCampaign(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/v1/campaigns/${id}/contain`, { method: "POST" });
 }

@@ -45,6 +45,11 @@ from app.ingestion.suppression_routes import router as suppression_router
 from app.ingestion.user_routes import router as user_router
 from app.ingestion.agent_mgmt_routes import router as agent_mgmt_router
 from app.ingestion.enterprise_routes import router as enterprise_router
+# v3.0 신규 라우터
+from app.ingestion.tamper_routes import router as tamper_router
+from app.ingestion.block_approval_routes import router as block_approval_router
+from app.ingestion.campaign_routes import router as campaign_router
+from app.ingestion.asset_criticality_routes import router as asset_criticality_router
 from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
 from app.models.llm import LLMResult
 from app.workers.llm.service import analyze_contract_with_cache
@@ -125,6 +130,11 @@ app.include_router(suppression_router)
 app.include_router(user_router)
 app.include_router(agent_mgmt_router)
 app.include_router(enterprise_router)
+# v3.0 신규 라우터
+app.include_router(tamper_router)
+app.include_router(block_approval_router)
+app.include_router(campaign_router)
+app.include_router(asset_criticality_router)
 
 
 @app.get("/healthz")

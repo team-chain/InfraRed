@@ -4,6 +4,7 @@ import {
   ClipboardList, Cog, GitCommitVertical, LogOut, Monitor,
   RefreshCw, Shield, ShieldAlert, Siren, UserPlus,
   Heart, BookOpen, VolumeX, Users, FileText, Search,
+  Lock, Unlock, Clock, Target,
 } from "lucide-react";
 import { SettingsPage } from "./SettingsPage";
 import { AssetsPage } from "./AssetsPage";
@@ -13,9 +14,11 @@ import { SuppressionPage } from "./SuppressionPage";
 import { MembersPage } from "./MembersPage";
 import { ReportsPage } from "./ReportsPage";
 import { NaturalSearchPage } from "./NaturalSearchPage";
+import { CampaignsPage } from "./CampaignsPage";
 import { IncidentWorkflow } from "../components/IncidentWorkflow";
 import {
-  analyzeIncident, dispatchIncident, fetchAuditLogs,
+  analyzeIncident, approveBlock, rejectBlock, extendBlock,
+  dispatchIncident, fetchAuditLogs,
   fetchDetectionRules, fetchIncident, fetchIncidents,
   updateIncidentStatus,
   type AuditLog, type AuthUser, type DetectionRule,
@@ -25,7 +28,7 @@ import {
 type Props = { user: AuthUser; onLogout: () => void; onOpenOnboarding: () => void };
 type Tab =
   | "incidents" | "assets" | "rules" | "audit" | "settings"
-  | "health" | "rule_mgmt" | "suppression" | "members" | "reports" | "search";
+  | "health" | "rule_mgmt" | "suppression" | "members" | "reports" | "search" | "campaigns";
 
 const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, info: 1 };
 
@@ -73,6 +76,28 @@ function abuseColor(n: number) {
   return "var(--c-green-500)";
 }
 
+function TtlCountdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState<string>("");
+  useEffect(() => {
+    function update() {
+      const ms = new Date(expiresAt).getTime() - Date.now();
+      if (ms <= 0) { setRemaining("만료됨"); return; }
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setRemaining(h > 0 ? `${h}시간 ${m}분 남음` : m > 0 ? `${m}분 ${s}초 남음` : `${s}초 남음`);
+    }
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [expiresAt]);
+  return (
+    <span className="card-head-sub" style={{display:"flex", alignItems:"center", gap:4, color: remaining === "만료됨" ? "var(--c-red-500)" : "var(--text-3)"}}>
+      <Clock size={11} /> {remaining}
+    </span>
+  );
+}
+
 export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   const [tab, setTab] = useState<Tab>("incidents");
   const [incidents, setIncidents] = useState<IncidentListItem[]>([]);
@@ -80,6 +105,7 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | undefined>();
+  const [blockBusy, setBlockBusy] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
   const [rules, setRules] = useState<DetectionRule[]>([]);
@@ -172,6 +198,9 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   const llm = selected?.llm_result;
   const inc = selected?.incident;
   const cti = inc?.cti_enrichment;
+  const confidenceBreakdown = (inc as any)?.confidence_breakdown;
+  const pendingBlock = (inc as any)?.pending_block;
+  const scenarioId = (inc as any)?.scenario_id;
   const openN  = incidents.filter(i => i.status === "open").length;
   const critN  = incidents.filter(i => i.severity === "critical").length;
   const highN  = incidents.filter(i => i.severity === "high").length;
@@ -189,6 +218,7 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
     { key: "rule_mgmt",   icon: <BookOpen size={15}/>, name: "룰 관리", desc: "라이프사이클" },
     { key: "suppression", icon: <VolumeX size={15}/>,  name: "억제", desc: "Allowlist·점검창" },
     { key: "health",      icon: <Heart size={15}/>,    name: "헬스체크", desc: "시스템 상태" },
+    { key: "campaigns",   icon: <Target size={15}/>,   name: "캠페인", desc: "공격 캠페인 뷰" },
   ] as const;
 
   const adminTabs = [
@@ -561,6 +591,148 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
                         </div>
                       </div>
 
+                      {/* ④ Detection Confidence 시각화 */}
+                      {confidenceBreakdown && (
+                        <div className="card">
+                          <div className="card-head">
+                            <div className="card-head-icon" style={{background:"var(--c-purple-100, #ede9fe)", color:"#7c3aed"}}><BrainCircuit size={14} /></div>
+                            <span className="card-head-title">탐지 신뢰도 분석 — 왜 이 등급인가?</span>
+                            <span className="card-head-sub">
+                              최종 점수: <strong style={{color: confidenceBreakdown.final_score >= 0.7 ? "var(--c-red-500)" : confidenceBreakdown.final_score >= 0.4 ? "var(--c-orange-500)" : "var(--c-green-500)"}}>
+                                {Math.round(confidenceBreakdown.final_score * 100)}%
+                              </strong>
+                            </span>
+                          </div>
+                          <div className="card-body">
+                            {scenarioId && (
+                              <div style={{marginBottom:12, padding:"8px 12px", background:"var(--c-purple-50,#faf5ff)", border:"1px solid #ddd6fe", borderRadius:6, fontSize:13}}>
+                                <strong>공격 시나리오:</strong> <code style={{fontSize:12}}>{scenarioId}</code>
+                              </div>
+                            )}
+                            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+                              {[
+                                { key: "base_score", label: "기본 룰 점수" },
+                                { key: "asset_multiplier", label: "자산 중요도 배수" },
+                                { key: "cti_bonus", label: "CTI 위협 인텔리전스 보너스" },
+                                { key: "exception_penalty", label: "예외 패널티" },
+                                { key: "final_score", label: "최종 신뢰도 점수", highlight: true },
+                              ].map(({ key, label, highlight }) => {
+                                const val = confidenceBreakdown[key];
+                                if (val === undefined) return null;
+                                const pct = Math.round(val * 100);
+                                const color = key === "exception_penalty"
+                                  ? "var(--c-red-500)"
+                                  : pct >= 70 ? "var(--c-red-500)"
+                                  : pct >= 40 ? "var(--c-orange-500)"
+                                  : "var(--c-green-500)";
+                                return (
+                                  <div key={key} style={{
+                                    padding:"10px 12px",
+                                    background: highlight ? "var(--surface-2,#f8fafc)" : "var(--surface,#fff)",
+                                    border:`1px solid ${highlight ? "#cbd5e1" : "var(--border)"}`,
+                                    borderRadius:6,
+                                  }}>
+                                    <div style={{fontSize:11, color:"var(--text-3)", marginBottom:4}}>{label}</div>
+                                    <div style={{display:"flex", alignItems:"center", gap:8}}>
+                                      <strong style={{color, fontSize:15}}>{pct}%</strong>
+                                      <div style={{flex:1, height:4, background:"var(--border)", borderRadius:2}}>
+                                        <div style={{width:`${Math.min(pct,100)}%`, height:"100%", background:color, borderRadius:2, transition:"width .3s"}} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ⑤ 차단 승인 워크플로우 + TTL 카운트다운 */}
+                      {pendingBlock && (
+                        <div className="card">
+                          <div className="card-head">
+                            <div className="card-head-icon red"><Lock size={14} /></div>
+                            <span className="card-head-title">차단 승인 대기 중</span>
+                            {pendingBlock.expires_at && (
+                              <TtlCountdown expiresAt={pendingBlock.expires_at} />
+                            )}
+                          </div>
+                          <div className="card-body">
+                            <div className="meta-grid" style={{marginBottom:12}}>
+                              {pendingBlock.target_ip && (
+                                <div className="meta-cell">
+                                  <div className="meta-cell-label">차단 대상 IP</div>
+                                  <div className="meta-cell-value" style={{fontFamily:"var(--mono)"}}>{pendingBlock.target_ip}</div>
+                                </div>
+                              )}
+                              {pendingBlock.ttl_seconds && (
+                                <div className="meta-cell">
+                                  <div className="meta-cell-label">차단 TTL</div>
+                                  <div className="meta-cell-value">{Math.floor(pendingBlock.ttl_seconds / 3600)}시간</div>
+                                </div>
+                              )}
+                              {pendingBlock.requested_by && (
+                                <div className="meta-cell">
+                                  <div className="meta-cell-label">요청자</div>
+                                  <div className="meta-cell-value">{pendingBlock.requested_by}</div>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{display:"flex", gap:8}}>
+                              <button
+                                className="btn btn-primary"
+                                disabled={blockBusy === "approve"}
+                                onClick={async () => {
+                                  if (!inc) return;
+                                  setBlockBusy("approve");
+                                  try {
+                                    await approveBlock(inc.incident_id);
+                                    setSelected(await fetchIncident(inc.incident_id));
+                                    setNotice("차단이 승인되었습니다.");
+                                  } catch (e) { setError(e instanceof Error ? e.message : "승인 실패"); }
+                                  finally { setBlockBusy(undefined); }
+                                }}
+                              >
+                                <Lock size={13} /> {blockBusy === "approve" ? "처리 중…" : "승인 (차단 실행)"}
+                              </button>
+                              <button
+                                className="btn"
+                                style={{borderColor:"var(--c-red-500)", color:"var(--c-red-500)"}}
+                                disabled={blockBusy === "reject"}
+                                onClick={async () => {
+                                  if (!inc) return;
+                                  setBlockBusy("reject");
+                                  try {
+                                    await rejectBlock(inc.incident_id);
+                                    setSelected(await fetchIncident(inc.incident_id));
+                                    setNotice("차단 요청이 거부되었습니다.");
+                                  } catch (e) { setError(e instanceof Error ? e.message : "거부 실패"); }
+                                  finally { setBlockBusy(undefined); }
+                                }}
+                              >
+                                <Unlock size={13} /> {blockBusy === "reject" ? "처리 중…" : "거부"}
+                              </button>
+                              <button
+                                className="btn btn-sm"
+                                disabled={blockBusy === "extend"}
+                                onClick={async () => {
+                                  if (!inc) return;
+                                  setBlockBusy("extend");
+                                  try {
+                                    await extendBlock(inc.incident_id, 3600);
+                                    setSelected(await fetchIncident(inc.incident_id));
+                                    setNotice("차단이 1시간 연장되었습니다.");
+                                  } catch (e) { setError(e instanceof Error ? e.message : "연장 실패"); }
+                                  finally { setBlockBusy(undefined); }
+                                }}
+                              >
+                                <Clock size={13} /> {blockBusy === "extend" ? "처리 중…" : "+1시간 연장"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   )}
                 </>
@@ -671,6 +843,9 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
           )}
         </div>
       )}
+
+      {/* ══ CAMPAIGNS ══ */}
+      {tab === "campaigns" && <CampaignsPage />}
 
       {/* ══ SETTINGS ══ */}
       {tab === "settings" && <SettingsPage />}

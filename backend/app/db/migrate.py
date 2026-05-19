@@ -18,6 +18,7 @@ DB_DIR = Path(__file__).parent
 SCHEMA_SQL = DB_DIR / "schema.sql"
 MIGRATE_V2_SQL = DB_DIR / "migrate_v2.sql"
 MIGRATE_V3_SQL = DB_DIR / "migrate_v3_freetier.sql"   # FTS GIN + Lambda AI 테이블
+MIGRATE_V4_SQL = DB_DIR / "migrate_v4_v3_schema.sql"  # v3.0 설계서: 캠페인/Watchdog/자산 중요도
 SEED_SQL = Path(__file__).parent.parent.parent.parent / "infra" / "postgres" / "seed.sql"
 DEFAULT_SEED_SQL = """
 INSERT INTO tenant_settings (tenant_id)
@@ -225,6 +226,11 @@ async def run_migration(database_url: str) -> None:
             migrate_v3 = MIGRATE_V3_SQL.read_text(encoding="utf-8")
             print("[migrate] applying migrate_v3_freetier.sql (FTS GIN + Lambda AI 테이블)")
             await _execute_script(conn, migrate_v3, "migrate_v3_freetier.sql")
+
+        if MIGRATE_V4_SQL.exists():
+            migrate_v4 = MIGRATE_V4_SQL.read_text(encoding="utf-8")
+            print("[migrate] applying migrate_v4_v3_schema.sql (v3.0 설계서: 캠페인/Watchdog/자산 중요도)")
+            await _execute_script(conn, migrate_v4, "migrate_v4_v3_schema.sql")
 
         seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
         print("[migrate] applying seed.sql")

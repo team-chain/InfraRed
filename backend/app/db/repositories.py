@@ -978,12 +978,16 @@ async def save_auto_response_log(log_entry: AutoResponseLog) -> None:
                 INSERT INTO auto_response_logs (
                     auto_response_id, tenant_id, incident_id, rule_id, severity,
                     actions_taken, dry_run, triggered_by, policy_reason,
-                    policy_version, executed_at, reversed
+                    policy_version, executed_at, reversed,
+                    action_level, ttl_seconds, expires_at, approval_required,
+                    confidence_snapshot, scenario_id
                 )
                 VALUES (
                     :auto_response_id, :tenant_id, :incident_id, :rule_id, :severity,
                     CAST(:actions_taken AS JSONB), :dry_run, :triggered_by, :policy_reason,
-                    :policy_version, :executed_at, FALSE
+                    :policy_version, :executed_at, FALSE,
+                    :action_level, :ttl_seconds, :expires_at, :approval_required,
+                    :confidence_snapshot, :scenario_id
                 )
             """),
             {
@@ -998,6 +1002,13 @@ async def save_auto_response_log(log_entry: AutoResponseLog) -> None:
                 "policy_reason": log_entry.policy_reason,
                 "policy_version": log_entry.policy_version,
                 "executed_at": log_entry.executed_at,
+                # v3.0 확장 필드
+                "action_level": getattr(log_entry, "action_level", None),
+                "ttl_seconds": getattr(log_entry, "ttl_seconds", None),
+                "expires_at": getattr(log_entry, "expires_at", None),
+                "approval_required": getattr(log_entry, "approval_required", False),
+                "confidence_snapshot": getattr(log_entry, "confidence_snapshot", None),
+                "scenario_id": getattr(log_entry, "scenario_id", None),
             },
         )
         await session.commit()

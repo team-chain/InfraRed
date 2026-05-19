@@ -148,3 +148,15 @@ def policy_version(tenant_id: str) -> str:
 
 POLICY_INVALIDATE_CHANNEL = "infrared:policy:invalidate"
 """Redis Pub/Sub 채널 — 정책 변경 시 모든 워커에 캐시 무효화 신호 발송."""
+
+
+# ── Attack Chain Scenario (상관분석 엔진) ─────────────────────────────────────
+
+def scenario_state(scenario_id: str, tenant_id: str, source_ip: str) -> str:
+    """공격 체인 시나리오 진행 상태 (JSON 직렬화된 ScenarioState)."""
+    return f"scenario:{scenario_id}:{tenant_id}:{source_ip}"
+
+
+def lateral_movement_assets(tenant_id: str, source_ip: str) -> str:
+    """Lateral Movement 탐지용 — source_ip별 접근한 asset_id SET."""
+    return f"scenario:lateral:{tenant_id}:{source_ip}"

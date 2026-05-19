@@ -73,8 +73,9 @@ class Settings(BaseSettings):
     alert_email_from: str = "alert@infrared.local"
     alert_email_to: str = ""
 
-    cti_provider: Literal["mock", "abuseipdb"] = "mock"
+    cti_provider: Literal["mock", "abuseipdb", "otx"] = "mock"
     abuseipdb_api_key: str = ""
+    otx_api_key: str = ""          # AlienVault OTX API Key (CTI_PROVIDER=otx 시 사용)
     cti_cache_ttl_seconds: int = 86400
 
     maxmind_license_key: str = ""

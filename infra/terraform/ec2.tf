@@ -85,6 +85,7 @@ locals {
     ABUSEIPDB_KEY=$(get_ssm "abuseipdb-api-key")
     OTX_API_KEY=$(get_ssm "otx-api-key")
     AGENT_CMD_SECRET=$(get_ssm "agent-command-secret")
+    WATCHDOG_TOKEN=$(get_ssm "watchdog-token")
 
     # ── .env 파일 생성 ───────────────────────────────────────
     mkdir -p /opt/infrared
@@ -209,6 +210,10 @@ locals {
     # step-ca PKI (설계서 2.4절)
     STEP_CA_URL=https://step-ca:9000
     STEP_CA_ROOT=/home/step/certs/root_ca.crt
+
+    # v3.0 Watchdog — 에이전트와 독립적으로 실행되는 감시 프로세스
+    WATCHDOG_TOKEN=$WATCHDOG_TOKEN
+    INFRARED_SERVER_URL=http://ingestion:8000
     ENVEOF
 
     chmod 600 /opt/infrared/.env
@@ -236,8 +241,9 @@ locals {
     # 설계서 2.3절 메모리 배분 기준 (t2.micro 1GB 한도):
     #   redis: 100MB | ingestion: 160MB | detection: 130MB
     #   incident: 110MB | enrichment: 60MB | campaign: 55MB
-    #   cleanup: 45MB | frontend: 130MB | step-ca: 80MB | agent: 80MB
-    #   합계: ~950MB  (OS + Docker 데몬 ~50MB 포함 ~1000MB)
+    #   cleanup: 45MB | frontend: 130MB | step-ca: 80MB
+    #   agent: 60MB   | watchdog: 30MB  (v3.0 신규)
+    #   합계: ~960MB  (OS + Docker 데몬 ~40MB 포함 ~1000MB)
     # llm-worker: Lambda로 분리 (EC2에서 제외, 메모리 절약)
     cat > /opt/infrared/docker-compose.yml <<'COMPOSEEOF'
     services:
@@ -362,7 +368,7 @@ locals {
         image: $${ECR_BASE}/infrared-dev-agent:latest
         container_name: infrared-agent
         env_file: /opt/infrared/.env
-        mem_limit: 80m
+        mem_limit: 60m
         volumes:
           - /var/log:/host/var/log:ro
           - agent-state:/var/lib/infrared
@@ -373,6 +379,22 @@ locals {
         depends_on:
           - ingestion
         restart: on-failure
+
+      # v3.0 Watchdog — 에이전트와 독립 프로세스로 감시 (설계서 Section 6)
+      # 에이전트가 종료/변조되어도 watchdog는 계속 실행되어 tamper-report 전송
+      watchdog:
+        image: $${ECR_BASE}/infrared-dev-agent:latest
+        container_name: infrared-watchdog
+        command: ["python", "-m", "infrared_agent.watchdog"]
+        env_file: /opt/infrared/.env
+        mem_limit: 30m
+        deploy:
+          resources:
+            limits:
+              cpus: "0.02"
+        depends_on:
+          - ingestion
+        restart: always
 
     volumes:
       redis-data:

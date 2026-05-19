@@ -1,4 +1,4 @@
-"""Generate a local InfraRed JWT for agents or users."""
+"""Generate a local InfraRed JWT for agents, watchdog, or users."""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +10,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 
 def load_env(path: Path) -> None:
     if not path.exists():
@@ -28,20 +29,25 @@ def _b64url(data: bytes) -> str:
 
 def encode_hs256(payload: dict, secret: str) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
-    signing_input = ".".join(
-        [
-            _b64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
-            _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
-        ]
-    )
-    signature = hmac.new(secret.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
+    signing_input = ".".join([
+        _b64url(json.dumps(header, separators=(",", ":")).encode("utf-8")),
+        _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
+    ])
+    signature = hmac.new(
+        secret.encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256
+    ).digest()
     return f"{signing_input}.{_b64url(signature)}"
 
 
 def main() -> int:
     load_env(Path(".env"))
     parser = argparse.ArgumentParser()
-    parser.add_argument("--role", choices=["agent", "admin", "analyst", "viewer"], default="agent")
+    parser.add_argument(
+        "--role",
+        choices=["agent", "watchdog", "admin", "analyst", "viewer"],
+        default="agent",
+        help="watchdog: AgentWatchdog 전용 토큰 (tamper-report 엔드포인트용)",
+    )
     parser.add_argument("--tenant-id", default=os.getenv("TENANT_ID", "company-a"))
     parser.add_argument("--agent-id", default=os.getenv("AGENT_ID", "agent-001"))
     parser.add_argument("--subject", default=None)
@@ -54,11 +60,19 @@ def main() -> int:
         raise SystemExit("scripts/generate_jwt.py only supports HS256 for local setup")
     issuer = os.getenv("JWT_ISSUER", "infrared")
     audience = os.getenv("JWT_AUDIENCE", "infrared-ingest")
+
+    # agent 와 watchdog 은 에이전트 계열 토큰 (TTL, agent_id 클레임 공유)
+    _agent_roles = {"agent", "watchdog"}
     ttl = args.ttl or int(
-        os.getenv("JWT_AGENT_TTL_SECONDS" if args.role == "agent" else "JWT_USER_TTL_SECONDS", "86400")
+        os.getenv(
+            "JWT_AGENT_TTL_SECONDS" if args.role in _agent_roles else "JWT_USER_TTL_SECONDS",
+            "86400",
+        )
     )
     now = datetime.now(timezone.utc)
-    subject = args.subject or (args.agent_id if args.role == "agent" else "local-user")
+    subject = args.subject or (
+        args.agent_id if args.role in _agent_roles else "local-user"
+    )
     payload = {
         "sub": subject,
         "tenant_id": args.tenant_id,
@@ -68,7 +82,7 @@ def main() -> int:
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=ttl)).timestamp()),
     }
-    if args.role == "agent":
+    if args.role in _agent_roles:
         payload["agent_id"] = args.agent_id
     print(encode_hs256(payload, secret))
     return 0

@@ -33,3 +33,19 @@ class AgentSettings(BaseSettings):
     aws_profile: str = ""
     s3_upload_interval_sec: int = 300    # 5분마다 업로드
     s3_max_lines_per_file: int = 10_000  # 파일당 최대 라인 수
+
+    # Phase 4-A: FIM / auditd 설정
+    agent_fim_enabled: bool = True
+    agent_fim_interval_seconds: int = 60
+    agent_auditd_enabled: bool = False
+    agent_privileged_mode: bool = False
+    fim_state_path: str = "/var/lib/infrared/fim_state.json"
+    auditd_log_path: str = "/var/log/audit/audit.log"
+
+    # v3.0: 실행 탐지 모니터 설정
+    agent_exec_monitor_enabled: bool = True
+    agent_exec_monitor_interval_seconds: int = 10
+
+    # v3.0: Watchdog 설정
+    watchdog_token: str = ""
+    infrared_server_url: str = "http://localhost:8000"

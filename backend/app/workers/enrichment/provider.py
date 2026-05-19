@@ -1,11 +1,13 @@
-"""CTI provider — real AbuseIPDB with deterministic mock fallback.
+"""CTI provider — OTX / AbuseIPDB with deterministic mock fallback.
 
 Priority:
-  1. AbuseIPDB API (when CTI_PROVIDER=abuseipdb and ABUSEIPDB_API_KEY is set)
-  2. Deterministic mock (keeps tests/demos reproducible when API unavailable)
+  1. AlienVault OTX API (when CTI_PROVIDER=otx and OTX_API_KEY is set)
+  2. AbuseIPDB API (when CTI_PROVIDER=abuseipdb and ABUSEIPDB_API_KEY is set)
+  3. Deterministic mock (keeps tests/demos reproducible when API unavailable)
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import ipaddress
 import logging
@@ -98,8 +100,24 @@ def _abuseipdb_lookup(ip: str, api_key: str) -> CtiEnrichment:
         return _mock_cti_lookup(ip)
 
 
+async def _otx_lookup(ip: str, api_key: str) -> CtiEnrichment:
+    """Query AlienVault OTX asynchronously (with Redis cache via OTXClient)."""
+    from app.redis_kv.client import get_redis
+    from app.workers.enrichment.otx import OTXClient
+    redis = get_redis()
+    client = OTXClient(api_key=api_key, redis=redis)
+    return await client.check_ip(ip)
+
+
 def mock_cti_lookup(ip: Optional[str]) -> CtiEnrichment:
-    """Public interface called by the enrichment worker."""
+    """Public interface called by the enrichment worker (sync entry point).
+
+    Priority: otx → abuseipdb → mock
+    OTX is async; when selected it is run via asyncio.run() in a thread-safe way.
+    The enrichment worker is async itself, so we bridge via run_in_executor or
+    a dedicated async path. Since mock_cti_lookup is called from the async worker,
+    we detect the running loop and schedule accordingly.
+    """
     if not ip:
         return CtiEnrichment(note="No source IP was available for CTI lookup.")
 
@@ -107,6 +125,46 @@ def mock_cti_lookup(ip: Optional[str]) -> CtiEnrichment:
         return CtiEnrichment(note="Private/loopback IP — CTI lookup skipped.")
 
     settings = get_settings()
+
+    if settings.cti_provider == "otx" and settings.otx_api_key:
+        # Worker is already inside an async context; run the coroutine there.
+        try:
+            loop = asyncio.get_running_loop()
+            # We are inside an async context — caller should use mock_cti_lookup_async.
+            # Fallback: run synchronously with a new event loop in a thread.
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    _otx_lookup(ip, settings.otx_api_key),
+                )
+                return future.result(timeout=5)
+        except RuntimeError:
+            # No running loop — safe to use asyncio.run()
+            return asyncio.run(_otx_lookup(ip, settings.otx_api_key))
+
+    if settings.cti_provider == "abuseipdb" and settings.abuseipdb_api_key:
+        return _abuseipdb_lookup(ip, settings.abuseipdb_api_key)
+
+    return _mock_cti_lookup(ip)
+
+
+async def mock_cti_lookup_async(ip: Optional[str]) -> CtiEnrichment:
+    """Async version of mock_cti_lookup for use inside async contexts.
+
+    Priority: otx → abuseipdb → mock
+    """
+    if not ip:
+        return CtiEnrichment(note="No source IP was available for CTI lookup.")
+
+    if _is_private(ip):
+        return CtiEnrichment(note="Private/loopback IP — CTI lookup skipped.")
+
+    settings = get_settings()
+
+    if settings.cti_provider == "otx" and settings.otx_api_key:
+        return await _otx_lookup(ip, settings.otx_api_key)
+
     if settings.cti_provider == "abuseipdb" and settings.abuseipdb_api_key:
         return _abuseipdb_lookup(ip, settings.abuseipdb_api_key)
 

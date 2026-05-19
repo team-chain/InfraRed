@@ -1,11 +1,12 @@
 """InfraRed agent entrypoint.
 
-수집 소스 (설계서 v2.0 Phase 4-A):
+수집 소스 (설계서 v2.0 Phase 4-A / v3.0):
   - auth.log       → SSH 이상 행위 탐지 (AUTH-001~006)
   - nginx.log      → 웹 공격 탐지 (WEB-HNY-001, WEB-001~007, NET-001)
   - FIM 감시       → authorized_keys / sshd_config / cron / sudoers 변경 감지
   - auditd (opt)   → 의심 프로세스 실행 / 민감 파일 접근 (privileged mode)
   - Windows (opt)  → 이벤트 ID 4625/4720 (Windows 에이전트)
+  - EXEC 모니터    → /tmp 실행 탐지 / 웹셸 탐지 / 랜섬웨어 전조 (v3.0)
 """
 from __future__ import annotations
 
@@ -19,7 +20,14 @@ import uuid
 from infrared_agent.client import AgentClient
 from infrared_agent.commander import Commander
 from infrared_agent.config import AgentSettings
-from infrared_agent.fim_watcher import AuditdWatcher, FIMWatcher, WindowsEventLogWatcher
+from infrared_agent.fim_watcher import (
+    AuditdWatcher,
+    BulkFileModificationMonitor,
+    FIMWatcher,
+    TmpExecutionMonitor,
+    WebServerChildProcessMonitor,
+    WindowsEventLogWatcher,
+)
 from infrared_agent.nginx_tailer import NginxLogTailer
 from infrared_agent.offset_store import OffsetStore
 from infrared_agent.s3_uploader import S3LogUploader
@@ -99,6 +107,8 @@ async def run() -> None:
     nginx_tailer = NginxLogTailer(settings, store) if settings.agent_nginx_enabled else None
     client = AgentClient(settings)
     commander = Commander(settings, client)
+    # v3.0: TTL 기반 차단 만료 루프 백그라운드 태스크
+    ttl_task = asyncio.create_task(commander.ttl_expiry_loop())
     s3 = S3LogUploader(settings)
 
     # Phase 4-A: FIM / auditd / Windows 감시자 초기화
@@ -108,12 +118,25 @@ async def run() -> None:
     auditd_watcher = AuditdWatcher(settings) if auditd_enabled else None
     windows_watcher = WindowsEventLogWatcher(settings)
 
+    # v3.0: 실행 탐지 모니터 초기화
+    exec_enabled = getattr(settings, "agent_exec_monitor_enabled", True)
+    tmp_exec_monitor = TmpExecutionMonitor() if exec_enabled else None
+    webshell_monitor = WebServerChildProcessMonitor() if exec_enabled else None
+    bulk_mod_monitor = BulkFileModificationMonitor() if exec_enabled else None
+
     last_heartbeat = 0.0
     last_command_poll = 0.0
     last_fim_check = 0.0
+    last_tmp_exec_check = 0.0
+    last_webshell_check = 0.0
+    last_bulk_mod_check = 0.0
     last_event_id: str | None = None
 
     _fim_check_interval = getattr(settings, "agent_fim_interval_seconds", 60)
+    # v3.0 실행 탐지 폴링 간격
+    _tmp_exec_interval = 10    # EXEC-001: 10초
+    _webshell_interval = 15    # EXEC-002: 15초
+    _bulk_mod_interval = 30    # EXEC-003: 30초
 
     # 설계서 v2.0 Phase 3-D: 연속 실패 카운터
     consecutive_failures = 0
@@ -137,13 +160,14 @@ async def run() -> None:
             pass
 
     log.info(
-        "agent_started auth_log=%s nginx_log=%s nginx_enabled=%s s3=%s fim=%s auditd=%s",
+        "agent_started auth_log=%s nginx_log=%s nginx_enabled=%s s3=%s fim=%s auditd=%s exec=%s",
         settings.agent_auth_log_path,
         settings.agent_nginx_log_path,
         settings.agent_nginx_enabled,
         settings.s3_enabled,
         fim_enabled,
         auditd_enabled,
+        exec_enabled,
     )
 
     try:
@@ -222,6 +246,56 @@ async def run() -> None:
                 except Exception:
                     pass  # Windows 이벤트는 선택적
 
+                # -- v3.0 EXEC-001: /tmp 실행 탐지 (10초 간격) ------------------
+                if tmp_exec_monitor and (now - last_tmp_exec_check >= _tmp_exec_interval):
+                    try:
+                        exec_events = tmp_exec_monitor.check()
+                        for evt in exec_events:
+                            envelope = _build_fim_envelope(evt, settings)
+                            await client.send_event(envelope)
+                            log.warning(
+                                "exec_001_detected pid=%s exe=%s",
+                                evt.get("pid"),
+                                evt.get("exe_path"),
+                            )
+                        last_tmp_exec_check = now
+                    except Exception:
+                        log.exception("exec-001 tmp monitor failed")
+
+                # -- v3.0 EXEC-002: 웹셸 탐지 (15초 간격) -----------------------
+                if webshell_monitor and (now - last_webshell_check >= _webshell_interval):
+                    try:
+                        shell_events = webshell_monitor.check()
+                        for evt in shell_events:
+                            envelope = _build_fim_envelope(evt, settings)
+                            await client.send_event(envelope)
+                            log.warning(
+                                "exec_002_detected parent=%s(%s) child=%s(%s)",
+                                evt.get("parent_process"),
+                                evt.get("parent_pid"),
+                                evt.get("child_process"),
+                                evt.get("child_pid"),
+                            )
+                        last_webshell_check = now
+                    except Exception:
+                        log.exception("exec-002 webshell monitor failed")
+
+                # -- v3.0 EXEC-003: 대량 파일 변경 감지 (30초 간격) -------------
+                if bulk_mod_monitor and (now - last_bulk_mod_check >= _bulk_mod_interval):
+                    try:
+                        bulk_events = bulk_mod_monitor.check()
+                        for evt in bulk_events:
+                            envelope = _build_fim_envelope(evt, settings)
+                            await client.send_event(envelope)
+                            log.warning(
+                                "exec_003_detected change_count=%s window=%ss",
+                                evt.get("change_count"),
+                                evt.get("window_seconds"),
+                            )
+                        last_bulk_mod_check = now
+                    except Exception:
+                        log.exception("exec-003 bulk mod monitor failed")
+
                 # 정상 실행 — 연속 실패 카운터 초기화
                 consecutive_failures = 0
 
@@ -256,6 +330,12 @@ async def run() -> None:
     except asyncio.CancelledError:
         log.info("agent_cancelled")
     finally:
+        # v3.0: TTL 만료 루프 태스크 취소
+        ttl_task.cancel()
+        try:
+            await ttl_task
+        except asyncio.CancelledError:
+            pass
         # ── 종료 시 최종 heartbeat 전송 ───────────────────────────────────────
         # shutdown_event가 설정된 경우: 정상 종료(systemctl stop 등) → 별도 보고 불필요
         # 그 외(예외 등): deactivated 보고는 루프 내에서 이미 처리됨

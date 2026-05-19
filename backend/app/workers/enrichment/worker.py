@@ -21,7 +21,7 @@ from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.dlq import reclaim_pending
 from app.workers.enrichment.geoip import GeoLocation, lookup_geoip
-from app.workers.enrichment.provider import mock_cti_lookup
+from app.workers.enrichment.provider import mock_cti_lookup, mock_cti_lookup_async
 
 
 configure_logging()
@@ -74,7 +74,8 @@ async def enrich_signal(payload: str) -> dict[str, str]:
     settings = get_settings()
     redis = get_redis()
     signal = Signal.model_validate_json(payload)
-    cti = mock_cti_lookup(signal.source_ip)
+    # Use async CTI lookup to support OTX (async) without thread overhead
+    cti = await mock_cti_lookup_async(signal.source_ip)
     geo = lookup_geoip(signal.source_ip)
     merged = _merge_geo_into_cti(cti, geo)
 

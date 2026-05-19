@@ -77,6 +77,9 @@ def build_incident(
     cti: CtiEnrichment,
     *,
     advanced_from: Optional[str] = None,
+    detection_confidence: Optional[float] = None,
+    scenario_id: Optional[str] = None,
+    confidence_breakdown: Optional[dict] = None,
 ) -> Incident:
     now = datetime.now(timezone.utc)
     severity = _severity(signal, cti)
@@ -130,4 +133,7 @@ def build_incident(
         username=signal.username,
         created_at=now,
         updated_at=now,
+        detection_confidence=detection_confidence,
+        scenario_id=scenario_id,
+        confidence_breakdown=confidence_breakdown,
     )

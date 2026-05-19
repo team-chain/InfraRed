@@ -34,6 +34,14 @@ jwt_audience = "infrared-ingest"
 # block_ip 명령 HMAC 서명 키 (최소 32자, openssl rand -hex 32 로 생성)
 agent_command_secret = "change-me-at-least-32-chars-agent-command-hmac-key"
 
+# step-ca Root CA 비밀번호 (재배포 시 CA 유지를 위해 명시 권장)
+# openssl rand -hex 32 로 생성 후 기록 보관
+step_ca_password = "change-me-step-ca-root-password"
+
+# AgentWatchdog 전용 JWT 토큰 (에이전트 토큰과 별개)
+# python scripts/generate_jwt.py --role watchdog 실행 후 출력값을 붙여넣기
+watchdog_token = "replace-with-output-of-generate_jwt.py--role-watchdog"
+
 # ── 애플리케이션 ──────────────────────────────────────────────
 tenant_id    = "company-a"
 agent_id     = "agent-001"

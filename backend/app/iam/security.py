@@ -78,7 +78,8 @@ async def verify_token(
 async def verify_agent_token(
     claims: dict[str, Any] = Depends(verify_token),
 ) -> dict[str, Any]:
-    if claims.get("role") != "agent":
+    # v3.0: watchdog role 도 에이전트 계열 토큰으로 허용 (tamper-report 엔드포인트)
+    if claims.get("role") not in {"agent", "watchdog"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="agent_role_required")
     return claims
 

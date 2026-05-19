@@ -52,3 +52,8 @@ class Incident(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    # 공격 체인 상관분석 (설계서 v3)
+    detection_confidence: Optional[float] = None          # 0.0~1.0
+    scenario_id: Optional[str] = None                     # 매칭된 시나리오 ID
+    confidence_breakdown: Optional[dict] = None           # 계산 내역 JSONB

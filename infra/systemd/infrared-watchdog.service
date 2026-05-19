@@ -1,0 +1,75 @@
+# InfraRed Agent Watchdog — systemd 유닛 파일 (v3.0)
+# 에이전트 프로세스와 독립적으로 실행되어 Tamper Detection 수행
+#
+# 감시 항목:
+#   - infrared-agent 프로세스 생존 여부 (GRACE_PERIOD=30초 초과 시 tamper-report)
+#   - auth.log / syslog 파일 truncation / 삭제 감지
+#
+# 설치:
+#   sudo cp infra/systemd/infrared-watchdog.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infrared-watchdog
+#
+# 상태 확인:
+#   sudo systemctl status infrared-watchdog
+#   journalctl -u infrared-watchdog -f
+
+[Unit]
+Description=InfraRed Agent Watchdog (v3.0 Tamper Detection)
+Documentation=https://github.com/your-org/infrared
+# 에이전트보다 나중에 시작되어야 하지만, 에이전트 실패 시에도 계속 실행
+After=network-online.target infrared-agent.service
+Wants=network-online.target
+# 에이전트와 달리 에이전트 종료에 의존하지 않음 (감시 목적이므로)
+
+[Service]
+Type=simple
+
+# watchdog 모듈 직접 실행
+ExecStart=/usr/local/bin/python3 -m infrared_agent.watchdog
+
+# 환경 변수 파일 (에이전트와 동일한 파일 공유)
+EnvironmentFile=/etc/infrared/agent.env
+
+# WATCHDOG_TOKEN 환경변수 — 에이전트 JWT와 다른 별도 토큰
+# /etc/infrared/agent.env 에 WATCHDOG_TOKEN=<jwt> 형태로 설정
+# scripts/generate_jwt.py --role watchdog 로 생성
+
+WorkingDirectory=/var/lib/infrared
+StateDirectory=infrared
+RuntimeDirectory=infrared
+
+# ── 재시작 정책 ──────────────────────────────────────────────────────────────
+# watchdog은 어떤 이유로든 종료되면 즉시 재시작 (always)
+# 에이전트와 달리 항상 재시작해야 감시 공백이 생기지 않음
+Restart=always
+RestartSec=5s
+
+StartLimitInterval=60
+StartLimitBurst=10
+
+# ── Cgroup 리소스 제한 ───────────────────────────────────────────────────────
+# watchdog은 에이전트보다 훨씬 가벼운 작업 (10초 간격 체크만 수행)
+CPUQuota=2%
+MemoryMax=50M
+MemorySwapMax=0
+IOWeight=10
+
+# ── 보안 강화 ────────────────────────────────────────────────────────────────
+User=infrared-agent
+Group=adm
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/infrared /run/infrared
+# auth.log, syslog 파일 크기 모니터링을 위해 /var/log 읽기 권한 필요
+ReadOnlyPaths=/var/log /proc
+PrivateTmp=yes
+PrivateDevices=yes
+
+# 아웃바운드 네트워크 (ingestion API 호출)만 허용
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

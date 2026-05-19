@@ -28,7 +28,9 @@ from app.models.incident import CtiEnrichment, Incident
 from app.models.signal import Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
+from app.workers.correlation.attack_chain import AttackChainMatcher
 from app.workers.correlation.builder import build_incident
+from app.workers.detection.confidence import calculate_detection_confidence
 from app.workers.dlq import reclaim_pending
 from app.workers.llm.playbook import get_first_alert_summary, get_rule_title
 from app.ingestion.sse_routes import publish_incident_event
@@ -111,7 +113,42 @@ async def process_enriched(signal_payload: str, cti_payload: str) -> tuple:
         CORRELATION_EVENTS.labels(outcome="dedup_skipped").inc()
         return None, False
 
-    incident = build_incident(signal, cti, advanced_from=advanced_from)
+    # 공격 체인 상관분석 — incident 생성 직전에 시나리오 완성 여부 확인
+    matcher = AttackChainMatcher(redis)
+    matched_scenario, correlation_bonus = await matcher.process_signal(
+        tenant_id=signal.tenant_id,
+        signal_rule_id=signal.rule_id.value,
+        source_ip=signal.source_ip or "no-ip",
+        asset_id=signal.asset_id,
+    )
+
+    # Detection Confidence 계산
+    detection_confidence, confidence_breakdown = calculate_detection_confidence(
+        rule_id=signal.rule_id.value,
+        correlation_bonus=correlation_bonus,
+        cti_abuse_score=cti.abuse_score or 0,
+        cti_is_known_malicious="malicious" in (cti.tags or []),
+        cti_is_tor_exit="tor" in (cti.tags or []),
+    )
+
+    scenario_id = matched_scenario.id if matched_scenario else None
+    if matched_scenario:
+        log.info(
+            "attack_chain_matched",
+            scenario_id=scenario_id,
+            signal_id=signal.signal_id,
+            rule_id=signal.rule_id.value,
+            confidence_bonus=correlation_bonus,
+        )
+
+    incident = build_incident(
+        signal,
+        cti,
+        advanced_from=advanced_from,
+        detection_confidence=detection_confidence,
+        scenario_id=scenario_id,
+        confidence_breakdown=confidence_breakdown,
+    )
     incident_id, created = await save_or_merge_incident(incident)
 
     # Discord 1차 즉시 알림 (설계서 4.3)

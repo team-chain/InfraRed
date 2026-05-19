@@ -78,3 +78,11 @@ class AutoResponseLog(BaseModel):
     reversed: bool = False
     reversed_at: Optional[datetime] = None
     reversed_by: Optional[str] = None
+
+    # v3.0 TTL / 승인 워크플로우 확장 필드 (설계서 Section 6.1)
+    action_level: Optional[str] = None          # iptables_block | approval_iptables | service_block | watchlist
+    ttl_seconds: Optional[int] = None           # 차단 유지 시간 (초)
+    expires_at: Optional[datetime] = None       # 차단 만료 시각 (UTC)
+    approval_required: bool = False             # 승인 필요 여부
+    confidence_snapshot: Optional[float] = None # 실행 시점의 detection_confidence
+    scenario_id: Optional[str] = None           # 매칭된 공격 시나리오 ID

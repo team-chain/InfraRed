@@ -196,3 +196,17 @@ variable "step_ca_password" {
   default     = ""
   sensitive   = true
 }
+
+# ── Watchdog JWT 토큰 — v3.0 AgentWatchdog ───────────────────
+variable "watchdog_token" {
+  description = "AgentWatchdog 전용 JWT 토큰 (scripts/generate_jwt.py --role watchdog 로 생성)"
+  type        = string
+  sensitive   = true
+}
+
+# ── Watchdog JWT 토큰 — v3.0 AgentWatchdog ───────────────────
+variable "watchdog_token" {
+  description = "AgentWatchdog 전용 JWT 토큰 (scripts/generate_jwt.py --role watchdog 로 생성)"
+  type        = string
+  sensitive   = true
+}

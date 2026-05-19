@@ -107,6 +107,23 @@ services:
     volumes:
       - ./backend:/app
 
+  # v3.0 — 공격 캠페인 집계 워커
+  campaign-worker:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    container_name: infrared-campaign
+    command: ["python", "-m", "app.workers.campaign.worker"]
+    env_file: .env
+    depends_on:
+      ingestion:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
   cleanup-worker:
     build:
       context: ./backend
@@ -145,6 +162,27 @@ services:
         reservations:
           memory: 50M
     restart: on-failure     # Restart=on-failure (StartLimitBurst=5는 main.py에서 추적)
+
+  # v3.0 — 에이전트와 독립 프로세스로 Tamper Detection 수행
+  # 에이전트가 중단/변조되어도 watchdog는 계속 실행되어 tamper-report 전송
+  watchdog:
+    build:
+      context: ./agent
+      dockerfile: ../infra/docker/agent.Dockerfile
+    container_name: infrared-watchdog
+    command: ["python", "-m", "infrared_agent.watchdog"]
+    env_file: .env
+    depends_on:
+      ingestion:
+        condition: service_started
+    volumes:
+      - ./infra/sample-logs:/host/var/log:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 50M
+    restart: always   # 항상 재시작 — 감시 공백 방지
 
   frontend:
     build:
@@ -216,9 +254,69 @@ services:
       prometheus:
         condition: service_started
 
+
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: infrared-step-ca
+    mem_limit: 80m
+    restart: unless-stopped
+    volumes:
+      - step-ca-data:/home/step
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=InfraRed CA
+      - DOCKER_STEPCA_INIT_DNS_NAMES=step-ca,localhost
+      - DOCKER_STEPCA_INIT_ADDRESS=:9000
+      - DOCKER_STEPCA_INIT_PROVISIONER_NAME=infrared-provisioner
+    expose:
+      - "9000"
+
 volumes:
   postgres-data:
   redis-data:
   agent-state:
   grafana-data:
   fluentbit-db:
+  step-ca-data:
+rometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      ingestion:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: infrared-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  step-ca:
+    image: smallstep/step-ca:latest
+    container_name: infrared-step-ca
+    mem_limit: 80m
+    restart: unless-stopped
+    volumes:
+      - step-ca-data:/home/step
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=InfraRed CA
+      - DOCKER_STEPCA_INIT_DNS_NAMES=step-ca,localhost
+      - DOCKER_STEPCA_INIT_ADDRESS=:9000
+      - DOCKER_STEPCA_INIT_PROVISIONER_NAME=infrared-provisioner
+    expose:
+      - "9000"
+
+volumes:
+  postgres-data:
+  redis-data:
+  agent-state:
+  grafana-data:
+  fluentbit-db:
+  step-ca-data:

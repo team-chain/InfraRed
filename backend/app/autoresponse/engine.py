@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import text
@@ -149,6 +149,43 @@ async def _push_agent_command(tenant_id: str, asset_id: str, action: dict) -> No
     await redis.expire(key, 3600)
 
 
+
+
+def _get_v3_action(severity: str, detection_confidence: float, in_allowlist: bool) -> dict:
+    """v3.0 설계서 Section 6.1 차단 정책 매트릭스."""
+    if in_allowlist:
+        return {"action": "watchlist_only", "ttl_seconds": None, "approval_required": False}
+
+    sev = severity.upper()
+    if sev == "CRITICAL" and detection_confidence >= 0.85:
+        return {
+            "action": "iptables_block",
+            "ttl_seconds": 1800,
+            "approval_required": False,
+            "action_level": "iptables_block",
+        }
+    elif sev == "CRITICAL" and detection_confidence < 0.85:
+        return {
+            "action": "service_block_pending_approval",
+            "ttl_seconds": 3600,
+            "approval_required": True,
+            "action_level": "approval_iptables",
+        }
+    elif sev == "HIGH":
+        return {
+            "action": "service_block",
+            "ttl_seconds": 900,
+            "approval_required": False,
+            "action_level": "service_block",
+        }
+    else:
+        return {
+            "action": "watchlist_notify",
+            "ttl_seconds": None,
+            "approval_required": False,
+            "action_level": "watchlist",
+        }
+
 async def run_autoresponse(
     tenant_id: str,
     asset_id: str,
@@ -158,6 +195,8 @@ async def run_autoresponse(
     source_ip: Optional[str] = None,
     username: Optional[str] = None,
     rule_id: Optional[str] = None,
+    detection_confidence: Optional[float] = None,
+    scenario_id: Optional[str] = None,
 ) -> dict:
     """Policy-based Auto-Response 실행.
 
@@ -182,6 +221,57 @@ async def run_autoresponse(
     actions_notified: list[str] = []
 
     triggered_by = f"severity={sev_lower}" + (f", rule={rule_id}" if rule_id else "")
+
+    # -- v3.0 정책 매트릭스: detection_confidence 있을 때 v3 정책 우선 적용 ------
+    v3_policy: dict | None = None
+    v3_action_level: str | None = None
+    v3_ttl_seconds: int | None = None
+    v3_approval_required: bool = False
+    v3_expires_at = None
+
+    if detection_confidence is not None and source_ip and not _is_safe_ip(source_ip):
+        _in_allowlist = await _is_in_allowlist(tenant_id, source_ip)
+        v3_policy = _get_v3_action(sev_lower, detection_confidence, _in_allowlist)
+        v3_action_level = v3_policy.get("action_level")
+        v3_ttl_seconds = v3_policy.get("ttl_seconds")
+        v3_approval_required = bool(v3_policy.get("approval_required", False))
+
+        if v3_ttl_seconds is not None:
+            v3_expires_at = datetime.now(timezone.utc) + timedelta(seconds=v3_ttl_seconds)
+
+        v3_action = v3_policy.get("action", "")
+        if v3_action == "iptables_block":
+            # 에이전트에게 TTL 포함 block_ip 명령 전송
+            await _push_agent_command(tenant_id, asset_id, {
+                "action_type": "block_ip",
+                "target": source_ip,
+                "payload": {"ip": source_ip, "incident_id": incident_id, "ttl_seconds": v3_ttl_seconds},
+                "ttl_seconds": v3_ttl_seconds,
+            })
+            actions_taken.append("v3_iptables_block")
+            log.info("v3_iptables_block ip=%s ttl=%s confidence=%.2f", source_ip, v3_ttl_seconds, detection_confidence)
+
+        elif v3_action == "service_block_pending_approval":
+            # 승인 큐 등록
+            await _save_pending_action(tenant_id, incident_id, {
+                "action_type": "block_ip",
+                "target": source_ip,
+                "payload": {"ip": source_ip, "incident_id": incident_id, "ttl_seconds": v3_ttl_seconds},
+            })
+            actions_queued.append("v3_approval_iptables")
+            log.info("v3_approval_queued ip=%s ttl=%s confidence=%.2f", source_ip, v3_ttl_seconds, detection_confidence)
+
+        elif v3_action == "service_block":
+            # Redis Denylist (서비스 레벨 차단)
+            newly_blocked = await _denylist_add(tenant_id, source_ip)
+            if newly_blocked:
+                actions_taken.append("v3_service_block")
+            else:
+                actions_taken.append("v3_service_block_already_blocked")
+
+        elif v3_action in ("watchlist_only", "watchlist_notify"):
+            await _watchlist_add(tenant_id, source_ip)
+            actions_taken.append("v3_watchlist")
 
     # -- Watchlist 등록 --------------------------------------------------------
     if sev_policy.get("watchlist") and source_ip:
@@ -247,6 +337,13 @@ async def run_autoresponse(
         triggered_by=triggered_by,
         policy_reason=policy_reason,
         policy_version=policy_version,
+        # v3.0 확장 필드
+        action_level=v3_action_level,
+        ttl_seconds=v3_ttl_seconds,
+        expires_at=v3_expires_at,
+        approval_required=v3_approval_required,
+        confidence_snapshot=detection_confidence,
+        scenario_id=scenario_id,
     )
     try:
         await save_auto_response_log(ar_log)
@@ -269,6 +366,13 @@ async def run_autoresponse(
         "dry_run": False,
         "policy_reason": policy_reason,
         "source_ip": source_ip,
+        # v3.0 확장
+        "action_level": v3_action_level,
+        "ttl_seconds": v3_ttl_seconds,
+        "expires_at": v3_expires_at.isoformat() if v3_expires_at else None,
+        "approval_required": v3_approval_required,
+        "confidence_snapshot": detection_confidence,
+        "scenario_id": scenario_id,
     }
 
 
