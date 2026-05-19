@@ -50,7 +50,8 @@ async def health_dashboard(
                 SELECT
                     COUNT(*) as total,
                     COUNT(*) FILTER (WHERE last_heartbeat >= :threshold) as online,
-                    COUNT(*) FILTER (WHERE last_heartbeat < :threshold OR last_heartbeat IS NULL) as offline
+                    COUNT(*) FILTER (WHERE last_heartbeat < :threshold AND last_heartbeat IS NOT NULL) as offline,
+                    COUNT(*) FILTER (WHERE last_heartbeat IS NULL) as never_connected
                 FROM agents
                 WHERE tenant_id = :tenant_id
                   AND (deactivated_at IS NULL OR deactivated_at > NOW())
@@ -78,14 +79,16 @@ async def health_dashboard(
     agent_total = int(agent_stats["total"]) if agent_stats else 0
     agent_online = int(agent_stats["online"]) if agent_stats else 0
     agent_offline = int(agent_stats["offline"]) if agent_stats else 0
+    agent_never = int(agent_stats["never_connected"]) if agent_stats else 0
 
     checks = [
         {
             "name": "agent_connectivity",
             "label": "Agent 연결 상태",
             "value": f"{agent_online}/{agent_total}",
+            # never_connected 에이전트는 경고에서 제외 (미설치 상태는 정상)
             "status": "warn" if agent_offline > 0 else "ok",
-            "detail": f"Offline: {agent_offline}개",
+            "detail": f"Offline: {agent_offline}개" + (f", 미연결: {agent_never}개" if agent_never > 0 else ""),
         },
         {
             "name": "detection_stream",
@@ -143,6 +146,7 @@ async def health_dashboard(
             "total": agent_total,
             "online": agent_online,
             "offline": agent_offline,
+            "never_connected": agent_never,
         },
     }
 

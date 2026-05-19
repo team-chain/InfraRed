@@ -17,6 +17,7 @@ import asyncpg
 DB_DIR = Path(__file__).parent
 SCHEMA_SQL = DB_DIR / "schema.sql"
 MIGRATE_V2_SQL = DB_DIR / "migrate_v2.sql"
+MIGRATE_V3_SQL = DB_DIR / "migrate_v3_freetier.sql"   # FTS GIN + Lambda AI 테이블
 SEED_SQL = Path(__file__).parent.parent.parent.parent / "infra" / "postgres" / "seed.sql"
 DEFAULT_SEED_SQL = """
 INSERT INTO tenant_settings (tenant_id)
@@ -141,9 +142,17 @@ def _split_sql_statements(sql: str) -> list[str]:
     return statements
 
 
-async def _execute_script(conn: asyncpg.Connection, sql: str, label: str) -> None:
+async def _execute_script(
+    conn: asyncpg.Connection, sql: str, label: str, skip_errors: bool = False
+) -> None:
     for statement in _split_sql_statements(sql):
         if not statement:
+            continue
+        # 주석만 있는 statement 건너뜀
+        stripped = "\n".join(
+            l for l in statement.splitlines() if not l.strip().startswith("--")
+        ).strip()
+        if not stripped:
             continue
         try:
             await conn.execute(statement)
@@ -157,6 +166,12 @@ async def _execute_script(conn: asyncpg.Connection, sql: str, label: str) -> Non
             if statement.upper().startswith("CREATE INDEX IF NOT EXISTS"):
                 first_line = statement.splitlines()[0]
                 print(f"[migrate] skipped privilege-limited index: {first_line}")
+                continue
+            raise
+        except Exception as e:
+            first_line = statement.splitlines()[0].strip()
+            if skip_errors:
+                print(f"[migrate] WARN skipped [{label}]: {first_line!r} — {e}")
                 continue
             raise
     print(f"[migrate] {label} complete")
@@ -206,9 +221,14 @@ async def run_migration(database_url: str) -> None:
             print("[migrate] applying migrate_v2.sql (고도화 v2.0)")
             await _execute_script(conn, migrate_v2, "migrate_v2.sql")
 
+        if MIGRATE_V3_SQL.exists():
+            migrate_v3 = MIGRATE_V3_SQL.read_text(encoding="utf-8")
+            print("[migrate] applying migrate_v3_freetier.sql (FTS GIN + Lambda AI 테이블)")
+            await _execute_script(conn, migrate_v3, "migrate_v3_freetier.sql")
+
         seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
         print("[migrate] applying seed.sql")
-        await _execute_script(conn, seed, "seed.sql")
+        await _execute_script(conn, seed, "seed.sql", skip_errors=True)
 
     finally:
         await conn.close()

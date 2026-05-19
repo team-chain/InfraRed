@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     prometheus_bearer_token: str = ""
 
     cors_origins: str = "http://localhost:3000"
+
+    # v3.0 Campaign Aggregation
+    campaign_window_seconds: int = 600
+    campaign_min_signals: int = 5
+    campaign_min_targets: int = 2
     late_event_threshold_seconds: int = 300
     late_event_max_seconds: int = 86400
 

@@ -1,5 +1,5 @@
 # ============================================================
-# InfraRed — 입력 변수
+# InfraRed — 입력 변수 (프리티어 최적화)
 # ============================================================
 
 # ── 기본 ────────────────────────────────────────────────────
@@ -10,7 +10,7 @@ variable "project" {
 }
 
 variable "env" {
-  description = "배포 환경 (dev | staging | prod)"
+  description = "배포 환경"
   type        = string
   default     = "dev"
 }
@@ -23,59 +23,66 @@ variable "region" {
 
 # ── 네트워크 ─────────────────────────────────────────────────
 variable "vpc_cidr" {
-  description = "VPC CIDR 블록"
-  type        = string
-  default     = "10.0.0.0/16"
+  type    = string
+  default = "10.0.0.0/16"
 }
 
 variable "public_subnet_cidrs" {
-  description = "퍼블릭 서브넷 CIDR (ALB + ECS 퍼블릭 IP)"
+  description = "퍼블릭 서브넷 CIDR (RDS는 2개 AZ 필요)"
   type        = list(string)
   default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "availability_zones" {
-  description = "사용할 AZ 목록 (ALB는 2개 이상 필요)"
-  type        = list(string)
-  default     = ["ap-northeast-2a", "ap-northeast-2b"]
+  type    = list(string)
+  default = ["ap-northeast-2a", "ap-northeast-2b"]
 }
 
-# ── RDS ─────────────────────────────────────────────────────
+# ── EC2 (프리티어: t2.micro) ──────────────────────────────────
+variable "ec2_instance_type" {
+  description = "EC2 인스턴스 타입 — t2.micro 프리티어"
+  type        = string
+  default     = "t2.micro"
+}
+
+variable "ec2_key_name" {
+  description = "EC2 SSH 키페어 이름 (AWS 콘솔에서 미리 생성)"
+  type        = string
+}
+
+variable "allowed_ssh_cidr" {
+  description = "SSH 허용 IP (본인 IP/32 권장, 0.0.0.0/0은 보안 위험)"
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+# ── RDS (프리티어: db.t3.micro, 20GB) ────────────────────────
 variable "db_instance_class" {
-  description = "RDS 인스턴스 타입"
+  description = "RDS 인스턴스 타입 — db.t3.micro 프리티어"
   type        = string
   default     = "db.t3.micro"
 }
 
 variable "db_name" {
-  description = "PostgreSQL 데이터베이스 이름"
-  type        = string
-  default     = "infrared"
+  type    = string
+  default = "infrared"
 }
 
 variable "db_username" {
-  description = "PostgreSQL 마스터 유저명"
-  type        = string
-  default     = "infrared"
+  type    = string
+  default = "infrared"
 }
 
 variable "db_password" {
-  description = "PostgreSQL 마스터 비밀번호"
+  description = "PostgreSQL 마스터 비밀번호 (최소 8자)"
   type        = string
   sensitive   = true
 }
 
 variable "db_allocated_storage" {
-  description = "RDS 스토리지 (GB)"
+  description = "RDS 스토리지 GB — 프리티어 20GB 한도"
   type        = number
   default     = 20
-}
-
-# ── ElastiCache ──────────────────────────────────────────────
-variable "redis_node_type" {
-  description = "ElastiCache Redis 노드 타입"
-  type        = string
-  default     = "cache.t3.micro"
 }
 
 # ── JWT / 보안 ────────────────────────────────────────────────
@@ -86,56 +93,75 @@ variable "jwt_secret" {
 }
 
 variable "jwt_issuer" {
-  description = "JWT issuer 클레임"
-  type        = string
-  default     = "infrared"
+  type    = string
+  default = "infrared"
 }
 
 variable "jwt_audience" {
-  description = "JWT audience 클레임"
-  type        = string
-  default     = "infrared-ingest"
+  type    = string
+  default = "infrared-ingest"
 }
 
 # ── 애플리케이션 ──────────────────────────────────────────────
 variable "tenant_id" {
-  description = "기본 테넌트 ID"
-  type        = string
-  default     = "company-a"
+  type    = string
+  default = "company-a"
 }
 
 variable "agent_id" {
-  description = "기본 에이전트 ID"
-  type        = string
-  default     = "agent-001"
+  type    = string
+  default = "agent-001"
 }
 
 variable "asset_id" {
-  description = "기본 자산 ID"
-  type        = string
-  default     = "asset-001"
+  type    = string
+  default = "asset-001"
 }
 
 variable "cors_origins" {
-  description = "CORS 허용 오리진 (쉼표 구분)"
-  type        = string
-  default     = "*"
+  type    = string
+  default = "*"
 }
 
 # ── Bedrock (LLM) ────────────────────────────────────────────
 variable "bedrock_region" {
-  description = "Bedrock 리전 (모델 가용 리전)"
-  type        = string
-  default     = "us-east-1"
+  type    = string
+  default = "us-east-1"
 }
 
 variable "bedrock_model_id" {
-  description = "Bedrock 모델 ID"
-  type        = string
-  default     = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  type    = string
+  default = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 }
 
-# ── Slack / Email (선택) ─────────────────────────────────────
+# ── 알림 (선택) ───────────────────────────────────────────────
+variable "discord_webhook_url" {
+  description = "Discord Webhook URL (비워두면 비활성)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "abuseipdb_api_key" {
+  description = "AbuseIPDB API Key (OTX 없을 때 fallback CTI)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "otx_api_key" {
+  description = "AlienVault OTX API Key — v3.0 CTI 연동 (비워두면 AbuseIPDB 또는 mock)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "agent_command_secret" {
+  description = "Agent block_ip 명령 HMAC 서명 비밀키 (최소 32자) — v3.0"
+  type        = string
+  sensitive   = true
+}
+
 variable "slack_webhook_url" {
   description = "Slack Webhook URL (비워두면 비활성)"
   type        = string
@@ -143,33 +169,30 @@ variable "slack_webhook_url" {
   sensitive   = true
 }
 
-# ── ECS 태스크 크기 ───────────────────────────────────────────
-variable "ingestion_cpu" {
-  description = "Ingestion API CPU 유닛"
-  type        = number
-  default     = 512
+variable "agent_token" {
+  description = "에이전트 JWT 토큰 (scripts/generate_jwt.py --role agent 출력값)"
+  type        = string
+  sensitive   = true
 }
 
-variable "ingestion_memory" {
-  description = "Ingestion API 메모리 (MB)"
-  type        = number
-  default     = 1024
-}
-
-variable "worker_cpu" {
-  description = "Worker CPU 유닛"
-  type        = number
-  default     = 256
-}
-
-variable "worker_memory" {
-  description = "Worker 메모리 (MB)"
-  type        = number
-  default     = 512
-}
-
+# ── CloudWatch 로그 보존 ──────────────────────────────────────
 variable "log_retention_days" {
-  description = "CloudWatch 로그 보존 기간 (일)"
+  description = "CloudWatch 로그 보존 기간 — 프리티어 5GB 한도 고려"
   type        = number
-  default     = 30
+  default     = 7
+}
+
+# ── CloudWatch 알람 알림 ──────────────────────────────────────
+variable "alarm_email" {
+  description = "CloudWatch 알람 수신 이메일 (비워두면 SNS 이메일 구독 비활성)"
+  type        = string
+  default     = ""
+}
+
+# ── step-ca 비밀번호 ──────────────────────────────────────────
+variable "step_ca_password" {
+  description = "step-ca Root CA 비밀번호 (SSM에 저장, 비워두면 자동 생성)"
+  type        = string
+  default     = ""
+  sensitive   = true
 }

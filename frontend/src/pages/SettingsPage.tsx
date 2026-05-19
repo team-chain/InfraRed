@@ -83,10 +83,20 @@ function AutoresponsePolicyTable({
                 </td>
                 {actions.map((action) => (
                   <td key={action} style={{ padding: "10px 12px", textAlign: "center" }}>
-                    <Toggle
-                      checked={sevPolicy[action]}
-                      onChange={(v) => onChange(sev, action, v)}
-                    />
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <Toggle
+                        checked={sevPolicy[action]}
+                        onChange={(v) => onChange(sev, action, v)}
+                      />
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        minWidth: 22,
+                        color: sevPolicy[action] ? "var(--c-blue-600)" : "var(--text-3)",
+                      }}>
+                        {sevPolicy[action] ? "ON" : "OFF"}
+                      </span>
+                    </div>
                   </td>
                 ))}
               </tr>

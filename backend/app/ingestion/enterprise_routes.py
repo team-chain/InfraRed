@@ -627,6 +627,44 @@ async def download_report(
     )
 
 
+@router.delete("/reports/{report_id}")
+async def delete_report(
+    report_id: str,
+    claims: dict = Depends(require_role("security_manager")),
+) -> dict:
+    """보고서 삭제 (DB 기록 + S3 오브젝트)."""
+    tenant_id = claims["tenant_id"]
+    user_id = str(claims["sub"])
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                DELETE FROM report_history
+                WHERE id::text = :report_id AND tenant_id = :tenant_id
+                RETURNING id::text, s3_key
+            """),
+            {"report_id": report_id, "tenant_id": tenant_id},
+        )
+        row = result.mappings().fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="보고서를 찾을 수 없습니다")
+
+    # S3 오브젝트 삭제 (있으면)
+    if row.get("s3_key"):
+        try:
+            import boto3  # noqa: PLC0415
+            s3 = boto3.client("s3")
+            from app.config import get_settings  # noqa: PLC0415
+            s3.delete_object(Bucket=get_settings().s3_bucket, Key=row["s3_key"])
+        except Exception:
+            pass  # S3 삭제 실패해도 DB 삭제는 유지
+
+    await write_audit_log(
+        tenant_id=tenant_id, actor=user_id, action="report.delete",
+        resource=report_id, metadata={},
+    )
+    return {"deleted": row["id"]}
+
+
 @router.post("/reports/generate")
 async def generate_report(
     report_type: str = Query(default="weekly", pattern="^(weekly|monthly)$"),

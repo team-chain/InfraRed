@@ -705,6 +705,10 @@ export async function generateReport(reportType: "weekly" | "monthly"): Promise<
   return apiFetch(`/reports/generate?report_type=${reportType}`, { method: "POST" });
 }
 
+export async function deleteReport(reportId: string): Promise<void> {
+  await apiFetch(`/reports/${reportId}`, { method: "DELETE" });
+}
+
 // ── Phase 5-A: 자연어 검색 ───────────────────────────────────────────────── //
 
 export async function naturalSearch(

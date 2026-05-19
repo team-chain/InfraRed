@@ -207,6 +207,7 @@ SERVICES=(
   "infrared-dev-enrichment-worker"
   "infrared-dev-correlation-worker"
   "infrared-dev-llm-worker"
+  "infrared-dev-cleanup-worker"
 )
 
 for SVC in "${SERVICES[@]}"; do

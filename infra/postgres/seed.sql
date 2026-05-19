@@ -39,11 +39,17 @@ VALUES
   ('AUTH-003', 'Invalid User Enumeration', 'auth.log', 'Reconnaissance',    'T1592',     TRUE),
   ('AUTH-004', 'Failed Then Success',      'auth.log', 'Initial Access',    'T1110.001 -> T1078', TRUE),
   ('AUTH-005', 'Suspicious Login',         'auth.log', 'Initial Access',    'T1078',     TRUE),
-  ('WEB-001',  'Web Shell Access',         'nginx',    'Initial Access',    'T1505.003', FALSE),
-  ('WEB-002',  'Admin Path Scan',          'nginx',    'Reconnaissance',    'T1595',     FALSE),
-  ('WEB-003',  'Automation Tool Access',   'nginx',    'Initial Access',    'T1190',     FALSE),
-  ('WEB-004',  '404 Burst',                'nginx',    'Reconnaissance',    'T1595',     FALSE)
+  ('WEB-001',  'Web Shell Access',         'nginx',    'Initial Access',    'T1505.003', TRUE),
+  ('WEB-002',  'Admin Path Scan',          'nginx',    'Reconnaissance',    'T1595',     TRUE),
+  ('WEB-003',  'Automation Tool Access',   'nginx',    'Initial Access',    'T1190',     TRUE),
+  ('WEB-004',  '404 Burst',                'nginx',    'Reconnaissance',    'T1595',     TRUE)
 ON CONFLICT (rule_id) DO NOTHING;
+
+-- 기존 WEB 룰이 FALSE로 시드된 경우 활성화
+UPDATE detection_rules
+SET enabled = TRUE, updated_at = NOW()
+WHERE rule_id IN ('WEB-001', 'WEB-002', 'WEB-003', 'WEB-004')
+  AND enabled = FALSE;
 
 INSERT INTO incidents (
   incident_id, tenant_id, asset_id, severity, confidence, priority,

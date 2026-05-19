@@ -5,8 +5,8 @@
  * - S3 다운로드 링크
  */
 import { useEffect, useState } from "react";
-import { fetchReports, generateReport, type ReportItem } from "../lib/api";
-import { FileText, Download, RefreshCw, Plus } from "lucide-react";
+import { fetchReports, generateReport, deleteReport, type ReportItem } from "../lib/api";
+import { FileText, Download, RefreshCw, Plus, Trash2 } from "lucide-react";
 
 export function ReportsPage() {
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -15,6 +15,7 @@ export function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reportType, setReportType] = useState<"weekly" | "monthly">("weekly");
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -29,6 +30,19 @@ export function ReportsPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  async function handleDelete(id: string) {
+    if (!confirm("보고서를 삭제하시겠습니까?")) return;
+    setDeleting(id);
+    try {
+      await deleteReport(id);
+      setReports((prev) => prev.filter((r) => r.id !== id));
+    } catch (e: any) {
+      setError(e.message || "보고서 삭제 실패");
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   async function handleGenerate() {
     setGenerating(true);
@@ -141,15 +155,27 @@ style={{
                   </div>
                 )}
               </div>
-              <a
-                href={r.download_url || `/reports/${r.id}/download`}
-                target="_blank"
-                rel="noreferrer"
-                className="btn btn-sm"
-                style={{ textDecoration: "none" }}
-              >
-                <Download size={13} /> 다운로드
-              </a>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <a
+                  href={r.download_url || `/reports/${r.id}/download`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-sm"
+                  style={{ textDecoration: "none" }}
+                >
+                  <Download size={13} /> 다운로드
+                </a>
+                <button
+                  className="btn btn-sm"
+                  style={{ color: "var(--c-red-500)", borderColor: "var(--c-red-200, #fecaca)" }}
+                  onClick={() => handleDelete(r.id)}
+                  disabled={deleting === r.id}
+                  title="보고서 삭제"
+                >
+                  <Trash2 size={13} />
+                  {deleting === r.id ? "삭제 중…" : "삭제"}
+                </button>
+              </div>
             </div>
           ))}
         </div>

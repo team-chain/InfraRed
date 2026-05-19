@@ -1,18 +1,16 @@
 # ============================================================
-# Amazon RDS — PostgreSQL 16
+# Amazon RDS — PostgreSQL 16 (프리티어)
 # ============================================================
-# dev 설정:
-#   - db.t3.micro, 20GB gp2
-#   - Single AZ (Multi-AZ 비용 절약)
-#   - publicly_accessible = true (로컬 마이그레이션용)
-#   - 자동 백업 1일 보존
+# 프리티어 조건:
+#   - db.t3.micro (또는 db.t2.micro)
+#   - 20GB gp2 스토리지
+#   - 750시간/월 (1년)
+#   - 자동 백업 0일 (백업도 스토리지 소비 → 프리티어 한도 주의)
 # ============================================================
 
-# DB 서브넷 그룹 (RDS는 최소 2개 AZ 서브넷 필요)
 resource "aws_db_subnet_group" "main" {
-  name        = "${local.name_prefix}-db-subnet"
-  subnet_ids  = aws_subnet.public[*].id
-  description = "InfraRed RDS subnet group"
+  name       = "${local.name_prefix}-db-subnet"
+  subnet_ids = aws_subnet.public[*].id
 
   tags = { Name = "${local.name_prefix}-db-subnet" }
 }
@@ -20,43 +18,33 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_db_instance" "main" {
   identifier = "${local.name_prefix}-postgres"
 
-  # 엔진
   engine         = "postgres"
   engine_version = "16"
-  instance_class = var.db_instance_class
+  instance_class = var.db_instance_class  # db.t3.micro
 
-  # 스토리지
+  # 프리티어: 20GB gp2
   allocated_storage     = var.db_allocated_storage
-  max_allocated_storage = 100
+  max_allocated_storage = var.db_allocated_storage  # 자동 확장 비활성 (비용 방지)
   storage_type          = "gp2"
-  storage_encrypted     = true
+  storage_encrypted     = false  # 프리티어: 암호화 비활성 (추가 비용 없지만 일부 인스턴스 제한)
 
-  # 접속 정보
   db_name  = var.db_name
   username = var.db_username
   password = var.db_password
 
-  # 네트워크
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = true  # dev: 로컬 마이그레이션용
+  publicly_accessible    = false  # EC2를 통해서만 접근
 
-  # 가용성 (dev: Single AZ)
-  multi_az            = false
-  availability_zone   = var.availability_zones[0]
+  multi_az          = false  # 프리티어: Single AZ
+  availability_zone = var.availability_zones[0]
 
-  # 백업
-  backup_retention_period = 1
-  backup_window           = "03:00-04:00"
-  maintenance_window      = "sun:04:00-sun:05:00"
+  # 프리티어: 백업 최소화 (스토리지 절약)
+  backup_retention_period = 0  # 자동 백업 비활성
+  skip_final_snapshot     = true
+  deletion_protection     = false
 
-  # 삭제 보호 (dev: 비활성)
-  deletion_protection       = false
-  skip_final_snapshot       = true
-  final_snapshot_identifier = null
-
-  # 모니터링
-  performance_insights_enabled = false
+  performance_insights_enabled = false  # 유료 기능 비활성
 
   tags = { Name = "${local.name_prefix}-postgres" }
 }

@@ -1,10 +1,10 @@
 # ============================================================
 # VPC + 퍼블릭 서브넷 + IGW
 # ============================================================
-# dev 환경 비용 최소화 전략:
-#   - NAT Gateway 없음 → ECS 태스크에 Public IP 직접 할당
-#   - 단일 AZ에 실 워크로드 배치 (ALB는 2AZ 필요)
-#   - 모든 서브넷 퍼블릭 (SG로 접근 제한)
+# 프리티어 전략:
+#   - NAT Gateway 없음 (유료) → 모든 리소스 퍼블릭 서브넷
+#   - EC2에 퍼블릭 IP 직접 할당
+#   - SG로 접근 제어
 # ============================================================
 
 resource "aws_vpc" "main" {
@@ -15,7 +15,7 @@ resource "aws_vpc" "main" {
   tags = { Name = "${local.name_prefix}-vpc" }
 }
 
-# ── 퍼블릭 서브넷 (ALB 2개 AZ 필수 → 2개 생성) ──────────────
+# 퍼블릭 서브넷 2개 (RDS 서브넷 그룹은 2개 AZ 필요)
 resource "aws_subnet" "public" {
   count                   = length(var.public_subnet_cidrs)
   vpc_id                  = aws_vpc.main.id
@@ -26,13 +26,11 @@ resource "aws_subnet" "public" {
   tags = { Name = "${local.name_prefix}-public-${count.index + 1}" }
 }
 
-# ── Internet Gateway ─────────────────────────────────────────
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
   tags   = { Name = "${local.name_prefix}-igw" }
 }
 
-# ── 라우팅 테이블 (0.0.0.0/0 → IGW) ────────────────────────
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 

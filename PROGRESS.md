@@ -2,7 +2,7 @@
 
 > **대상 독자**: 이 프로젝트를 이어받는 AI / 팀원  
 > **기준 문서**: `InfraRed_고도화_설계서_v2.0.docx`  
-> **최종 업데이트**: 2026-05-13
+> **최종 업데이트**: 2026-05-14
 
 ---
 
@@ -206,16 +206,99 @@ frontend/src/pages/OnboardingPage.tsx
 
 ---
 
+---
+
+## 🏗️ AWS 인프라 (Terraform) — 현재 상태
+
+> **리전**: `ap-northeast-2` (서울) | **계정**: `139139347353` | **환경**: `dev`  
+> **Terraform 버전**: 1.15.3 | **상태 파일**: `infra/terraform/terraform.tfstate` (serial: 81)
+
+### ✅ 배포 완료 리소스
+
+| 리소스 | 이름 / ID | 상태 |
+|--------|-----------|------|
+| **VPC** | `infrared-dev-vpc` (`vpc-0f19d15a770b4a3dd`) | ✅ 운영 중 |
+| **퍼블릭 서브넷** | `infrared-dev-public-1` (ap-northeast-2a) | ✅ 운영 중 |
+| **퍼블릭 서브넷** | `infrared-dev-public-2` (ap-northeast-2b) | ✅ 운영 중 |
+| **Internet Gateway** | `infrared-dev-igw` | ✅ 운영 중 |
+| **Route Table** | `infrared-dev-public-rt` | ✅ 운영 중 |
+| **Security Group (EC2)** | `infrared-dev-ec2-sg` (`sg-...`) | ✅ 운영 중 |
+| **Security Group (RDS)** | `infrared-dev-rds-sg` (`sg-0566dbcb06db40266`) | ✅ 운영 중 |
+| **RDS PostgreSQL 16** | `infrared-dev-postgres` (`db.t3.micro`, 20GB gp2) | ✅ **available** |
+| **RDS 엔드포인트** | `infrared-dev-postgres.cvkc42qecy3z.ap-northeast-2.rds.amazonaws.com:5432` | ✅ 접속 가능 |
+| **ECR (backend)** | `139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend` | ✅ 생성 완료 |
+| **ECR (frontend)** | `139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-frontend` | ✅ 생성 완료 |
+| **ECR (agent)** | `139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-agent` | ✅ 생성 완료 |
+| **S3 (logs)** | `infrared-dev-logs-139139347353` | ✅ 생성 완료 |
+| **S3 (reports)** | `infrared-dev-reports-139139347353` | ✅ 생성 완료 |
+| **IAM Role** | `infrared-dev-ec2-role` (ECR+SSM+S3+Bedrock+CW 권한) | ✅ 생성 완료 |
+| **IAM Instance Profile** | `infrared-dev-ec2-profile` | ✅ 생성 완료 |
+| **SSM Parameters** | `jwt-secret`, `db-password`, `agent-token`, `discord-webhook-url`, `slack-webhook-url`, `abuseipdb-api-key`, `otx-api-key`, `agent-command-secret` | ✅ 저장 완료 |
+| **CloudWatch Log Groups** | `/infrared/dev/{ingestion,frontend,detection-worker,enrichment-worker,incident-worker,campaign-worker,llm-worker,cleanup-worker,agent,ec2-init}` (보존 7일) | ✅ 생성 완료 |
+
+### ❌ 미배포 리소스 (다음 단계)
+
+| 리소스 | 파일 | 비고 |
+|--------|------|------|
+| **EC2 t2.micro** | `infra/terraform/ec2.tf` | `terraform apply` 필요 |
+| **Elastic IP** | `infra/terraform/ec2.tf` | EC2 생성 후 자동 연결 |
+
+> EC2/EIP가 없어서 `outputs.tf`의 `ec2_public_ip`, `dashboard_url`, `ingestion_api_url`, `ssh_command`, `healthz_url`이 현재 `null`로 출력됨.
+
+### 📋 인프라 아키텍처 요약
+
+```
+EC2 t2.micro (미배포) ← 다음 단계
+└── Docker Compose (User Data로 자동 설치)
+    ├── ingestion        (FastAPI :8000)
+    ├── detection-worker
+    ├── enrichment-worker
+    ├── incident-worker
+    ├── campaign-worker  (v3.0 신규)
+    ├── llm-worker
+    ├── cleanup-worker
+    ├── frontend         (:3000)
+    ├── redis            (:6379, 컨테이너)
+    └── agent            (자체 모니터링)
+
+RDS PostgreSQL 16 ✅ (infrared-dev-postgres.cvkc42qecy3z.ap-northeast-2.rds.amazonaws.com)
+S3 logs ✅ / S3 reports ✅
+ECR backend/frontend/agent ✅
+```
+
+### 🚀 다음 배포 단계
+
+```bash
+# 1. EC2 + EIP 배포
+cd infra/terraform
+terraform apply   # EC2, EIP만 추가됨 (나머지는 이미 배포 완료)
+
+# 2. 이미지 빌드 & ECR 푸시 (EC2 배포 후)
+./scripts/aws-deploy.sh --push-only
+
+# 3. EC2 초기화 완료 확인 (약 3~5분)
+ssh -i infrared-key.pem ec2-user@<EC2_PUBLIC_IP>
+tail -f /var/log/infrared-init.log
+
+# 4. DB 마이그레이션 (EC2 내 ingestion 컨테이너가 자동 실행)
+# docker-compose.yml의 ingestion command에 migrate 포함됨
+
+# 5. pgvector 확장 수동 적용 (RAG 기능)
+psql $DATABASE_URL -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+---
+
 ## ⚠️ 배포 전 확인 사항
 
-1. **DB 마이그레이션**: `python -m app.db.migrate` 실행 (migrate_v2.sql 자동 적용)
-2. **pgvector 확장**: RDS에서 `CREATE EXTENSION IF NOT EXISTS vector;` 필요 (RAG 기능)
-3. **WeasyPrint**: PDF 생성용 `pip install weasyprint` + 시스템 패키지(Cairo, Pango) 필요
-4. **Bedrock 권한**: Titan Embeddings 모델 (`amazon.titan-embed-text-v1`) 활성화 필요
-5. **환경변수 추가**:
+1. **EC2 배포**: `terraform apply` 실행 — EC2 t2.micro + EIP만 남은 상태
+2. **DB 마이그레이션**: EC2 기동 시 ingestion 컨테이너가 `python -m app.db.migrate` 자동 실행
+3. **pgvector 확장**: RDS에서 `CREATE EXTENSION IF NOT EXISTS vector;` 수동 적용 필요 (RAG 기능)
+4. **WeasyPrint**: PDF 생성용 — backend Dockerfile에 Cairo, Pango 시스템 패키지 포함 필요
+5. **Bedrock 권한**: Titan Embeddings 모델 (`amazon.titan-embed-text-v1`) AWS 콘솔에서 활성화 필요
+6. **환경변수 추가** (SSM에 미등록된 항목):
    - `ANTHROPIC_API_KEY` (Anthropic SDK 직접 사용 시)
-   - `SLACK_WEBHOOK_URL` (Phase 5-B)
-   - `TEAMS_WEBHOOK_URL` (Phase 5-B)
+   - `TEAMS_WEBHOOK_URL` (Phase 5-B MS Teams)
    - `SENDGRID_API_KEY` (PDF 보고서 이메일)
 
 ---

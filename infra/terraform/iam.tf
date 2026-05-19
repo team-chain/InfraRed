@@ -1,111 +1,140 @@
 # ============================================================
-# IAM — ECS 태스크 실행 역할 + 태스크 역할
+# IAM — EC2 인스턴스 역할
 # ============================================================
-# Task Execution Role : ECS가 ECR pull + CloudWatch 로그 작성
-# Task Role           : 애플리케이션이 Bedrock, Secrets Manager 사용
+# EC2가 필요한 권한:
+#   ECR       : Docker 이미지 pull
+#   SSM       : 파라미터 스토어에서 시크릿 읽기
+#   S3        : 로그 업로드 / 리포트 저장
+#   Bedrock   : LLM 호출
+#   CloudWatch: 로그 전송
 # ============================================================
 
-# ── Task Execution Role ──────────────────────────────────────
-data "aws_iam_policy_document" "ecs_assume" {
+data "aws_iam_policy_document" "ec2_assume" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
+      identifiers = ["ec2.amazonaws.com"]
     }
   }
 }
 
-resource "aws_iam_role" "ecs_execution" {
-  name               = "${local.name_prefix}-ecs-execution-role"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
-  description        = "ECS task execution role (ECR pull + CloudWatch logs)"
+resource "aws_iam_role" "ec2" {
+  name               = "${local.name_prefix}-ec2-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume.json
+  description        = "InfraRed EC2 role (ECR + SSM + S3 + Bedrock + CloudWatch)"
 }
 
-# AWS 관리형 정책 연결
-resource "aws_iam_role_policy_attachment" "ecs_execution_managed" {
-  role       = aws_iam_role.ecs_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# Secrets Manager 읽기 권한 (JWT_SECRET, DB_PASSWORD)
-resource "aws_iam_role_policy" "ecs_execution_secrets" {
-  name = "secrets-read"
-  role = aws_iam_role.ecs_execution.id
+# ── ECR: 이미지 pull ─────────────────────────────────────────
+resource "aws_iam_role_policy" "ec2_ecr" {
+  name = "ecr-pull"
+  role = aws_iam_role.ec2.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:DescribeSecret"
-      ]
-      Resource = [
-        aws_secretsmanager_secret.jwt_secret.arn,
-        aws_secretsmanager_secret.db_password.arn
-      ]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      }
+    ]
   })
 }
 
-# ── Task Role (애플리케이션 권한) ────────────────────────────
-resource "aws_iam_role" "ecs_task" {
-  name               = "${local.name_prefix}-ecs-task-role"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
-  description        = "ECS task role (Bedrock, CloudWatch Metrics, ECS Exec)"
+# ── SSM Parameter Store: 시크릿 읽기 ─────────────────────────
+resource "aws_iam_role_policy" "ec2_ssm" {
+  name = "ssm-read"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${local.name_prefix}/*"
+      }
+    ]
+  })
 }
 
-# AWS Bedrock 호출 (LLM Worker)
-resource "aws_iam_role_policy" "ecs_task_bedrock" {
+# ── S3: 로그 업로드 + 리포트 저장 ────────────────────────────
+resource "aws_iam_role_policy" "ec2_s3" {
+  name = "s3-access"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.logs.arn,
+          "${aws_s3_bucket.logs.arn}/*",
+          aws_s3_bucket.reports.arn,
+          "${aws_s3_bucket.reports.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# ── Bedrock: LLM 호출 ────────────────────────────────────────
+resource "aws_iam_role_policy" "ec2_bedrock" {
   name = "bedrock-invoke"
-  role = aws_iam_role.ecs_task.id
+  role = aws_iam_role.ec2.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-      Resource = "arn:aws:bedrock:*::foundation-model/*"
-    }]
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "arn:aws:bedrock:*::foundation-model/*"
+      }
+    ]
   })
 }
 
-# CloudWatch Metrics 게시 (Prometheus 대체 지표)
-resource "aws_iam_role_policy" "ecs_task_cloudwatch" {
-  name = "cloudwatch-metrics"
-  role = aws_iam_role.ecs_task.id
+# ── CloudWatch: 로그 전송 ─────────────────────────────────────
+resource "aws_iam_role_policy" "ec2_cloudwatch" {
+  name = "cloudwatch-logs"
+  role = aws_iam_role.ec2.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "cloudwatch:PutMetricData",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/infrared/*"
+      }
+    ]
   })
 }
 
-# ECS Exec (디버그용 — dev 환경)
-resource "aws_iam_role_policy" "ecs_task_exec" {
-  name = "ecs-exec"
-  role = aws_iam_role.ecs_task.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ssmmessages:CreateControlChannel",
-        "ssmmessages:CreateDataChannel",
-        "ssmmessages:OpenControlChannel",
-        "ssmmessages:OpenDataChannel"
-      ]
-      Resource = "*"
-    }]
-  })
+resource "aws_iam_instance_profile" "ec2" {
+  name = "${local.name_prefix}-ec2-profile"
+  role = aws_iam_role.ec2.name
 }

@@ -1,5 +1,5 @@
 # ============================================================
-# InfraRed Terraform 변수 예시
+# InfraRed v3.0 Terraform 변수 예시
 # cp terraform.tfvars.example terraform.tfvars 후 값을 채우세요.
 # terraform.tfvars 는 .gitignore에 추가해야 합니다 (민감 정보 포함).
 # ============================================================
@@ -14,20 +14,25 @@ vpc_cidr            = "10.0.0.0/16"
 public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
 availability_zones  = ["ap-northeast-2a", "ap-northeast-2b"]
 
-# ── RDS ─────────────────────────────────────────────────────
+# ── EC2 ──────────────────────────────────────────────────────
+ec2_key_name     = "your-key-pair-name"   # AWS 콘솔에서 미리 생성
+allowed_ssh_cidr = "0.0.0.0/0"            # 본인 IP/32 권장 (예: "1.2.3.4/32")
+
+# ── RDS (프리티어: db.t3.micro, 20GB) ────────────────────────
 db_instance_class    = "db.t3.micro"
 db_name              = "infrared"
 db_username          = "infrared"
 db_password          = "change-me-strong-password-here"  # 최소 8자
 db_allocated_storage = 20
 
-# ── ElastiCache ──────────────────────────────────────────────
-redis_node_type = "cache.t3.micro"
-
 # ── JWT 보안 ──────────────────────────────────────────────────
 jwt_secret   = "change-me-at-least-32-chars-long-secret-key"
 jwt_issuer   = "infrared"
 jwt_audience = "infrared-ingest"
+
+# ── v3.0 보안 ─────────────────────────────────────────────────
+# block_ip 명령 HMAC 서명 키 (최소 32자, openssl rand -hex 32 로 생성)
+agent_command_secret = "change-me-at-least-32-chars-agent-command-hmac-key"
 
 # ── 애플리케이션 ──────────────────────────────────────────────
 tenant_id    = "company-a"
@@ -36,15 +41,25 @@ asset_id     = "asset-001"
 cors_origins = "*"
 
 # ── Bedrock (LLM) ────────────────────────────────────────────
+# 주의: Bedrock은 프리티어 없음 → 호출 횟수에 따라 과금
+# 비활성화하려면 EC2의 LLM_PROVIDER=static 으로 설정
 bedrock_region   = "us-east-1"
 bedrock_model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 
-# ── 선택 사항 ────────────────────────────────────────────────
-slack_webhook_url   = ""         # Slack 알림 URL (비워두면 비활성)
-log_retention_days  = 30
+# ── 알림 (선택) ───────────────────────────────────────────────
+discord_webhook_url = ""   # Discord Webhook URL (비워두면 비활성)
+slack_webhook_url   = ""   # Slack Webhook URL (비워두면 비활성)
 
-# ── ECS 태스크 크기 (dev 최소 사양) ──────────────────────────
-ingestion_cpu    = 512
-ingestion_memory = 1024
-worker_cpu       = 256
-worker_memory    = 512
+# ── CTI 연동 (선택) ───────────────────────────────────────────
+# v3.0: OTX 우선, AbuseIPDB fallback, 둘 다 없으면 mock
+# AlienVault OTX (무료): https://otx.alienvault.com/api 에서 발급
+otx_api_key       = ""   # AlienVault OTX API Key (권장)
+abuseipdb_api_key = ""   # AbuseIPDB API Key (OTX 없을 때 fallback)
+
+# ── CloudWatch 로그 보존 ──────────────────────────────────────
+# 프리티어: 5GB/월 무료 → 7일 권장 (30일은 초과 위험)
+log_retention_days = 7
+
+# ── Agent Token ───────────────────────────────────────────────
+# python scripts/generate_jwt.py --role agent 실행 후 출력값을 붙여넣기
+agent_token = "replace-with-output-of-generate_jwt.py"
