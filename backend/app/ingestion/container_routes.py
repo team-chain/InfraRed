@@ -18,9 +18,12 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from sqlalchemy import text
+
 from app.autoresponse.actions import ActionType
 from app.autoresponse.engine import _push_agent_command  # type: ignore[attr-defined]
 from app.common.logging import get_logger
+from app.db.connection import get_session
 from app.iam.audit import write_audit_log
 from app.iam.rbac_v2 import require_role
 
@@ -51,6 +54,24 @@ def _validate_container_name(name: str) -> None:
         raise HTTPException(status_code=400, detail="cannot isolate InfraRed-own container")
 
 
+async def _verify_asset_in_tenant(asset_id: str, tenant_id: str) -> None:
+    """IDOR 방어 — asset_id가 caller의 tenant 소속인지 검증.
+
+    asset이 없거나 다른 tenant 소속이면 403 (404가 enumeration에 더 약함).
+    """
+    async with get_session() as session:
+        row = await session.execute(
+            text("SELECT 1 FROM assets WHERE asset_id = :aid AND tenant_id = :tid"),
+            {"aid": asset_id, "tid": tenant_id},
+        )
+        if not row.first():
+            log.warning(
+                "container_isolate_idor_attempt",
+                asset_id=asset_id, tenant_id=tenant_id,
+            )
+            raise HTTPException(status_code=403, detail="asset_not_in_tenant")
+
+
 @router.post("/containers/{asset_id}/isolate", status_code=202)
 async def isolate_container(
     asset_id: str,
@@ -61,6 +82,9 @@ async def isolate_container(
     _validate_container_name(payload.container)
 
     tenant_id = claims["tenant_id"]
+    # IDOR 방어 — asset이 caller tenant 소속인지 검증
+    await _verify_asset_in_tenant(asset_id, tenant_id)
+
     action = {
         "action_type": ActionType.CONTAINER_ISOLATE.value,
         "target": payload.container,
@@ -114,6 +138,8 @@ async def unisolate_container(
     _validate_container_name(payload.container)
 
     tenant_id = claims["tenant_id"]
+    await _verify_asset_in_tenant(asset_id, tenant_id)
+
     action = {
         "action_type": ActionType.CONTAINER_UNISOLATE.value,
         "target": payload.container,

@@ -27,6 +27,7 @@ from app.db.connection import get_session
 from app.iam.audit import write_audit_log
 from app.iam.rbac_v2 import require_role
 from app.iam.security import create_token, verify_user_token
+from app.middleware.rate_limit import limit_invite
 
 router = APIRouter(tags=["users"])
 
@@ -217,6 +218,7 @@ async def invite_member(
     tenant_id: str,
     payload: InviteRequest,
     claims: dict = Depends(require_role("owner")),
+    _rate: None = Depends(limit_invite),
 ) -> dict:
     """멤버 초대 (owner만 가능).
 

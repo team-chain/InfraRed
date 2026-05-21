@@ -31,6 +31,11 @@ from app.db.repositories import (
 from app.dispatcher.service import dispatch_incident_alert
 from app.iam.audit import write_audit_log
 from app.iam.security import create_token, require_permission, verify_user_token
+from app.middleware.rate_limit import (
+    limit_login,
+    limit_register,
+    limit_revoke_all,
+)
 from app.ingestion.agent_mgmt_routes import router as agent_mgmt_router
 from app.ingestion.api_routes import router as api_router
 from app.ingestion.asset_criticality_routes import router as asset_criticality_router
@@ -291,7 +296,11 @@ async def metrics(request: Request) -> Response:
 
 
 @app.post("/auth/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, request: Request) -> Response:
+async def login(
+    payload: LoginRequest,
+    request: Request,
+    _rate: None = Depends(limit_login),
+) -> Response:
     user = await authenticate_user(
         tenant_id=payload.tenant_id,
         email=payload.email,
@@ -319,7 +328,11 @@ async def login(payload: LoginRequest, request: Request) -> Response:
 
 
 @app.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, request: Request) -> Response:
+async def register(
+    payload: RegisterRequest,
+    request: Request,
+    _rate: None = Depends(limit_register),
+) -> Response:
     user = await register_user(
         tenant_id=payload.tenant_id,
         email=payload.email,
@@ -401,6 +414,7 @@ class RevokeTokenRequest(BaseModel):
 async def revoke_all_user_tokens(
     payload: RevokeTokenRequest,
     claims: dict = Depends(verify_user_token),
+    _rate: None = Depends(limit_revoke_all),
 ) -> dict[str, object]:
     """사용자의 모든 활성 토큰 무효화 (이후 발급된 토큰은 영향 없음).
 

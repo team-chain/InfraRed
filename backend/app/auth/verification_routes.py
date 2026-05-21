@@ -27,6 +27,12 @@ from app.config import get_settings
 from app.db.connection import get_session
 from app.iam.audit import write_audit_log
 from app.iam.security import verify_user_token
+from app.middleware.rate_limit import (
+    limit_forgot_pw,
+    limit_request_verif,
+    limit_reset_pw,
+    limit_verify_email,
+)
 
 router = APIRouter(tags=["auth-verification"])
 log = get_logger(__name__)
@@ -98,6 +104,7 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/auth/request-verification", status_code=202)
 async def request_verification_email(
     claims: dict = Depends(verify_user_token),
+    _rate: None = Depends(limit_request_verif),
 ) -> dict[str, Any]:
     """현재 로그인된 사용자의 이메일 인증 메일 재발송.
 
@@ -140,7 +147,10 @@ async def request_verification_email(
 
 
 @router.get("/auth/verify-email/{token}")
-async def verify_email(token: str) -> dict[str, Any]:
+async def verify_email(
+    token: str,
+    _rate: None = Depends(limit_verify_email),
+) -> dict[str, Any]:
     """이메일 링크 클릭 — 토큰으로 사용자 활성화."""
     if len(token) < 20:
         raise HTTPException(status_code=400, detail="invalid_token")
@@ -179,7 +189,10 @@ async def verify_email(token: str) -> dict[str, Any]:
 
 
 @router.post("/auth/forgot-password", status_code=202)
-async def forgot_password(payload: ForgotPasswordRequest) -> dict[str, Any]:
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    _rate: None = Depends(limit_forgot_pw),
+) -> dict[str, Any]:
     """비밀번호 재설정 메일 발송.
 
     보안: 이메일이 DB에 있든 없든 항상 202 반환 (사용자 enumeration 방지).
@@ -221,7 +234,10 @@ async def forgot_password(payload: ForgotPasswordRequest) -> dict[str, Any]:
 
 
 @router.post("/auth/reset-password")
-async def reset_password(payload: ResetPasswordRequest) -> dict[str, Any]:
+async def reset_password(
+    payload: ResetPasswordRequest,
+    _rate: None = Depends(limit_reset_pw),
+) -> dict[str, Any]:
     """토큰으로 새 비밀번호 설정 + 모든 기존 토큰 revoke."""
     async with get_session() as session:
         row = await session.execute(
