@@ -1,4 +1,6 @@
 """InfraRed FastAPI application."""
+# ruff: noqa: I001
+# (Import block grouped by router version/role, not strict alphabetical — intentional.)
 from __future__ import annotations
 
 import hmac
