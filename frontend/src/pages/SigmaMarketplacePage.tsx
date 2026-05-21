@@ -11,7 +11,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Search, Download, RefreshCw, AlertTriangle,
-  Filter, Eye, Zap, Shield, Globe, Lock
+  Filter, Eye, Zap, Shield, Globe, Lock, CheckCircle2
 } from "lucide-react";
 
 // ─── API 타입 ──────────────────────────────────────────────────────────────

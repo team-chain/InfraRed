@@ -28,7 +28,6 @@ import asyncpg
 
 from .migrate import _asyncpg_url  # 같은 URL 파싱 사용
 
-
 REQUIRED_ENV = ("INITIAL_ADMIN_EMAIL", "INITIAL_ADMIN_PASSWORD")
 
 
@@ -97,7 +96,7 @@ async def bootstrap_admin_on(conn: asyncpg.Connection) -> dict[str, Any] | None:
         await conn.execute(
             """
             INSERT INTO tenant_memberships (tenant_id, user_id, role)
-            VALUES ($1, $2::uuid, 'admin')
+            VALUES ($1, $2::uuid, 'owner')
             ON CONFLICT (tenant_id, user_id) DO NOTHING
             """,
             tenant_id,
@@ -109,7 +108,7 @@ async def bootstrap_admin_on(conn: asyncpg.Connection) -> dict[str, Any] | None:
     row = await conn.fetchrow(
         """
         INSERT INTO users (tenant_id, email, password_hash, role)
-        VALUES ($1, $2, crypt($3, gen_salt('bf')), 'admin')
+        VALUES ($1, $2, crypt($3, gen_salt('bf')), 'owner')
         ON CONFLICT (tenant_id, email) DO NOTHING
         RETURNING user_id::text AS user_id, tenant_id, email, role
         """,
@@ -139,7 +138,7 @@ async def bootstrap_admin_on(conn: asyncpg.Connection) -> dict[str, Any] | None:
     await conn.execute(
         """
         INSERT INTO tenant_memberships (tenant_id, user_id, role)
-        VALUES ($1, $2::uuid, 'admin')
+        VALUES ($1, $2::uuid, 'owner')
         ON CONFLICT (tenant_id, user_id) DO NOTHING
         """,
         tenant_id,

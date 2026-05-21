@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.db.connection import get_session, SessionLocal
+from app.db.connection import SessionLocal
 from app.iam.rbac_v2 import require_role
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
