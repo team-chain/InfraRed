@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Activity, AlertTriangle, Bell, BrainCircuit, CheckCircle2,
-  ClipboardList, Cog, GitCommitVertical, LogOut, Monitor,
+  ClipboardList, Cog, CreditCard, GitCommitVertical, LogOut, Monitor,
   RefreshCw, Shield, ShieldAlert, ShieldCheck, Siren, UserPlus,
   Heart, BookOpen, VolumeX, Users, FileText, Search,
   Lock, Unlock, Clock, Target,
@@ -9,6 +9,8 @@ import {
 import { Logo } from "../components/Logo";
 import { SettingsPage } from "./SettingsPage";
 import { AssetsPage } from "./AssetsPage";
+import { AuditLogPage } from "./AuditLogPage";
+import { BillingPage } from "./BillingPage";
 import { HealthDashboardPage } from "./HealthDashboardPage";
 import { RuleManagementPage } from "./RuleManagementPage";
 import { SuppressionPage } from "./SuppressionPage";
@@ -30,7 +32,7 @@ import {
 
 type Props = { user: AuthUser; onLogout: () => void; onOpenOnboarding: () => void };
 type Tab =
-  | "incidents" | "assets" | "rules" | "audit" | "settings"
+  | "incidents" | "assets" | "rules" | "audit" | "settings" | "billing"
   | "health" | "rule_mgmt" | "suppression" | "members" | "reports" | "search" | "campaigns"
   | "threat_hunting"
   | "sigma_marketplace";
@@ -233,6 +235,7 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
     { key: "reports",  icon: <FileText size={15}/>,    name: "보고서", desc: "주간·월간" },
     { key: "rules",    icon: <Shield size={15}/>,      name: "룰 목록", desc: "탐지 패턴" },
     { key: "audit",    icon: <ClipboardList size={15}/>, name: "감사 로그", desc: "활동 기록" },
+    { key: "billing",  icon: <CreditCard size={15}/>,  name: "결제", desc: "플랜·사용량" },
     { key: "settings", icon: <Cog size={15}/>,         name: "설정", desc: "알림·정책" },
   ] as const;
 
@@ -845,41 +848,11 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
         </div>
       )}
 
-      {/* ══ AUDIT ══ */}
-      {tab === "audit" && (
-        <div className="page-wrap">
-          <div className="page-header">
-            <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between"}}>
-              <div>
-                <h2 className="page-title">감사 로그</h2>
-                <p className="page-subtitle">모든 사용자 활동과 시스템 액션의 불변 기록</p>
-              </div>
-              <button className="btn btn-sm" onClick={() => { setAuditLoading(true); fetchAuditLogs().then(setAuditLogs).catch(()=>{}).finally(()=>setAuditLoading(false)); }} disabled={auditLoading}>
-                <RefreshCw size={13} className={auditLoading ? "spin" : ""} /> 새로고침
-              </button>
-            </div>
-          </div>
-          {auditLoading ? <p style={{color:"var(--text-3)", fontSize:14}}>로딩 중…</p> : (
-            <div className="tbl-wrap">
-              <table className="tbl">
-                <thead><tr><th>시간</th><th>실행자</th><th>액션</th><th>대상</th><th>IP</th></tr></thead>
-                <tbody>
-                  {auditLogs.map(log => (
-                    <tr key={log.id}>
-                      <td style={{fontFamily:"var(--mono)", fontSize:12}}>{new Date(log.timestamp).toLocaleString("ko-KR")}</td>
-                      <td><strong>{log.actor}</strong></td>
-                      <td><code>{log.action}</code></td>
-                      <td>{log.resource ?? "-"}</td>
-                      <td style={{fontFamily:"var(--mono)", fontSize:12}}>{log.ip ?? "-"}</td>
-                    </tr>
-                  ))}
-                  {!auditLogs.length && <tr><td colSpan={5} style={{textAlign:"center", color:"var(--text-3)", padding:"32px"}}>감사 로그 없음</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+      {/* ══ AUDIT (owner) ══ — 필터 + actor + action prefix + since/until */}
+      {tab === "audit" && <AuditLogPage user={user} />}
+
+      {/* ══ BILLING ══ — 플랜 / 사용량 / 인보이스 */}
+      {tab === "billing" && <BillingPage user={user} />}
 
       {/* ══ CAMPAIGNS ══ */}
       {tab === "campaigns" && <CampaignsPage />}

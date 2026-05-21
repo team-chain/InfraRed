@@ -47,6 +47,7 @@ from app.middleware.rate_limit import (
 from app.ingestion.agent_mgmt_routes import router as agent_mgmt_router
 from app.ingestion.api_routes import router as api_router
 from app.ingestion.asset_criticality_routes import router as asset_criticality_router
+from app.ingestion.audit_routes import router as audit_router
 from app.ingestion.block_approval_routes import router as block_approval_router
 
 # v7.0 Break-Glass·Dead Man's Switch 라우터
@@ -281,6 +282,7 @@ app.include_router(tamper_router)
 app.include_router(block_approval_router)
 app.include_router(campaign_router)
 app.include_router(asset_criticality_router)
+app.include_router(audit_router)
 # v3.0 CTI 수동 조회
 app.include_router(cti_router)
 # v3.0 Debug / replay-events (dev/staging 전용)

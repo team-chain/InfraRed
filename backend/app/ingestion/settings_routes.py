@@ -35,6 +35,7 @@ class TenantSettingsUpdate(BaseModel):
     response_mode: str | None = None
     auto_block_min_severity: str | None = None
     discord_webhook_url: str | None = None
+    slack_webhook_url: str | None = None
     alert_email_to: str | None = None
     auth_brute_force_threshold: int | None = None
     auth_brute_force_window_sec: int | None = None
@@ -183,3 +184,95 @@ async def revoke_api_key(
             {"id": key_id, "t": tenant_id},
         )
         await session.commit()
+
+
+# ── Webhook 테스트 ────────────────────────────────────────────────────────────
+
+class TestWebhookRequest(BaseModel):
+    channel: str  # "discord" | "slack" | "email"
+    # 옵션: 임시 URL로 테스트 (저장 안 함). 비우면 DB에 저장된 값 사용.
+    webhook_url: str | None = None
+    email_to: str | None = None
+
+
+@router.post("/settings/test-webhook")
+async def test_webhook(
+    payload: TestWebhookRequest,
+    claims: dict = Depends(require_permission("incident:write")),
+) -> dict:
+    """현재 저장된 (또는 payload의 임시) webhook으로 테스트 메시지 발송.
+
+    owner가 설정 저장 전후로 실제 동작 확인용.
+    """
+    tenant_id = claims["tenant_id"]
+    channel = payload.channel.lower()
+
+    # 저장된 설정 fetch
+    async with get_session() as session:
+        row = await session.execute(
+            text(
+                "SELECT discord_webhook_url, slack_webhook_url, alert_email_to "
+                "FROM tenant_settings WHERE tenant_id = :t"
+            ),
+            {"t": tenant_id},
+        )
+        saved = row.mappings().first() or {}
+
+    test_subject = f"[InfraRed test] {tenant_id} webhook 동작 확인"
+    test_body = (
+        f"이것은 InfraRed Settings에서 보낸 테스트 메시지입니다.\n"
+        f"테넌트: {tenant_id}\n"
+        f"수신 확인되면 실제 인시던트 발생 시 이 채널로 알림이 옵니다."
+    )
+
+    if channel == "discord":
+        url = payload.webhook_url or saved.get("discord_webhook_url")
+        if not url:
+            return {"ok": False, "error": "no_discord_webhook_configured"}
+        try:
+            from app.dispatcher.discord import send_discord_ai_analysis
+            ok = await send_discord_ai_analysis(
+                incident_id="TEST-WEBHOOK",
+                tenant_id=tenant_id,
+                severity="info",
+                asset_name="webhook-test",
+                event_type="설정 테스트",
+                summary=test_body,
+                webhook_url=url,
+            )
+            return {"ok": bool(ok), "channel": "discord"}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "channel": "discord"}
+
+    if channel == "slack":
+        url = payload.webhook_url or saved.get("slack_webhook_url")
+        if not url:
+            return {"ok": False, "error": "no_slack_webhook_configured"}
+        try:
+            from app.dispatcher.slack import send_slack_ai_analysis
+            ok = await send_slack_ai_analysis(
+                incident_id="TEST-WEBHOOK",
+                tenant_id=tenant_id,
+                severity="info",
+                asset_name="webhook-test",
+                event_type="설정 테스트",
+                summary=test_body,
+                webhook_url=url,
+            )
+            return {"ok": bool(ok), "channel": "slack"}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "channel": "slack"}
+
+    if channel == "email":
+        to = payload.email_to or saved.get("alert_email_to")
+        if not to:
+            return {"ok": False, "error": "no_email_configured"}
+        try:
+            from asyncio import to_thread
+            from app.dispatcher.email import send_email_alert
+            ok = await to_thread(send_email_alert, test_subject, test_body, to_override=to)
+            return {"ok": bool(ok), "channel": "email", "to": to}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "channel": "email"}
+
+    return {"ok": False, "error": f"unknown_channel:{channel}"}

@@ -410,6 +410,15 @@ export function SettingsPage() {
                 placeholder="https://discord.com/api/webhooks/…"
                 defaultValue={settings.discord_webhook_url ?? ""}
                 onSave={(v) => save({ discord_webhook_url: v })}
+                testChannel="discord"
+              />
+              <NotifyField
+                label="Slack Webhook URL"
+                desc="Slack 채널로 풍성한 Block Kit 메시지를 전송합니다."
+                placeholder="https://hooks.slack.com/services/…"
+                defaultValue={(settings as any).slack_webhook_url ?? ""}
+                onSave={(v) => save({ slack_webhook_url: v } as any)}
+                testChannel="slack"
               />
               <NotifyField
                 label="이메일 수신 주소"
@@ -417,6 +426,7 @@ export function SettingsPage() {
                 placeholder="admin@company.com"
                 defaultValue={settings.alert_email_to ?? ""}
                 onSave={(v) => save({ alert_email_to: v })}
+                testChannel="email"
               />
             </div>
           </>
@@ -688,14 +698,44 @@ function NotifyField({
   placeholder,
   defaultValue,
   onSave,
+  testChannel,
 }: {
   label: string;
   desc: string;
   placeholder: string;
   defaultValue: string;
   onSave: (v: string) => void;
+  /** "discord" | "slack" | "email" — set이면 "테스트" 버튼 노출 */
+  testChannel?: "discord" | "slack" | "email";
 }) {
   const ref = useRef<HTMLInputElement>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  async function runTest() {
+    if (!testChannel) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const value = ref.current?.value || "";
+      const body: Record<string, string> = { channel: testChannel };
+      if (testChannel === "email") body.email_to = value;
+      else body.webhook_url = value;
+      const res = await fetch(`${(import.meta as any).env?.VITE_API_BASE_URL ?? ""}/settings/test-webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      setTestResult(data.ok ? "✓ 전송 성공 — 채널 확인" : `✗ 실패: ${data.error ?? "unknown"}`);
+    } catch (e) {
+      setTestResult(`✗ 네트워크 오류: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTesting(false);
+    }
+  }
+
   return (
     <div className="setting-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
       <div>
@@ -716,7 +756,27 @@ function NotifyField({
         >
           저장
         </button>
+        {testChannel && (
+          <button
+            type="button"
+            className="btn"
+            style={{ flexShrink: 0 }}
+            onClick={runTest}
+            disabled={testing}
+            title="현재 입력된 값으로 테스트 메시지 발송"
+          >
+            {testing ? "전송 중…" : "테스트"}
+          </button>
+        )}
       </div>
+      {testResult && (
+        <div style={{
+          fontSize: 12,
+          color: testResult.startsWith("✓") ? "var(--c-green-600, #16a34a)" : "var(--c-red-600, #dc2626)",
+        }}>
+          {testResult}
+        </div>
+      )}
     </div>
   );
 }
