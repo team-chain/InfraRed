@@ -116,6 +116,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # 사용자 facing URL (인증/재설정 이메일 링크에 사용)
+    frontend_base_url: str = "https://app.infrared.kr"
+
     # v3.0 Campaign Aggregation
     campaign_window_seconds: int = 600
     campaign_min_signals: int = 5

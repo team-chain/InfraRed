@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse, Response
 
 # v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
 from app.auth.routes import router as auth_enterprise_router
+from app.auth.verification_routes import router as auth_verification_router
 
 # v4.0 Stripe 과금 라우터
 from app.billing.routes import router as billing_router
@@ -243,6 +244,7 @@ app.include_router(network_sensor_router, prefix="/api/v1")
 app.include_router(canary_api_router, prefix="/api/v1")  # v8.0 Canary API (숨김)
 # v4.0 엔터프라이즈 인증 (SSO/MFA)
 app.include_router(auth_enterprise_router)
+app.include_router(auth_verification_router)
 # v4.0 Stripe 과금
 app.include_router(billing_router)
 # v4.0 UEBA 행동 분석
@@ -326,6 +328,26 @@ async def register(payload: RegisterRequest, request: Request) -> Response:
     )
     if user is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="tenant_missing_or_user_exists")
+
+    # 가입 직후 이메일 인증 토큰 자동 발급 + 메일 발송 (best-effort)
+    try:
+        import secrets as _secrets
+        from sqlalchemy import text as _text
+        from app.db.connection import get_session as _get_session
+        from app.auth.verification_routes import _send_verification_email
+        verification_token = _secrets.token_urlsafe(32)
+        async with _get_session() as _session:
+            await _session.execute(
+                _text(
+                    "UPDATE users SET verification_token = :t, verification_sent_at = NOW() "
+                    "WHERE user_id = :uid::uuid"
+                ),
+                {"t": verification_token, "uid": user["user_id"]},
+            )
+            await _session.commit()
+        await _send_verification_email(user["email"], verification_token, user["tenant_id"])
+    except Exception as _exc:  # noqa: BLE001
+        log.warning("post_register_verification_failed", error=str(_exc))
 
     await write_audit_log(
         tenant_id=user["tenant_id"],

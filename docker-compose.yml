@@ -120,14 +120,21 @@ services:
     image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-agent:latest
     container_name: infrared-agent
     env_file: /opt/infrared/.env
+    # responder: iptables + docker 격리 명령을 위해 host network + NET_ADMIN 필요
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     deploy:
       resources:
         limits:
           cpus: "0.05"
-          memory: 60m
+          memory: 80m
     volumes:
       - /var/log:/host/var/log:ro
       - agent-state:/var/lib/infrared
+      - /var/log/infrared:/var/log/infrared              # append-only 액션 로그
+      - /var/run/docker.sock:/var/run/docker.sock:rw     # container_isolate 용
     depends_on:
       - ingestion
     restart: on-failure

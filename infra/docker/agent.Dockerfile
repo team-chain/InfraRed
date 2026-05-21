@@ -16,34 +16,36 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-# ── 시스템 패키지 (sqlite3 런타임 포함) ──────────────────────
+# ── 시스템 패키지 (sqlite3 런타임 + iptables/docker for responder actions) ──
+# iptables           : block_ip / isolate_server 명령 실행
+# iproute2           : 네트워크 진단
+# docker.io-cli      : container_isolate (docker network disconnect / pause / stop)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libsqlite3-0 \
         curl \
         procps \
+        iptables \
+        iproute2 \
+        docker.io \
     && rm -rf /var/lib/apt/lists/*
-
-# ── 비루트 유저 생성 ─────────────────────────────────────────
-# UID/GID 1500 : 호스트 auth.log 권한과 충돌하지 않도록 임의 지정
-RUN groupadd --gid 1500 infrared \
-    && useradd --uid 1500 --gid infrared --no-create-home --shell /sbin/nologin infrared
 
 WORKDIR /app
 
-# ── 의존성 설치 (root 권한 필요) ──────────────────────────────
+# ── 의존성 설치 ───────────────────────────────────────────────
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # ── 소스 복사 ────────────────────────────────────────────────
 COPY . .
 
-# ── 데이터 디렉토리 준비 + 소유권 이전 ───────────────────────
-RUN mkdir -p /var/lib/infrared /host/var/log \
-    && chown -R infrared:infrared /var/lib/infrared /app
+# ── 데이터/로그 디렉토리 준비 ───────────────────────────────
+# /var/log/infrared : 자동 대응 액션 append-only 로그 (iptables_actions.jsonl 등)
+RUN mkdir -p /var/lib/infrared /host/var/log /var/log/infrared
 
-# ── 비루트로 전환 ────────────────────────────────────────────
-USER infrared
+# NOTE: agent는 root로 실행 — iptables / docker / 시스템 파일 제어를 위해 필요.
+# Compose에서 cap_add: [NET_ADMIN] + /var/run/docker.sock 마운트도 필요.
+# 비루트 격리는 watchdog/responder 별도 분리 후 재도입 검토 (v8.x 이후).
 
 # ── 헬스체크: offset DB 파일 또는 프로세스 존재 여부 ──────────
 # (에이전트는 HTTP 포트가 없으므로 프로세스 기반 체크)

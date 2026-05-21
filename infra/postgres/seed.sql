@@ -34,15 +34,38 @@ ON CONFLICT (tenant_id, email) DO NOTHING;
 
 INSERT INTO detection_rules (rule_id, name, source, mitre_tactic, mitre_technique, enabled)
 VALUES
-  ('AUTH-001', 'SSH Brute Force',          'auth.log', 'Credential Access', 'T1110.001', TRUE),
-  ('AUTH-002', 'Root Login Attempt',       'auth.log', 'Initial Access',    'T1078',     TRUE),
-  ('AUTH-003', 'Invalid User Enumeration', 'auth.log', 'Reconnaissance',    'T1592',     TRUE),
-  ('AUTH-004', 'Failed Then Success',      'auth.log', 'Initial Access',    'T1110.001 -> T1078', TRUE),
-  ('AUTH-005', 'Suspicious Login',         'auth.log', 'Initial Access',    'T1078',     TRUE),
-  ('WEB-001',  'Web Shell Access',         'nginx',    'Initial Access',    'T1505.003', TRUE),
-  ('WEB-002',  'Admin Path Scan',          'nginx',    'Reconnaissance',    'T1595',     TRUE),
-  ('WEB-003',  'Automation Tool Access',   'nginx',    'Initial Access',    'T1190',     TRUE),
-  ('WEB-004',  '404 Burst',                'nginx',    'Reconnaissance',    'T1595',     TRUE)
+  -- AUTH (SSH/login)
+  ('AUTH-001',   'SSH Brute Force',          'auth.log',  'Credential Access', 'T1110.001',           TRUE),
+  ('AUTH-002',   'Root Login Attempt',       'auth.log',  'Initial Access',    'T1078',                TRUE),
+  ('AUTH-003',   'Invalid User Enumeration', 'auth.log',  'Reconnaissance',    'T1592',                TRUE),
+  ('AUTH-004',   'Failed Then Success',      'auth.log',  'Initial Access',    'T1110.001 -> T1078',  TRUE),
+  ('AUTH-005',   'Suspicious Login',         'auth.log',  'Initial Access',    'T1078',                TRUE),
+  ('AUTH-006',   'Off Hours Login',          'auth.log',  'Initial Access',    'T1078',                TRUE),
+  ('AUTH-007',   'Foreign IP Login',         'auth.log',  'Initial Access',    'T1078',                TRUE),
+  ('AUTH-006A',  'Credential Stuffing',      'auth.log',  'Credential Access', 'T1110.004',           TRUE),
+  ('AUTH-006B',  'Password Spraying',        'auth.log',  'Credential Access', 'T1110.003',           TRUE),
+  -- WEB (nginx)
+  ('WEB-001',    'Web Shell Access',         'nginx',     'Initial Access',    'T1505.003',           TRUE),
+  ('WEB-002',    'Admin Path Scan',          'nginx',     'Reconnaissance',    'T1595',                TRUE),
+  ('WEB-003',    'Automation Tool Access',   'nginx',     'Initial Access',    'T1190',                TRUE),
+  ('WEB-004',    '404 Burst',                'nginx',     'Reconnaissance',    'T1595',                TRUE),
+  ('WEB-005',    'SQL Injection',            'nginx',     'Initial Access',    'T1190',                TRUE),
+  ('WEB-006',    'Path Traversal',           'nginx',     'Initial Access',    'T1190',                TRUE),
+  ('WEB-007',    'CVE Probe',                'nginx',     'Initial Access',    'T1190',                TRUE),
+  ('WEB-HNY-001','Honeypot Access',          'nginx',     'Reconnaissance',    'T1595',                TRUE),
+  ('NET-001',    'HTTP Flood',               'nginx',     'Impact',            'T1498',                TRUE),
+  -- Deception
+  ('DECEPTION-001','Honeytoken File Access', 'agent.fim', 'Discovery',         'T1083',                TRUE),
+  ('DECEPTION-002','Honeytoken Account Use', 'auth.log',  'Credential Access', 'T1110',                TRUE),
+  -- Agent-side EXEC / FIM (사전 분류된 이벤트)
+  ('EXEC-001',   'Tmp Process Execution',    'agent.exec','Execution',         'T1059',                TRUE),
+  ('EXEC-002',   'Webshell Child Process',   'agent.exec','Initial Access',    'T1505.003',           TRUE),
+  ('EXEC-003',   'Bulk File Modification',   'agent.exec','Impact',            'T1486',                TRUE),
+  ('FIM-001',    'Authorized Keys Tamper',   'agent.fim', 'Persistence',       'T1098.004',           TRUE),
+  ('FIM-002',    'SSHD Config Tamper',       'agent.fim', 'Defense Evasion',   'T1562.004',           TRUE),
+  ('FIM-003',    'Crontab Tamper',           'agent.fim', 'Persistence',       'T1053.003',           TRUE),
+  ('FIM-004',    'Passwd Tamper',            'agent.fim', 'Persistence',       'T1136.001',           TRUE),
+  ('FIM-005',    'Sudoers Tamper',           'agent.fim', 'Privilege Escalation','T1548.003',         TRUE)
 ON CONFLICT (rule_id) DO NOTHING;
 
 -- 기존 WEB 룰이 FALSE로 시드된 경우 활성화

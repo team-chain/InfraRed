@@ -1,87 +1,130 @@
+<div align="center">
+
 # InfraRed
 
-InfraRed는 `auth.log` 기반 SSH 이상 행위를 수집하고, Redis Streams와 Worker 파이프라인을 거쳐 Incident로 묶은 뒤 LLM 요약과 알림, 대시보드까지 연결하는 MVP입니다.
+**Multi-tenant SaaS for Linux/Container Security Operations**
 
-이 저장소는 3명이 **동일하게 가져가는 초기 구성**입니다. 폴더는 역할별로 소유권을 나누되, 공용 계약은 `backend/app/models/`, Redis/DB 계약은 `backend/app/redis_kv/`, `backend/app/db/schema.sql`에 모았습니다.
+Real-time SSH/Web attack detection · automatic IP block in ~10 seconds · MITRE ATT&CK attack-chain correlation · AI incident summarization · Discord/Slack/Email alerts.
 
-## 역할 경계
+[Live demo](https://app.infrared.kr) · [API docs](https://api.infrared.kr/docs) · [Architecture](docs/ARCHITECTURE.md) · [Install guide](docs/INSTALL.md)
 
-| 역할 | 담당 | 주요 경로 |
-| --- | --- | --- |
-| A | 로그 수집, 마스킹, Envelope 생성, Ingestion API, Redis XADD, 인프라 | `agent/`, `backend/app/ingestion/`, `backend/app/redis_kv/`, `infra/`, `docker-compose.yml` |
-| B | raw_line 파싱, 정규화, Dedup, Rule Match, Enrichment, Correlation, Incident 저장 | `backend/app/workers/detection/`, `backend/app/workers/enrichment/`, `backend/app/workers/correlation/`, `backend/app/db/` |
-| C | Incident Contract API 소비, LLM 분석, Discord/Email, Dashboard, IAM/RBAC, Monitoring | `backend/app/workers/llm/`, `backend/app/dispatcher/`, `backend/app/iam/`, `frontend/`, `infra/prometheus/`, `infra/grafana/` |
+</div>
 
-자세한 경계는 [docs/ROLES.md](docs/ROLES.md)를 보세요. 역할별 워크플로우는
-[docs/B_WORKFLOW.md](docs/B_WORKFLOW.md)와 [docs/C_WORKFLOW.md](docs/C_WORKFLOW.md)에 있습니다.
+---
 
-## 빠른 시작
+## What it does
 
-```powershell
-Copy-Item .env.example .env
-python scripts/generate_jwt.py --role agent
+InfraRed is a hosted SOC platform that watches your Linux servers and containers for SSH brute-force, web shells, SQL injection, FIM tampering, and privilege escalation chains. When a high-confidence threat is detected, it pushes an iptables block to the agent within ~10 seconds, files an incident with kill-chain stage and ATT&CK technique, and notifies your team via Discord/Slack/email.
+
+Built for teams that want SOC-grade detection + automatic response without standing up Wazuh/Splunk/Sentinel themselves.
+
+## Key capabilities
+
+| Capability | Status | Notes |
+|---|---|---|
+| AUTH detection (brute force, root login, invalid user, failed→success, suspicious login) | ✅ | AUTH-001 through AUTH-007 |
+| WEB detection (SQL injection, path traversal, admin scan, 404 burst, webshell, CVE probe) | ✅ | WEB-001 through WEB-007 + WEB-HNY-001 |
+| FIM (authorized_keys, sshd_config, crontab, /etc/passwd, /etc/sudoers tamper) | ✅ | hash-based, agent-side |
+| Tmp / webshell / bulk-mod execution monitor | ✅ | EXEC-001/002/003 |
+| Deception (honeytokens, fake admin accounts, canary paths) | ✅ | DECEPTION-001/002 |
+| Attack-chain correlation (SSH compromise, webshell, priv-esc, ransomware, lateral movement) | ✅ | 7 scenarios |
+| Auto-response: iptables block, server isolation, container quarantine, account lock, JIT-SSH revoke | ✅ | confidence ≥ 0.85 + CRITICAL = automatic |
+| Approval workflow for mid-confidence blocks | ✅ | TTL + extension supported |
+| AI incident summarization (Bedrock Claude, static fallback) | ✅ | per-incident, cached |
+| RBAC (owner / security_manager / analyst / viewer) + invite + email verification + password reset | ✅ | multi-tenant |
+| Discord / Slack / Email alerts with embed/Block Kit | ✅ | per-tenant webhook config |
+| Sentry + Prometheus integration | ✅ | optional, opt-in via env |
+| Dashboard (incidents timeline, members, rule management, reports) | ✅ | React + Vite |
+| Agent: Linux (Python + systemd), Windows, macOS | 🟡 | Linux production-ready; Windows/macOS preview |
+
+## Quick start (self-hosted)
+
+Requires Docker, Docker Compose, and ~2 GB RAM.
+
+```bash
+git clone https://github.com/team-chain/InfraRed.git
+cd InfraRed
+cp .env.example .env
+
+# Generate the agent JWT secret
+python scripts/generate_jwt.py --role agent > /tmp/agent_token.txt
+sed -i "s|^AGENT_TOKEN=.*|AGENT_TOKEN=$(cat /tmp/agent_token.txt)|" .env
+
+# Bring up the stack
+docker compose up -d
 ```
 
-출력된 JWT를 `.env`의 `AGENT_TOKEN`에 넣습니다.
+Then open:
 
-```powershell
-docker compose up --build
-```
-
-서비스 포트:
-
-- API: http://localhost:8000
 - Dashboard: http://localhost:3000
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3001 (`admin` / `admin`)
-- PostgreSQL: `localhost:5432`
-- Redis: `localhost:6379`
+- API: http://localhost:8000 (Swagger: `/docs`)
 
-Dashboard demo login:
+Default demo login: `admin@infrared.local` / `infrared123` (tenant `company-a`). For production, set `INITIAL_ADMIN_EMAIL` + `INITIAL_ADMIN_PASSWORD` in `.env` before `docker compose up` — your real admin is created automatically on first migrate.
 
-```text
-admin@infrared.local
-infrared123
+Full install guide: [docs/INSTALL.md](docs/INSTALL.md).
+
+## Architecture (high level)
+
+```
+                                  ┌─────────────────────────┐
+                                  │      Dashboard (React)  │
+                                  └──────────┬──────────────┘
+                                             │ HTTPS + JWT
+                                             ▼
+ Linux/Container hosts                ┌──────────────┐         ┌──────────────┐
+   ┌────────────┐  POST /ingest       │   FastAPI    │◄────────│  PostgreSQL  │
+   │   Agent    │ ──────────────────► │  Ingestion   │         │ users,       │
+   │ tailer +   │  GET  /commands     │     API      │────────►│ incidents,   │
+   │ commander  │ ◄────────────────── └──────┬───────┘         │ signals,     │
+   └─────┬──────┘   block_ip / isolate       │                 │ rules, etc.  │
+         │ iptables/docker                   │ Redis Streams   └──────────────┘
+         ▼                                   ▼
+   ─ host kernel ─                ┌─────────────────────┐
+                                  │  detection-worker   │  rule match
+                                  │  enrichment-worker  │  CTI / GeoIP
+                                  │  correlation-worker │  attack chain
+                                  │  llm-worker         │  Bedrock Claude
+                                  │  campaign-worker    │  alert grouping
+                                  │  cleanup-worker     │  retention
+                                  └──────────┬──────────┘
+                                             │
+                          Discord / Slack / Email / Webhook
 ```
 
-For real Claude analysis through AWS Bedrock, see [docs/AWS_BEDROCK_SETUP.md](docs/AWS_BEDROCK_SETUP.md).
+Full diagram with data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Agent를 기다리지 않고 샘플 이벤트를 넣으려면:
+## What's inside
 
-```powershell
-python scripts/send_test_event.py
+```
+backend/        FastAPI + workers (detection, enrichment, correlation, LLM, dispatcher)
+frontend/       React + Vite dashboard
+agent/          Python agent (auth.log + nginx tailer, FIM, EXEC monitor, commander)
+infra/          Terraform, Docker, nginx, Prometheus, sample logs
+scripts/        Install one-liner, JWT helper, log generator, smoke tests
+docs/           Architecture, install, role workflows, design specs
 ```
 
-## 파이프라인
+## Detection rules
 
-```text
-Docker Agent
-  -> POST /ingest
-  -> tenant:{tid}:stream:events:raw
-  -> Detection Worker
-  -> tenant:{tid}:stream:signals:matched
-  -> Enrichment Worker
-  -> tenant:{tid}:stream:signals:enriched
-  -> Correlation Worker
-  -> PostgreSQL incidents / evidence
-  -> tenant:{tid}:stream:incidents:new
-  -> LLM Worker + Dispatcher
-  -> Dashboard / Discord / Email
-```
+28 production rules across AUTH / WEB / FIM / EXEC / DECEPTION / NET / Correlation. Each rule has confidence scoring; ≥ 0.85 + CRITICAL severity auto-triggers iptables block via the agent. Full rule catalog: [docs/RULES.md](docs/RULES.md).
 
-## 공용 계약
+## Security posture
 
-- Raw Event Envelope: `backend/app/models/envelope.py`
-- Normalized Event: `backend/app/models/envelope.py`
-- Signal: `backend/app/models/signal.py`
-- Incident: `backend/app/models/incident.py`
-- LLM Result: `backend/app/models/llm.py`
-- Redis Stream names: `backend/app/redis_kv/streams.py`
-- Redis Key patterns: `backend/app/redis_kv/keys.py`
-- PostgreSQL schema: `backend/app/db/schema.sql`
+InfraRed is itself a security product, so we apply our own controls:
 
-## 다음 작업
+- multi-tenant data isolation (per-tenant `tenant_id` scoping on every query)
+- bcrypt password hashing via Postgres `pgcrypto.crypt()`
+- JWT with revocation deny-list (Redis-backed, per-jti + per-user)
+- Discord/Slack webhook URLs never logged
+- mTLS for agent ↔ ingestion in production (`MTLS_ENABLED=true`)
+- Dead Man's Switch for server isolation TTL
+- nonce + HMAC signing for backend → agent commands
+- input validation via Pydantic, parameterized SQL only
 
-1. A: 실제 운영 서버의 `/var/log/auth.log` 마운트 방식과 JWT 발급/회전 정책 확정
-2. B: AUTH-001~005 임계값, Incident merge 정책, GeoIP/CTI Provider 교체
-3. C: Dashboard 인증 적용, Bedrock 프롬프트 고도화, Discord/Email 템플릿 확정
+## License
+
+Source-available for evaluation. Production use under contract — contact the team.
+
+## Contributing
+
+Internal development docs in [CONTRIBUTING.md](CONTRIBUTING.md).

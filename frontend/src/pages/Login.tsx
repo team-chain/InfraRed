@@ -5,9 +5,10 @@ import { login, type AuthUser } from "../lib/api";
 type Props = {
   onLogin: (user: AuthUser) => void;
   onGoToRegister?: () => void;
+  onForgotPassword?: () => void;
 };
 
-export function LoginPage({ onLogin, onGoToRegister }: Props) {
+export function LoginPage({ onLogin, onGoToRegister, onForgotPassword }: Props) {
   const [tenantId, setTenantId] = useState("company-a");
   const [email, setEmail] = useState("admin@company-a.com");
   const [password, setPassword] = useState("");
@@ -54,6 +55,20 @@ export function LoginPage({ onLogin, onGoToRegister }: Props) {
           <LogIn size={18} />
           {loading ? "Signing in" : "Sign in"}
         </button>
+        {onForgotPassword && (
+          <p style={{ textAlign: "center", marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              style={{
+                background: "none", border: "none",
+                color: "var(--text-3)", cursor: "pointer",
+              }}
+            >
+              비밀번호를 잊으셨나요?
+            </button>
+          </p>
+        )}
         {onGoToRegister && (
           <p style={{ textAlign: "center", marginTop: "0.75rem", fontSize: "0.875rem" }}>
             아직 계정이 없으신가요?{" "}

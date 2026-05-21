@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.config import get_settings
 from app.db.connection import get_session
 from app.iam.audit import write_audit_log
 from app.iam.rbac_v2 import require_role
@@ -30,6 +31,39 @@ from app.iam.security import create_token, verify_user_token
 router = APIRouter(tags=["users"])
 
 _VALID_ROLES = {"owner", "security_manager", "analyst", "viewer"}
+
+
+async def _send_invite_email(email: str, tenant_id: str, role: str) -> None:
+    """초대 메일 자동 발송 (best-effort).
+
+    pending_invitation 저장 직후 호출. SMTP/SES 미설정시 조용히 skip.
+    """
+    from urllib.parse import urlencode
+    settings = get_settings()
+    base = settings.frontend_base_url or "https://app.infrared.kr"
+    params = urlencode({"invite_email": email, "tenant_id": tenant_id, "role": role})
+    link = f"{base}/?{params}"
+    body = (
+        f"InfraRed {tenant_id} 테넌트에 {role} 권한으로 초대받으셨습니다.\n\n"
+        f"가입을 완료하려면 다음 링크로 접속하세요 (14일 유효):\n"
+        f"{link}\n\n"
+        f"본인이 가입한 적이 없다면 무시하셔도 됩니다."
+    )
+    try:
+        from asyncio import to_thread
+        from app.dispatcher.email import send_email_alert
+        await to_thread(
+            send_email_alert,
+            f"[InfraRed] {tenant_id} 초대",
+            body,
+            to_override=email,
+        )
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning(
+            "invite_email_send_failed email=%s tenant=%s error=%s",
+            email, tenant_id, exc,
+        )
 
 
 # ============================================================
@@ -232,6 +266,8 @@ async def invite_member(
                 resource=payload.email,
                 metadata={"role": payload.role, "status": "joined"},
             )
+            # 기존 가입자에게도 합류 안내 메일 발송 (Dashboard 로그인 안내)
+            await _send_invite_email(payload.email, tenant_id, payload.role)
             return {
                 "status": "joined",
                 "user_id": user_id,
@@ -264,6 +300,8 @@ async def invite_member(
         resource=payload.email,
         metadata={"role": payload.role, "status": "pending"},
     )
+    # 미가입자에게 가입 링크 메일 자동 발송
+    await _send_invite_email(payload.email, tenant_id, payload.role)
     return {
         "status": "pending",
         "email": payload.email,
