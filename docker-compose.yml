@@ -2,18 +2,21 @@ services:
   redis:
     image: redis:7-alpine
     container_name: infrared-redis
+    # NOTE: Redis password는 .env의 REDIS_PASSWORD로 주입 — 절대 hardcode 금지.
+    # 변경 시 backend의 REDIS_URL (.env), agent의 REDIS_URL 모두 함께 회전.
+    env_file: /opt/infrared/.env
     command: >
-      redis-server
-      --requirepass infrared-redis-pw
+      sh -c "redis-server
+      --requirepass $${REDIS_PASSWORD:-CHANGE_ME_IN_ENV}
       --maxmemory 100mb
       --maxmemory-policy allkeys-lru
-      --save 60 1
+      --save 60 1"
     mem_limit: 100m
     volumes:
       - redis-data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "infrared-redis-pw", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-CHANGE_ME_IN_ENV} ping || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
