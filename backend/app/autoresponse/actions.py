@@ -8,11 +8,14 @@ class ActionType(str, Enum):
     BLOCK_IP         = "block_ip"         # iptables DROP via Agent
     LOCK_ACCOUNT     = "lock_account"     # passwd -l via Agent
     ESCALATE         = "escalate"         # severity 상향, 추가 알림
-    NOTIFY           = "notify"           # Discord/Email 알림만
+    NOTIFY           = "notify"           # Discord/Email/Slack 알림만
     ISOLATE_SERVER   = "isolate_server"   # NIC 비활성화 또는 iptables ALL DROP
     KILL_PROCESS     = "kill_process"     # PID로 악성 프로세스 종료
     COLLECT_FORENSICS = "collect_forensics"  # 포렌식 수집 트리거
     RESTORE_FILE     = "restore_file"     # 파일 복원 (안전 정책 포함)
+    # Container 격리 — docker network disconnect / pause / stop (mode 옵션)
+    CONTAINER_ISOLATE   = "container_isolate"
+    CONTAINER_UNISOLATE = "container_unisolate"
 
 
 SEVERITY_RANK = {"info": 0, "medium": 1, "high": 2, "critical": 3}
@@ -66,10 +69,4 @@ def build_actions_from_llm(
 
     # 액션이 없으면 알림만
     if not actions:
-        actions.append({
-            "action_type": ActionType.NOTIFY,
-            "target": incident_id,
-            "payload": {"incident_id": incident_id},
-        })
-
-    return actions
+        acti

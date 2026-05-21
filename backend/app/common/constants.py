@@ -29,9 +29,14 @@ class KillChainStage(str, Enum):
     CREDENTIAL_ACCESS = "Credential Access"
     INITIAL_ACCESS = "Initial Access"
     EXECUTION = "Execution"
+    PERSISTENCE = "Persistence"
     PRIVILEGE_ESCALATION = "Privilege Escalation"
     DEFENSE_EVASION = "Defense Evasion"
+    INSTALLATION = "Installation"
+    COMMAND_AND_CONTROL = "Command and Control"
     EXFILTRATION = "Exfiltration"
+    IMPACT = "Impact"
+    ACTIONS_ON_OBJECTIVES = "Actions on Objectives"
 
 
 class EventType(str, Enum):
@@ -40,6 +45,11 @@ class EventType(str, Enum):
     SSH_INVALID_USER = "ssh_invalid_user"
     AGENT_HEARTBEAT = "agent_heartbeat"
     WEB_REQUEST = "web_request"
+    # Agent-side pre-classified events
+    FIM_CHANGE = "fim_change"
+    SUSPICIOUS_PROCESS_EXECUTION = "suspicious_process_execution"
+    WEBSHELL_EXECUTION = "webshell_execution"
+    BULK_FILE_MODIFICATION = "bulk_file_modification"
 
 
 class RuleId(str, Enum):
@@ -66,40 +76,9 @@ class RuleId(str, Enum):
     # Deception (설계서 v6)
     DECEPTION_HONEYTOKEN_FILE = "DECEPTION-001"
     DECEPTION_HONEYTOKEN_ACCOUNT = "DECEPTION-002"
-
-
-class LLMStatus(str, Enum):
-    PENDING = "pending"
-    SUCCESS = "success"
-    FALLBACK = "fallback"
-
-
-class SignalCategory(str, Enum):
-    DEMO = "demo"
-    THREAT = "threat"
-
-
-class PolicyType(str, Enum):
-    AGENT_ACCESS = "agent_access"
-    THREAT_IP = "threat_ip"
-    DASHBOARD_ACCESS = "dashboard_access"
-
-
-# Honeypot 경로별 Severity 매핑 (설계서 Table 6)
-HONEYPOT_PATH_SEVERITY: dict[str, str] = {
-    "/demo":            "info",
-    "/.env":            "high",
-    "/wp-login.php":    "medium",
-    "/.git":            "high",
-    "/actuator":        "high",
-    "/wp-config.php":   "critical",
-    "/phpmyadmin":      "high",
-    "/admin":           "medium",
-    "/config.php":      "high",
-    "/backup":          "medium",
-}
-
-HONEYPOT_DEMO_PATH = "/demo"
-
-# 마스킹 버전 (dead_letter 스키마 추적용)
-MASKING_VERSION = "v1"
+    # Agent-side rules (사전 분류된 이벤트, agent가 직접 rule_id 매김)
+    EXEC_TMP = "EXEC-001"                # /tmp 계열에서 실행 중인 프로세스
+    EXEC_WEBSHELL = "EXEC-002"           # 웹서버 child process가 shell
+    EXEC_BULK_MOD = "EXEC-003"           # 대량 파일 변경
+    FIM_AUTHORIZED_KEYS = "FIM-001"      # /root/.ssh/authorized_keys 변조
+    FIM_SSHD_CONFIG = "FIM-002"          # sshd_config 변조

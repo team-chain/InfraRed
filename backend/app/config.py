@@ -66,12 +66,19 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
 
     discord_webhook_url: str = ""
+    slack_webhook_url: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
     alert_email_from: str = "alert@infrared.local"
     alert_email_to: str = ""
+
+    # Sentry error tracking (no-op if dsn empty)
+    sentry_dsn: str = ""
+    sentry_environment: str = ""  # empty → falls back to `env` field
+    sentry_traces_sample_rate: float = 0.1
+    sentry_profiles_sample_rate: float = 0.0
 
     cti_provider: Literal["mock", "abuseipdb", "otx"] = "mock"
     abuseipdb_api_key: str = ""

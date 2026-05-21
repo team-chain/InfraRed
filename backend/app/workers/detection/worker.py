@@ -29,6 +29,7 @@ from app.models.envelope import RawEventEnvelope
 from app.models.signal import Signal as _Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
+from app.workers.detection.agent_event_rules import evaluate_agent_event, is_agent_event
 from app.workers.detection.nginx_parser import parse_nginx_log
 from app.workers.detection.parser import parse_auth_log
 from app.workers.detection.rules import evaluate_rules
@@ -141,35 +142,49 @@ async def process_payload(stream_id: str, payload: str) -> None:
         return
 
     # -- Parse: route by raw_source --------------------------------------------
-    if _is_nginx_source(envelope):
-        event = parse_nginx_log(envelope)
-    else:
-        event = parse_auth_log(envelope)
-
-    if event is None:
-        log.info("event_unparsed", event_id=envelope.event_id)
-        DETECTION_EVENTS.labels(outcome="unparsed").inc()
-        return
-
-    await save_normalized_event(event)
-    if event.late_event:
+    # Agent 사전 분류 이벤트 (FIM/EXEC)는 별도 처리 — 룰 매칭 없이 즉시 Signal로
+    if is_agent_event(envelope):
+        signals = await evaluate_agent_event(envelope)
+        DETECTION_EVENTS.labels(outcome="agent_event").inc()
         log.info(
-            "event_late_processed",
-            event_id=event.event_id,
-            timestamp=event.timestamp.isoformat(),
+            "agent_event_processed",
+            event_id=envelope.event_id,
+            rule_id=envelope.model_dump().get("rule_id"),
+            raw_source=envelope.raw_source,
+            signal_count=len(signals),
         )
-        DETECTION_EVENTS.labels(outcome="late_processed").inc()
+        # NOTE: agent 이벤트는 NormalizedEvent 변환 없이 바로 signals dispatch
+        # save_normalized_event는 SSH/web 이벤트 전용 (event_type enum 제약)
     else:
-        DETECTION_EVENTS.labels(outcome="parsed").inc()
+        if _is_nginx_source(envelope):
+            event = parse_nginx_log(envelope)
+        else:
+            event = parse_auth_log(envelope)
 
-    # -- Evaluate rules: SSH vs Web (+ NET-001 HTTP Flood) --------------------
-    if event.event_type == EventType.WEB_REQUEST:
-        signals = await evaluate_web_rules(redis, event)
-        # NET-001: WEB_REQUEST 이벤트에서 HTTP Flood 추가 평가 (설계서 3.1)
-        net_signals = await evaluate_net_rules(redis, event)
-        signals.extend(net_signals)
-    else:
-        signals = await evaluate_rules(redis, event)
+        if event is None:
+            log.info("event_unparsed", event_id=envelope.event_id)
+            DETECTION_EVENTS.labels(outcome="unparsed").inc()
+            return
+
+        await save_normalized_event(event)
+        if event.late_event:
+            log.info(
+                "event_late_processed",
+                event_id=event.event_id,
+                timestamp=event.timestamp.isoformat(),
+            )
+            DETECTION_EVENTS.labels(outcome="late_processed").inc()
+        else:
+            DETECTION_EVENTS.labels(outcome="parsed").inc()
+
+        # -- Evaluate rules: SSH vs Web (+ NET-001 HTTP Flood) ----------------
+        if event.event_type == EventType.WEB_REQUEST:
+            signals = await evaluate_web_rules(redis, event)
+            # NET-001: WEB_REQUEST 이벤트에서 HTTP Flood 추가 평가 (설계서 3.1)
+            net_signals = await evaluate_net_rules(redis, event)
+            signals.extend(net_signals)
+        else:
+            signals = await evaluate_rules(redis, event)
 
     for signal in signals:
         # -- Demo Signal 분기 (설계서 17.3) ------------------------------------

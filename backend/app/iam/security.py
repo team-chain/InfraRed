@@ -1,6 +1,7 @@
 """JWT helpers for agents and users."""
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -10,6 +11,7 @@ from jose import JWTError, jwt
 
 from app.config import get_settings
 from app.iam.rbac import has_permission
+from app.iam.token_revocation import is_jti_revoked, user_revoked_at
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -27,7 +29,10 @@ def create_token(
     ttl = ttl_seconds or (
         settings.jwt_agent_ttl_seconds if role == "agent" else settings.jwt_user_ttl_seconds
     )
+    # jti: 모든 토큰에 unique ID 부여 (revocation deny-list 키)
+    jti = secrets.token_urlsafe(16)
     payload: dict[str, Any] = {
+        "jti": jti,
         "sub": subject,
         "tenant_id": tenant_id,
         "role": role,
@@ -62,16 +67,48 @@ async def verify_token(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> dict[str, Any]:
-    """Accept JWT from Authorization: Bearer header OR infrared_token cookie."""
+    """Accept JWT from Authorization: Bearer header OR infrared_token cookie.
+
+    추가로 token revocation deny-list 체크:
+    - jti 가 revoked:jti:* 에 있으면 401
+    - sub (user_id)의 last_revoked_at 이 token.iat 보다 크면 401 (사용자 단위 revoke)
+    """
     if credentials:
-        return _decode_raw(credentials.credentials)
-    cookie = request.cookies.get("infrared_token")
-    if cookie:
-        return _decode_raw(cookie)
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="not_authenticated",
-    )
+        claims = _decode_raw(credentials.credentials)
+    else:
+        cookie = request.cookies.get("infrared_token")
+        if not cookie:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="not_authenticated",
+            )
+        claims = _decode_raw(cookie)
+
+    # ── Revocation deny-list 체크 ─────────────────────────────────────────────
+    jti = claims.get("jti")
+    try:
+        if jti and await is_jti_revoked(str(jti)):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="token_revoked",
+            )
+        sub = claims.get("sub")
+        iat = int(claims.get("iat", 0))
+        if sub:
+            revoked_at = await user_revoked_at(str(sub))
+            if revoked_at and iat and iat < revoked_at:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="all_user_tokens_revoked",
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        # Redis 장애 시에도 인증은 통과 (fail-open) — 가용성 우선
+        # 침해 토큰을 막지 못할 위험은 있지만 백엔드 전체가 401나는 것보다 나음
+        pass
+
+    return claims
 
 
 async def verify_agent_token(

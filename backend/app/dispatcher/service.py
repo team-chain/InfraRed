@@ -11,6 +11,7 @@ from app.common.logging import get_logger
 from app.db.connection import get_session
 from app.dispatcher.discord import send_discord_ai_analysis
 from app.dispatcher.email import send_email_alert
+from app.dispatcher.slack import send_slack_ai_analysis
 from app.models.llm import LLMResult
 
 log = get_logger(__name__)
@@ -19,27 +20,48 @@ log = get_logger(__name__)
 @dataclass(frozen=True)
 class DispatchResult:
     discord_sent: bool = False
+    slack_sent: bool = False
     email_sent: bool = False
     errors: tuple[str, ...] = ()
 
     @property
     def dispatched(self) -> bool:
-        return self.discord_sent or self.email_sent
+        return self.discord_sent or self.slack_sent or self.email_sent
 
 
 async def _get_tenant_dispatch_config(tenant_id: str) -> dict:
-    """테넌트별 Discord/Email 설정을 DB에서 조회. 없으면 빈 dict."""
+    """테넌트별 Discord/Slack/Email 설정을 DB에서 조회. 없으면 빈 dict.
+
+    slack_webhook_url 컬럼은 migrate_v2.sql에서 추가됨. 없으면 SELECT 실패하니
+    안전 fallback으로 한 번 더 조회.
+    """
     try:
         async with get_session() as session:
             row = await session.execute(
-                text("SELECT discord_webhook_url, alert_email_to FROM tenant_settings WHERE tenant_id = :t"),
+                text(
+                    "SELECT discord_webhook_url, slack_webhook_url, alert_email_to "
+                    "FROM tenant_settings WHERE tenant_id = :t"
+                ),
                 {"t": tenant_id},
             )
             record = row.mappings().first()
         return dict(record) if record else {}
     except Exception as exc:
+        # 컬럼 없으면 slack 빼고 재시도
         log.warning("tenant_dispatch_config_fetch_failed tenant=%s error=%s", tenant_id, exc)
-        return {}
+        try:
+            async with get_session() as session:
+                row = await session.execute(
+                    text(
+                        "SELECT discord_webhook_url, alert_email_to "
+                        "FROM tenant_settings WHERE tenant_id = :t"
+                    ),
+                    {"t": tenant_id},
+                )
+                record = row.mappings().first()
+            return dict(record) if record else {}
+        except Exception:
+            return {}
 
 
 def _extract_mitre_techniques(text_blob: str | None) -> list[str]:
@@ -79,10 +101,12 @@ async def dispatch_incident_alert(
     normalized_severity = severity.lower()
     errors: list[str] = []
     discord_sent = False
+    slack_sent = False
     email_sent = False
 
     tenant_cfg = await _get_tenant_dispatch_config(tenant_id)
     discord_url = tenant_cfg.get("discord_webhook_url") or None
+    slack_url   = tenant_cfg.get("slack_webhook_url") or None
     email_to    = tenant_cfg.get("alert_email_to") or None
 
     # ── LLMResult에서 구조화된 필드 추출 ────────────────────────────────────
@@ -121,6 +145,26 @@ async def dispatch_incident_alert(
         errors.append(f"discord:{exc}")
         log.exception("discord_alert_dispatch_failed", incident_id=result.incident_id, error=str(exc))
 
+    # Slack — 같은 정보 모델, 풍성한 Block Kit attachment
+    try:
+        slack_sent = await send_slack_ai_analysis(
+            incident_id=result.incident_id,
+            tenant_id=tenant_id,
+            severity=normalized_severity,
+            asset_name=asset_name,
+            event_type="보안 인시던트",
+            summary=summary,
+            kill_chain_stage=kill_chain_stage,
+            mitre_techniques=mitre_techniques or None,
+            manual_actions_needed=result.recommended_actions,
+            ai_confidence=ai_conf,
+            analysis_elapsed_sec=analysis_elapsed_sec,
+            webhook_url=slack_url,
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"slack:{exc}")
+        log.exception("slack_alert_dispatch_failed", incident_id=result.incident_id, error=str(exc))
+
     if normalized_severity == "critical":
         email_text = (
             f"[InfraRed] {tenant_id} {result.incident_id}\n"
@@ -140,6 +184,7 @@ async def dispatch_incident_alert(
 
     dispatch_result = DispatchResult(
         discord_sent=discord_sent,
+        slack_sent=slack_sent,
         email_sent=email_sent,
         errors=tuple(errors),
     )
@@ -149,6 +194,7 @@ async def dispatch_incident_alert(
         severity=normalized_severity,
         dispatched=dispatch_result.dispatched,
         discord_sent=discord_sent,
+        slack_sent=slack_sent,
         email_sent=email_sent,
         errors=list(errors),
     )

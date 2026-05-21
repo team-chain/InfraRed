@@ -7,12 +7,12 @@ import os
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from pydantic import BaseModel
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.responses import JSONResponse, Response
 
 # v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
 from app.auth.routes import router as auth_enterprise_router
-from app.autoresponse.engine import rollback_denylist
 
 # v4.0 Stripe 과금 라우터
 from app.billing.routes import router as billing_router
@@ -21,9 +21,6 @@ from app.config import get_settings
 from app.db.repositories import (
     authenticate_user,
     get_incident_contract,
-    list_assets,
-    list_audit_logs,
-    list_detection_rules,
     list_incidents,
     register_user,
     save_llm_result,
@@ -51,6 +48,7 @@ from app.ingestion.command_routes import router as command_router
 
 # v6.0 운영 품질·보안 KPI 라우터
 from app.ingestion.compliance_routes import router as compliance_router
+from app.ingestion.container_routes import router as container_router
 
 # v3.0 CTI 수동 조회 라우터
 from app.ingestion.cti_routes import router as cti_router
@@ -125,6 +123,31 @@ configure_logging()
 settings = get_settings()
 log = get_logger(__name__)
 
+# ── Sentry 초기화 (DSN 없으면 no-op) ────────────────────────────────────
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.asyncio import AsyncioIntegration
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.sentry_environment or settings.env,
+            traces_sample_rate=settings.sentry_traces_sample_rate,
+            profiles_sample_rate=settings.sentry_profiles_sample_rate,
+            send_default_pii=False,  # PII 보호 — 보안 제품이라 더욱 중요
+            integrations=[
+                StarletteIntegration(transaction_style="endpoint"),
+                FastApiIntegration(transaction_style="endpoint"),
+                AsyncioIntegration(),
+            ],
+            release=os.getenv("GIT_SHA", "dev"),
+        )
+        log.info("sentry_initialized", environment=settings.sentry_environment or settings.env)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("sentry_init_failed", error=str(exc))
+
 app = FastAPI(title="InfraRed API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -193,6 +216,7 @@ app.include_router(policy_router)
 app.include_router(fluent_router)
 app.include_router(api_router)
 app.include_router(command_router, prefix="/ingest")
+app.include_router(container_router)
 app.include_router(settings_router)
 app.include_router(sse_router)
 # Phase 1~5 고도화 라우터
@@ -321,7 +345,20 @@ async def register(payload: RegisterRequest, request: Request) -> Response:
 
 
 @app.post("/auth/logout")
-async def logout() -> Response:
+async def logout(claims: dict = Depends(verify_user_token)) -> Response:
+    """로그아웃 — 쿠키 삭제 + 현재 토큰의 jti를 revoke (재사용 방지)."""
+    import time
+
+    from app.iam.token_revocation import revoke_jti
+    jti = claims.get("jti")
+    exp = int(claims.get("exp", 0))
+    if jti and exp:
+        ttl = max(0, exp - int(time.time()))
+        if ttl > 0:
+            try:
+                await revoke_jti(str(jti), ttl)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("logout_revoke_failed", error=str(exc))
     response = JSONResponse(content={"ok": True})
     response.delete_cookie(key="infrared_token", path="/")
     return response
@@ -330,6 +367,38 @@ async def logout() -> Response:
 @app.get("/auth/me")
 async def me(claims: dict = Depends(verify_user_token)) -> dict[str, object]:
     return {"subject": claims.get("sub"), "tenant_id": claims.get("tenant_id"), "role": claims.get("role")}
+
+
+class RevokeTokenRequest(BaseModel):
+    """현재 사용자의 모든 토큰 revoke (기본) 또는 다른 사용자(admin/owner만)."""
+    target_user_id: str | None = None  # 비우면 본인. 채우면 owner role 필요.
+
+
+@app.post("/auth/revoke-all")
+async def revoke_all_user_tokens(
+    payload: RevokeTokenRequest,
+    claims: dict = Depends(verify_user_token),
+) -> dict[str, object]:
+    """사용자의 모든 활성 토큰 무효화 (이후 발급된 토큰은 영향 없음).
+
+    본인은 항상 가능. 타인 토큰은 owner만 가능.
+    """
+    from app.iam.token_revocation import revoke_user_tokens
+    actor_id = str(claims.get("sub", ""))
+    target_id = payload.target_user_id or actor_id
+
+    if target_id != actor_id and claims.get("role") != "owner":
+        raise HTTPException(status_code=403, detail="owner_required_to_revoke_others")
+
+    revoked_at = await revoke_user_tokens(target_id)
+    await write_audit_log(
+        tenant_id=str(claims.get("tenant_id", "")),
+        actor=actor_id,
+        action="auth.revoke_all",
+        resource=target_id,
+        metadata={"revoked_at": revoked_at},
+    )
+    return {"revoked_at": revoked_at, "user_id": target_id}
 
 
 @app.get("/incidents")
@@ -444,88 +513,4 @@ async def patch_incident_status(
 async def detection_rules(
     claims: dict = Depends(require_permission("rule:read")),
 ) -> dict[str, object]:
-    return {"items": await list_detection_rules(claims["tenant_id"])}
-
-
-@app.get("/audit-logs")
-async def audit_logs(
-    limit: int = Query(default=100, ge=1, le=500),
-    claims: dict = Depends(require_permission("audit:read")),
-) -> dict[str, object]:
-    return {"items": await list_audit_logs(claims["tenant_id"], limit=limit)}
-
-
-@app.get("/assets")
-async def assets(
-    claims: dict = Depends(require_permission("incident:read")),
-) -> dict[str, object]:
-    return {"items": await list_assets(claims["tenant_id"])}
-
-
-@app.delete("/policy/denylist/{ip}")
-async def unblock_ip(
-    ip: str,
-    request: Request,
-    claims: dict = Depends(require_permission("incident:write")),
-) -> dict[str, object]:
-    """DELETE /policy/denylist/{ip} -- IP 차단 롤백."""
-    tenant_id = claims["tenant_id"]
-    removed = await rollback_denylist(tenant_id, ip, actor=str(claims.get("sub", "unknown")))
-    try:
-        from datetime import datetime, timezone
-
-        from sqlalchemy import text
-
-        from app.db.connection import get_session
-        async with get_session() as session:
-            await session.execute(
-                text("""
-                    UPDATE auto_response_logs
-                    SET reversed = true,
-                        reversed_at = :ts,
-                        reversed_by = :actor
-                    WHERE tenant_id = :tenant_id
-                      AND actions_taken::text LIKE :ip_pattern
-                      AND reversed = false
-                """),
-                {
-                    "tenant_id": tenant_id,
-                    "ts": datetime.now(timezone.utc),
-                    "actor": str(claims.get("sub", "unknown")),
-                    "ip_pattern": f"%{ip}%",
-                },
-            )
-            await session.commit()
-    except Exception as exc:
-        log.warning("unblock_ip_log_failed", ip=ip, error=str(exc))
-    await write_audit_log(
-        tenant_id=tenant_id,
-        actor=str(claims.get("sub", "unknown")),
-        action="policy.denylist.remove",
-        resource=ip,
-        ip=request.client.host if request.client else None,
-        metadata={"ip_removed": ip, "was_in_denylist": removed},
-    )
-    return {"ok": True, "ip": ip, "removed": removed}
-
-
-@app.get("/policy/denylist")
-async def list_denylist(
-    claims: dict = Depends(require_permission("incident:read")),
-) -> dict[str, object]:
-    tenant_id = claims["tenant_id"]
-    redis = get_redis()
-    ips = await redis.smembers(redis_keys.policy_denylist(tenant_id))
-    return {"items": [ip.decode() if isinstance(ip, bytes) else ip for ip in ips]}
-
-
-@app.get("/install-agent.sh", response_class=PlainTextResponse)
-async def install_agent_script() -> PlainTextResponse:
-    script_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "install-agent.sh")
-    )
-    if not os.path.exists(script_path):
-        raise HTTPException(status_code=404, detail="install script not found")
-    with open(script_path, "r") as f:
-        script_content = f.read()
-    return PlainTextResponse(content=script_content, media_type="text/x-shellscript")
+    r

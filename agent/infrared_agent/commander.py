@@ -83,6 +83,10 @@ class Commander:
                 result = await self.jit_ssh.revoke_temp_key(cmd)
                 success = result.success
                 message = result.reason if not result.success else "revoked"
+            elif action_type == "container_isolate":
+                success, message = self._container_isolate(target, payload)
+            elif action_type == "container_unisolate":
+                success, message = self._container_unisolate(target, payload)
             else:
                 success, message = False, f"unknown action_type: {action_type}"
         except Exception as exc:
@@ -194,6 +198,85 @@ class Commander:
             return False, f"isolate_server partial failure: {'; '.join(errors)}"
         log.info("server_isolated incident=%s ttl=%ss", incident_id, ttl_seconds)
         return True, f"server isolated for {ttl_seconds}s (incident={incident_id})"
+
+    def _container_isolate(self, container: str, payload: dict) -> tuple[bool, str]:
+        """컨테이너 격리: docker network 분리 또는 pause.
+
+        Modes:
+          - 'network' (기본): `docker network disconnect <net> <ctr>` — 컨테이너 살아있음,
+                              네트워크만 끊김. 포렌식 가능.
+          - 'pause'         : `docker pause <ctr>` — 프로세스 freeze (가장 강력)
+          - 'stop'          : `docker stop <ctr>` — 컨테이너 종료 (포렌식 어려움)
+
+        보호: 'infrared-' 접두사 컨테이너 (자기 자신)는 격리 거부.
+        """
+        if not container or not isinstance(container, str):
+            return False, "invalid container name"
+        if not all(c.isalnum() or c in "-_." for c in container):
+            return False, f"unsafe container name: {container!r}"
+        if container.startswith("infrared-"):
+            return False, f"refusing to isolate InfraRed-own container: {container}"
+
+        mode = (payload.get("mode") or "network").lower()
+        network = payload.get("network") or "bridge"
+        incident_id = payload.get("incident_id", "unknown")
+
+        if mode == "network":
+            cmd = ["docker", "network", "disconnect", "--force", network, container]
+            label = f"network-disconnect ({network})"
+        elif mode == "pause":
+            cmd = ["docker", "pause", container]
+            label = "pause"
+        elif mode == "stop":
+            timeout = int(payload.get("stop_timeout", 10))
+            cmd = ["docker", "stop", "-t", str(timeout), container]
+            label = f"stop (timeout={timeout})"
+        else:
+            return False, f"unknown isolation mode: {mode}"
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
+        except FileNotFoundError:
+            return False, "docker binary not found — install docker or run on a docker host"
+        except Exception as exc:
+            return False, f"docker exec failed: {exc}"
+
+        if result.returncode == 0:
+            log.info(
+                "container_isolated container=%s mode=%s incident=%s",
+                container, mode, incident_id,
+            )
+            return True, f"isolated {container} via {label}"
+        return False, f"docker {mode} failed: {result.stderr.strip() or result.stdout.strip()}"
+
+    def _container_unisolate(self, container: str, payload: dict) -> tuple[bool, str]:
+        """격리 해제: network reconnect / unpause / start."""
+        if not container or not all(c.isalnum() or c in "-_." for c in container):
+            return False, f"invalid container name: {container!r}"
+
+        mode = (payload.get("mode") or "network").lower()
+        network = payload.get("network") or "bridge"
+
+        if mode == "network":
+            cmd = ["docker", "network", "connect", network, container]
+        elif mode == "pause":
+            cmd = ["docker", "unpause", container]
+        elif mode == "stop":
+            cmd = ["docker", "start", container]
+        else:
+            return False, f"unknown isolation mode: {mode}"
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
+        except FileNotFoundError:
+            return False, "docker binary not found"
+        except Exception as exc:
+            return False, str(exc)
+
+        if result.returncode == 0:
+            log.info("container_unisolated container=%s mode=%s", container, mode)
+            return True, f"unisolated {container} ({mode})"
+        return False, result.stderr.strip() or result.stdout.strip()
 
     def _kill_process(self, payload: dict) -> tuple[bool, str]:
         """PID로 악성 프로세스 종료. 안전 PID(1, 현재 프로세스) 차단."""
