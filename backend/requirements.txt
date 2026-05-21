@@ -10,6 +10,8 @@ python-multipart==0.0.20
 # python-jose: 3.5.0+ fixes CVE algorithm confusion on OpenSSH ECDSA keys (Dependabot #4, Critical)
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+# email-validator: pydantic EmailStr 의존 (verification_routes.py)
+email-validator==2.2.0
 # cryptography: 44.0.1+ fixes SECT curves subgroup attack (Dependabot #21, High)
 cryptography==44.0.1
 

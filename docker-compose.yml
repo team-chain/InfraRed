@@ -120,8 +120,10 @@ services:
     image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-agent:latest
     container_name: infrared-agent
     env_file: /opt/infrared/.env
-    # responder: iptables + docker 격리 명령을 위해 host network + NET_ADMIN 필요
-    network_mode: host
+    # responder가 iptables/docker 명령을 쓸 수 있게 권한 부여.
+    # network_mode: host 는 nginx <-> ingestion compose network 충돌 가능성 있어
+    # 일단 bridge 유지 + NET_ADMIN/NET_RAW + docker.sock 만 추가.
+    # 호스트 iptables 조작은 별도 host-mode sidecar로 분리 예정 (v8.x 이후).
     cap_add:
       - NET_ADMIN
       - NET_RAW
