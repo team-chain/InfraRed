@@ -157,6 +157,11 @@ jobs:
             cd /opt/infrared
             docker compose pull
             docker compose up -d
+            # Recreating ingestion gives it a new internal IP; nginx caches
+            # the old upstream IP and would otherwise return 502 until its
+            # own resolver TTL expires. Restart nginx to refresh the
+            # upstream lookup so the smoke test below sees the new container.
+            docker compose restart nginx
             docker compose ps
           EOF
 
