@@ -69,4 +69,10 @@ def build_actions_from_llm(
 
     # 액션이 없으면 알림만
     if not actions:
-        acti
+        actions.append({
+            "action_type": ActionType.NOTIFY,
+            "target": incident_id,
+            "payload": {"incident_id": incident_id},
+        })
+
+    return actions

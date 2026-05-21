@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.db.repositories import (
     authenticate_user,
     get_incident_contract,
+    list_detection_rules,
     list_incidents,
     register_user,
     save_llm_result,
@@ -513,4 +514,5 @@ async def patch_incident_status(
 async def detection_rules(
     claims: dict = Depends(require_permission("rule:read")),
 ) -> dict[str, object]:
-    r
+    rules = await list_detection_rules(claims["tenant_id"])
+    return {"rules": rules}
