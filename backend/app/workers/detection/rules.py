@@ -11,7 +11,7 @@ AUTH-004 Incident escalation conditions (design doc 6.2):
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 from redis.asyncio import Redis
 
@@ -20,7 +20,6 @@ from app.models.envelope import NormalizedEvent
 from app.models.signal import Signal
 from app.redis_kv import keys
 from app.workers.detection.rule_settings import get_rule_settings
-
 
 PRIVILEGED_ACCOUNTS: frozenset[str] = frozenset({"root", "admin", "deploy"})
 _PRIOR_SIGNAL_TTL = 3600
@@ -369,6 +368,7 @@ async def evaluate_rules(redis: Redis, event: NormalizedEvent) -> list[Signal]:
     if event.event_type == EventType.SSH_LOGIN_SUCCESS and cfg.foreign_login_enabled:
         try:
             import geoip2.database  # type: ignore
+
             from app.config import get_settings as _get_settings
             db_path = _get_settings().maxmind_db_path
             with geoip2.database.Reader(db_path) as reader:

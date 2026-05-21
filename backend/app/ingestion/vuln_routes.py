@@ -12,7 +12,6 @@ from app.db.connection import get_session
 from app.iam.security import require_permission
 from app.workers.vuln_scanner.scanner import VulnerabilityScanner
 
-
 router = APIRouter()
 log = logging.getLogger(__name__)
 

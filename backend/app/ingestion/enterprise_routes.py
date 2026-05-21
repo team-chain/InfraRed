@@ -27,11 +27,11 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.common.logging import get_logger
 from app.db.connection import get_session
 from app.iam.audit import write_audit_log
 from app.iam.rbac_v2 import require_role
 from app.redis_kv.client import get_redis
-from app.common.logging import get_logger
 
 router = APIRouter(tags=["enterprise"])
 log = get_logger(__name__)
@@ -299,7 +299,6 @@ async def test_slack_notification(
     claims: dict = Depends(require_role("security_manager")),
 ) -> dict:
     """Slack 알림 테스트."""
-    from app.config import get_settings  # noqa: PLC0415
     tenant_id = claims["tenant_id"]
 
     async with get_session() as session:

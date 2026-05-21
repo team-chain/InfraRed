@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 
-
 log = logging.getLogger(__name__)
 
 MAXMIND_DOWNLOAD_URL = (
@@ -147,7 +146,6 @@ def lookup_geoip(ip: Optional[str]) -> GeoLocation:
         return _mock_lookup(ip)
 
     try:
-        import geoip2.errors
         response = reader.city(ip)
         asn_id, asn_org = _mock_asn(ip)
         return GeoLocation(

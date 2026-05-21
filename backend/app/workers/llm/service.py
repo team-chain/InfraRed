@@ -1,10 +1,10 @@
 """LLM analysis service shared by the API and worker."""
 from __future__ import annotations
 
-from app.models.llm import LLMResult
 from app.config import get_settings
+from app.models.llm import LLMResult
 from app.redis_kv.client import get_redis
-from app.workers.llm.providers import get_provider, build_cache_key
+from app.workers.llm.providers import build_cache_key, get_provider
 
 
 async def analyze_contract_with_cache(

@@ -18,11 +18,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.config import get_settings
 from app.db.connection import get_session
+from app.dispatcher.discord import send_discord_alert
 from app.iam.security import verify_agent_token
 from app.ingestion.sse_routes import publish_incident_event
-from app.dispatcher.discord import send_discord_alert
-from app.config import get_settings
 
 router = APIRouter(prefix="/api/v1", tags=["tamper"])
 log = logging.getLogger(__name__)

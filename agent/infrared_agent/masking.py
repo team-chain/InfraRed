@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import re
 
-
 PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)(password=)[^\s]+"), r"\1***"),
     (re.compile(r"(?i)(token=)[^\s]+"), r"\1***"),

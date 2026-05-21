@@ -230,8 +230,9 @@ class CanaryPackManager:
             감지된 접근 이벤트 목록 (각 항목에 source_ip, user_agent, event_time 포함).
         """
         try:
-            import boto3  # noqa: PLC0415
             from datetime import timedelta  # noqa: PLC0415
+
+            import boto3  # noqa: PLC0415
             ct = boto3.client("cloudtrail", region_name=region)
             start = datetime.now(tz=timezone.utc) - timedelta(minutes=lookback_minutes)
 

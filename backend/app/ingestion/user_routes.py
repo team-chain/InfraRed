@@ -18,13 +18,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.db.connection import get_session
 from app.iam.audit import write_audit_log
-from app.iam.rbac_v2 import require_role, require_any_role
+from app.iam.rbac_v2 import require_role
 from app.iam.security import create_token, verify_user_token
 
 router = APIRouter(tags=["users"])

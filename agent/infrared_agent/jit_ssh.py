@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import UUID
 
 logger = logging.getLogger("infrared_agent.jit_ssh")
 

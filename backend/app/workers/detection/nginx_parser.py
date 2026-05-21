@@ -11,12 +11,11 @@ Returns NormalizedEvent with event_type=WEB_REQUEST or None if unparseable.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 from app.common.constants import EventType
 from app.config import get_settings
 from app.models.envelope import NormalizedEvent, RawEventEnvelope
-
 
 # Combined Log Format
 NGINX_LOG_RE = re.compile(

@@ -32,7 +32,6 @@ from app.db.connection import get_session
 from app.iam.security import require_permission, verify_agent_token
 from app.redis_kv.client import get_redis
 
-
 router = APIRouter()
 log = logging.getLogger(__name__)
 

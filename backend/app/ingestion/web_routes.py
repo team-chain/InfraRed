@@ -14,14 +14,12 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import PlainTextResponse
 
 from app.config import get_settings
 from app.iam.api_key import verify_api_key
 from app.models.envelope import RawEventEnvelope
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
-
 
 router = APIRouter()
 

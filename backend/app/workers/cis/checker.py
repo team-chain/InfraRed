@@ -6,10 +6,8 @@ Linux 서버에서 35개 항목을 점검하고 CISReport를 반환한다.
 """
 from __future__ import annotations
 
-import grp
 import logging
 import os
-import pwd
 import re
 import subprocess
 from dataclasses import dataclass, field

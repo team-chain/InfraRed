@@ -279,23 +279,3 @@ def playbook_from_contract(contract: dict) -> LLMResult:
         username=incident.get("username"),
     )
     return result.model_copy(update={"incident_id": incident.get("incident_id", "")})
-
-
-def playbook_from_contract(contract: dict) -> "LLMResult":
-    """contract dict를 받아 Static Playbook 결과를 반환하는 래퍼.
-
-    summarize_with_playbook()은 키워드 전용 함수라 contract를 직접 넘길 수 없습니다.
-    providers.py / bedrock.py 등 여러 곳에서 재사용합니다.
-    """
-    from typing import Any  # noqa: PLC0415
-    incident: "dict[str, Any]" = contract.get("incident", {})
-    evidence = contract.get("evidence_timeline", contract.get("evidence", []))
-    rule_ids = list({e.get("rule_id") for e in evidence if e.get("rule_id")})
-    source_ip = incident.get("source_ip")
-    result = summarize_with_playbook(
-        rule_ids=rule_ids,
-        severity=str(incident.get("severity", "medium")),
-        source_ip=str(source_ip) if source_ip else None,
-        username=incident.get("username"),
-    )
-    return result.model_copy(update={"incident_id": incident.get("incident_id", "")})

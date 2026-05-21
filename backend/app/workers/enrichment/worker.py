@@ -21,8 +21,7 @@ from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.dlq import reclaim_pending
 from app.workers.enrichment.geoip import GeoLocation, lookup_geoip
-from app.workers.enrichment.provider import mock_cti_lookup, mock_cti_lookup_async
-
+from app.workers.enrichment.provider import mock_cti_lookup_async
 
 configure_logging()
 log = get_logger(__name__)

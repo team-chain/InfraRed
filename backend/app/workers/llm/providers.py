@@ -19,12 +19,11 @@ from typing import Any, Protocol, runtime_checkable
 from app.common.logging import get_logger
 from app.config import get_settings
 from app.models.llm import LLMResult
+from app.workers.llm.playbook import playbook_from_contract
 from app.workers.llm.sanitizer import (
     build_safe_prompt,
-    sanitize_evidence_list,
     validate_llm_output,
 )
-from app.workers.llm.playbook import playbook_from_contract, summarize_with_playbook
 
 log = get_logger(__name__)
 

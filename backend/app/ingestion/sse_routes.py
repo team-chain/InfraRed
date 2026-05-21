@@ -24,7 +24,6 @@ from app.common.logging import get_logger
 from app.iam.security import verify_user_token
 from app.redis_kv.client import get_redis
 
-
 router = APIRouter(tags=["sse"])
 log = get_logger(__name__)
 

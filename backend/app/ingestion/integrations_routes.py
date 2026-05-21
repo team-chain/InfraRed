@@ -174,8 +174,9 @@ async def integration_status(
     테넌트 설정에 저장된 Integration 연결 상태 요약.
     실제 연결 테스트는 하지 않고 설정 존재 여부만 확인.
     """
-    from app.db.connection import get_session
     from sqlalchemy import text
+
+    from app.db.connection import get_session
 
     tenant_id = claims["tenant_id"]
     try:

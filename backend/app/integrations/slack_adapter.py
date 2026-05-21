@@ -3,8 +3,10 @@ Slack Integration Adapter - Block Kit 기반 인시던트 알림.
 v4.0 설계서 §10 참조.
 """
 from __future__ import annotations
+
 import logging
-from app.integrations.base import NotificationAdapter, IncidentPayload
+
+from app.integrations.base import IncidentPayload, NotificationAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class SlackAdapter(NotificationAdapter):
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": f"*AI 분석:*\n{incident.ai_summary[:500]}"}
             })
-        
+
         actions = [
             {
                 "type": "button",

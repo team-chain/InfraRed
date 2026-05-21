@@ -3,8 +3,10 @@ PagerDuty Integration Adapter - CRITICAL 인시던트 → 온콜 에스컬레이
 v4.0 설계서 §10 참조.
 """
 from __future__ import annotations
+
 import logging
-from app.integrations.base import NotificationAdapter, IncidentPayload
+
+from app.integrations.base import IncidentPayload, NotificationAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class PagerDutyAdapter(NotificationAdapter):
             return False
 
         severity = self.SEVERITY_MAP.get(incident.severity, "warning")
-        
+
         payload = {
             "routing_key": integration_key,
             "event_action": "trigger",

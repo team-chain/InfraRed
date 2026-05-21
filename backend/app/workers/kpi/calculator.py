@@ -6,7 +6,7 @@ MTTC (Mean Time To Contain) = auto_response executed_at → incident resolved_at
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 

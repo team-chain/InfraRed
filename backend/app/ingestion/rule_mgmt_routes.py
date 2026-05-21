@@ -487,7 +487,6 @@ async def disable_rule(
     claims: dict = Depends(require_role("security_manager")),
 ) -> dict:
     """룰 비활성화."""
-    user_id = str(claims["sub"])
     async with get_session() as session:
         result = await session.execute(
             text("""

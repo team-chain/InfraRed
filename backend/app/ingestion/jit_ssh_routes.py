@@ -174,7 +174,8 @@ async def revoke_jit_ssh(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id가 없습니다")
 
-    import uuid as _uuid, json as _json
+    import json as _json
+    import uuid as _uuid
     revoke_cmd_id = str(_uuid.uuid4())
 
     async with pool.acquire() as conn:
@@ -304,7 +305,8 @@ async def jit_ssh_audit(
 
 def _fingerprint_from_key(public_key: str) -> str:
     """SHA-256 핑거프린트 계산 (OpenSSH 형식)."""
-    import base64, hashlib
+    import base64
+    import hashlib
     parts = public_key.strip().split()
     if len(parts) < 2:
         return "unknown"

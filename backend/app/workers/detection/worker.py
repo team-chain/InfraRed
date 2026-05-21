@@ -35,7 +35,6 @@ from app.workers.detection.rules import evaluate_rules
 from app.workers.detection.web_rules import evaluate_net_rules, evaluate_web_rules
 from app.workers.dlq import reclaim_pending
 
-
 configure_logging()
 log = get_logger(__name__)
 

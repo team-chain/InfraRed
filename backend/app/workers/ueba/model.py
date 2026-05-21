@@ -10,7 +10,6 @@ v7.0 추가:
 from __future__ import annotations
 
 import io
-import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -20,19 +19,19 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 try:
+    import joblib
+    import numpy as np  # noqa: F401
+    import pandas as pd  # noqa: F401
     from sklearn.ensemble import IsolationForest
     from sklearn.preprocessing import StandardScaler
-    import pandas as pd
-    import joblib
-    import numpy as np
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("scikit-learn not available. UEBA model disabled.")
 
-import boto3
-from app.config import get_settings
+import boto3  # noqa: E402
 
+from app.config import get_settings  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # v7.0: DriftReport 데이터클래스
@@ -112,7 +111,6 @@ class UEBAModel:
             return
         try:
             key = self.MODEL_PATH_TEMPLATE.format(tenant_id=self.tenant_id)
-            settings = get_settings()
             obj = self.s3.get_object(Bucket=self.bucket, Key=key)
             buffer = io.BytesIO(obj["Body"].read())
             saved = joblib.load(buffer)
@@ -171,7 +169,6 @@ class UEBAModel:
                 "train_feature_means": self._train_feature_means,
                 "train_feature_stds": self._train_feature_stds,
             }, buffer)
-            settings = get_settings()
             self.s3.put_object(Bucket=self.bucket, Key=key, Body=buffer.getvalue())
         except Exception as e:
             logger.warning(f"UEBA model save failed: {e}")

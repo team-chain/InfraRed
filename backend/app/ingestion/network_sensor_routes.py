@@ -27,10 +27,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
-from app.iam.security import verify_agent_token
-from app.redis_kv import streams
-from app.redis_kv.client import get_redis
 from app.config import get_settings
+from app.iam.security import verify_agent_token
+from app.redis_kv.client import get_redis
 
 router = APIRouter(tags=["network-sensor"])
 log = logging.getLogger("infrared.network_sensor")

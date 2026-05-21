@@ -14,7 +14,6 @@ import httpx
 from infrared_agent.config import AgentSettings
 from infrared_agent.jit_ssh import JITSSHManager
 
-
 log = logging.getLogger("infrared_agent.commander")
 
 # 절대 종료할 수 없는 안전 PID 목록

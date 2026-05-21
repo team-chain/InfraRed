@@ -30,7 +30,6 @@ from typing import Optional
 
 from infrared_agent.config import AgentSettings
 
-
 # ============================================================
 # 모니터링 대상 파일 정의
 # ============================================================
@@ -356,7 +355,7 @@ class WindowsEventLogWatcher:
             return []
 
         try:
-            import win32evtlog  # type: ignore  # noqa: PLC0415
+            import win32evtlog  # type: ignore  # noqa: PLC0415, F401
             return self._read_security_events()
         except ImportError:
             return []

@@ -14,7 +14,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ============================================================
 # 1. 입력 Sanitize
 # ============================================================
@@ -90,7 +89,6 @@ def build_safe_prompt(contract: dict[str, Any]) -> str:
     """
     incident = contract.get("incident", {})
     evidence = contract.get("evidence", [])
-    llm_result = contract.get("llm_result")
 
     # 증거 sanitize
     safe_evidence = sanitize_evidence_list(evidence)

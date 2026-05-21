@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -40,7 +39,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.db.connection import get_session
-from app.iam.rbac_v2 import require_role, require_any_role
+from app.iam.rbac_v2 import require_any_role, require_role
 
 router = APIRouter(prefix="/gdpr", tags=["gdpr"])
 log = logging.getLogger(__name__)

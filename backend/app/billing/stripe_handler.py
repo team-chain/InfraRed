@@ -3,9 +3,9 @@ Stripe 과금 연동 — v4.0 설계서 §11.2.
 Trial → 유료 전환, 에이전트 수 기반 metered billing, 웹훅 처리.
 """
 from __future__ import annotations
+
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +16,10 @@ except ImportError:
     STRIPE_AVAILABLE = False
     logger.warning("stripe package not available. Run: pip install stripe")
 
-from app.config import get_settings
-from app.db.connection import get_session
-from sqlalchemy import text
+from sqlalchemy import text  # noqa: E402
+
+from app.config import get_settings  # noqa: E402
+from app.db.connection import get_session  # noqa: E402
 
 
 class BillingHandler:

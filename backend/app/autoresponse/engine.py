@@ -18,7 +18,12 @@ from typing import Optional
 
 from sqlalchemy import text
 
-from app.autoresponse.actions import ActionType, build_actions_from_llm, should_auto_execute, should_queue_approval
+from app.autoresponse.actions import (
+    ActionType,
+    build_actions_from_llm,
+    should_auto_execute,
+    should_queue_approval,
+)
 from app.common.logging import get_logger
 from app.db.connection import get_session
 from app.db.repositories import save_auto_response_log
@@ -26,7 +31,6 @@ from app.models.auto_response import AutoResponseLog
 from app.models.llm import LLMResult
 from app.redis_kv import keys
 from app.redis_kv.client import get_redis
-
 
 log = get_logger(__name__)
 

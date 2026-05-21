@@ -22,7 +22,6 @@ import httpx
 from app.config import get_settings
 from app.models.incident import CtiEnrichment
 
-
 log = logging.getLogger(__name__)
 
 ABUSEIPDB_URL = "https://api.abuseipdb.com/api/v2/check"
@@ -226,7 +225,7 @@ def mock_cti_lookup(ip: Optional[str]) -> CtiEnrichment:
     if settings.cti_provider == "otx" and settings.otx_api_key:
         # Worker is already inside an async context; run the coroutine there.
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # We are inside an async context — caller should use mock_cti_lookup_async.
             # Fallback: run synchronously with a new event loop in a thread.
             import concurrent.futures

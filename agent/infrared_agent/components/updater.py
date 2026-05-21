@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import shutil
@@ -27,13 +26,13 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from infrared_agent.component_bridge import (
+from infrared_agent.component_bridge import (  # noqa: E402
     MSG_ACK,
     MSG_ERROR,
     MSG_UPDATE_CHECK,
     UDSServer,
 )
-from infrared_agent.config import AgentSettings
+from infrared_agent.config import AgentSettings  # noqa: E402
 
 log = logging.getLogger("infrared.updater")
 
@@ -178,6 +177,7 @@ class AgentUpdater:
 
         try:
             import base64
+
             from cryptography.hazmat.primitives import hashes, serialization
             from cryptography.hazmat.primitives.asymmetric import ec
 

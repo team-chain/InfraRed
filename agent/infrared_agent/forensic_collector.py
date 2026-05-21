@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import json
+import logging
 import subprocess
 from datetime import datetime, timezone
 from typing import Optional
@@ -13,8 +13,6 @@ import httpx
 
 from infrared_agent.config import AgentSettings
 
-
-import logging
 log = logging.getLogger("infrared_agent.forensic_collector")
 
 

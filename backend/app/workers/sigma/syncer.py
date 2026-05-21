@@ -3,8 +3,8 @@ SigmaHQ 커뮤니티 룰 자동 동기화.
 Lambda EventBridge 주 1회 실행.
 """
 from __future__ import annotations
-import json, logging
-from typing import Optional
+
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
-from app.workers.sigma.parser import SigmaParser, SigmaRule
+from app.workers.sigma.parser import SigmaParser  # noqa: E402
 
 SIGMA_REPO_API = "https://api.github.com/repos/SigmaHQ/sigma/contents/rules"
 CATEGORIES = ["linux", "windows", "web"]

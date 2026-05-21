@@ -5,18 +5,17 @@ import asyncio
 
 import httpx
 
+from app.autoresponse.engine import run_autoresponse
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
 from app.db.repositories import save_llm_pending, save_llm_result, update_llm_status
+from app.dispatcher.discord import send_discord_response_result
 from app.dispatcher.service import dispatch_incident_alert
 from app.iam.security import create_token
 from app.models.llm import LLMPendingRow
 from app.redis_kv import streams
 from app.redis_kv.client import ensure_group, get_redis
-from app.autoresponse.engine import run_autoresponse
-from app.dispatcher.discord import send_discord_response_result
 from app.workers.llm.service import analyze_contract_with_cache
-
 
 configure_logging()
 log = get_logger(__name__)

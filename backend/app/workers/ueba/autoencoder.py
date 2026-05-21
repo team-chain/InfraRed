@@ -5,9 +5,13 @@ numpy만 사용 (tensorflow/pytorch 불필요).
 최소 30일 데이터 필요.
 """
 from __future__ import annotations
-import io, json, logging, math
+
+import io
+import logging
+import math
+
 import numpy as np
-from typing import Optional
+
 from app.workers.ueba.features import UserBehaviorFeatures
 
 logger = logging.getLogger(__name__)
@@ -121,10 +125,14 @@ class AutoencoderModel:
                 db1 = d_h1.sum(axis=0)
 
                 # 가중치 업데이트
-                self.W1 -= lr * dW1; self.b1 -= lr * db1
-                self.W2 -= lr * dW2; self.b2 -= lr * db2
-                self.W3 -= lr * dW3; self.b3 -= lr * db3
-                self.W4 -= lr * dW4; self.b4 -= lr * db4
+                self.W1 -= lr * dW1
+                self.b1 -= lr * db1
+                self.W2 -= lr * dW2
+                self.b2 -= lr * db2
+                self.W3 -= lr * dW3
+                self.b3 -= lr * db3
+                self.W4 -= lr * dW4
+                self.b4 -= lr * db4
 
             if epoch % 100 == 0:
                 logger.debug(f"Autoencoder epoch {epoch}, loss={loss:.4f}")
@@ -155,9 +163,12 @@ class AutoencoderModel:
     def to_novelty_bonus(self, profile: UserBehaviorFeatures) -> float:
         error = self.score(profile)
         ratio = error / (self.threshold + 1e-8)
-        if ratio > 3.0:  return 0.20
-        elif ratio > 2.0: return 0.12
-        elif ratio > 1.5: return 0.05
+        if ratio > 3.0:
+            return 0.20
+        elif ratio > 2.0:
+            return 0.12
+        elif ratio > 1.5:
+            return 0.05
         return 0.0
 
     def _save_to_s3(self):

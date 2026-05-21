@@ -13,7 +13,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import asyncpg
 
-
 DB_DIR = Path(__file__).parent
 SCHEMA_SQL = DB_DIR / "schema.sql"
 MIGRATE_V2_SQL = DB_DIR / "migrate_v2.sql"
@@ -158,7 +157,7 @@ async def _execute_script(
             continue
         # 주석만 있는 statement 건너뜀
         stripped = "\n".join(
-            l for l in statement.splitlines() if not l.strip().startswith("--")
+            line for line in statement.splitlines() if not line.strip().startswith("--")
         ).strip()
         if not stripped:
             continue

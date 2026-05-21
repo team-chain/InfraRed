@@ -4,8 +4,11 @@ Splunk HEC (HTTP Event Collector) Adapter.
 v4.0 설계서 §10.3 참조.
 """
 from __future__ import annotations
-import logging, time
-from app.integrations.base import NotificationAdapter, IncidentPayload
+
+import logging
+import time
+
+from app.integrations.base import IncidentPayload, NotificationAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ class SplunkHECAdapter(NotificationAdapter):
         hec_token = config.get("hec_token", "")
         index = config.get("index", "main")
         verify_ssl = config.get("verify_ssl", True)
-        
+
         if not all([hec_url, hec_token]):
             logger.error("Splunk HEC config incomplete")
             return False

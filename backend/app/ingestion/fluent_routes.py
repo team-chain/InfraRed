@@ -38,7 +38,6 @@ from app.models.envelope import RawEventEnvelope
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
 
-
 router = APIRouter()
 
 _AUTH_LOG_RE = re.compile(

@@ -10,10 +10,14 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 
+# v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
+from app.auth.routes import router as auth_enterprise_router
+from app.autoresponse.engine import rollback_denylist
+
+# v4.0 Stripe 과금 라우터
+from app.billing.routes import router as billing_router
 from app.common.logging import configure_logging, get_logger
 from app.config import get_settings
-from app.redis_kv import keys as redis_keys
-from app.redis_kv.client import get_redis
 from app.db.repositories import (
     authenticate_user,
     get_incident_contract,
@@ -25,78 +29,97 @@ from app.db.repositories import (
     save_llm_result,
     update_incident_status,
 )
-from app.autoresponse.engine import rollback_denylist
 from app.dispatcher.service import dispatch_incident_alert
 from app.iam.audit import write_audit_log
 from app.iam.security import create_token, require_permission, verify_user_token
-from app.ingestion.routes import router as ingestion_router
-from app.ingestion.web_routes import router as web_router
-from app.ingestion.fluent_routes import router as fluent_router
-from app.ingestion.api_routes import router as api_router
-from app.ingestion.command_routes import router as command_router
-from app.ingestion.settings_routes import router as settings_router
-from app.ingestion.policy_routes import router as policy_router
-from app.ingestion.sse_routes import router as sse_router
-# Phase 1~5 고도화 라우터
-from app.ingestion.incident_routes import router as incident_workflow_router
-from app.ingestion.health_routes import router as health_router
-from app.ingestion.rule_mgmt_routes import router as rule_mgmt_router
-from app.ingestion.suppression_routes import router as suppression_router
-from app.ingestion.user_routes import router as user_router
 from app.ingestion.agent_mgmt_routes import router as agent_mgmt_router
-from app.ingestion.enterprise_routes import router as enterprise_router
-# v3.0 신규 라우터
-from app.ingestion.tamper_routes import router as tamper_router
-from app.ingestion.block_approval_routes import router as block_approval_router
-from app.ingestion.campaign_routes import router as campaign_router
+from app.ingestion.api_routes import router as api_router
 from app.ingestion.asset_criticality_routes import router as asset_criticality_router
-# v3.0 CTI 수동 조회 라우터
-from app.ingestion.cti_routes import router as cti_router
-# v3.0 Debug / 재생 라우터 (dev/staging 전용)
-from app.ingestion.debug_routes import router as debug_router
-# v4.0 Falco/eBPF 연동 라우터
-from app.ingestion.falco_routes import router as falco_router
-# v7.0 Zeek/Suricata 네트워크 센서 연동 라우터
-from app.ingestion.network_sensor_routes import router as network_sensor_router
-# v8.0 Canary API Route (미끼 엔드포인트 — 공격자 탐지용)
-from app.ingestion.canary_api_routes import router as canary_api_router
-# v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
-from app.auth.routes import router as auth_enterprise_router
-# v7.0 mTLS 미들웨어
-from app.middleware.mtls import MTLSMiddleware
-# v4.0 Stripe 과금 라우터
-from app.billing.routes import router as billing_router
-# v4.0 UEBA 행동 분석 라우터
-from app.ingestion.ueba_routes import router as ueba_router
-# v4.0 Integration Hub 테스트 라우터
-from app.ingestion.integrations_routes import router as integrations_router
-# v7 GDPR 삭제 충돌 해결 라우터
-from app.ingestion.gdpr_routes import router as gdpr_router
-# v4.0 SIGMA 룰 관리 라우터
-from app.ingestion.sigma_routes import router as sigma_router
-# v5.0 포렌식·취약점 스캐너 라우터
-from app.ingestion.forensic_routes import router as forensic_router
-from app.ingestion.vuln_routes import router as vuln_router
-# v6.0 운영 품질·보안 KPI 라우터
-from app.ingestion.compliance_routes import router as compliance_router
-from app.ingestion.kpi_routes import router as kpi_router
-from app.ingestion.deception_routes import router as deception_router
-# v6.0 CIS Benchmark 라우터
-from app.ingestion.cis_routes import router as cis_router
-# v6.0 SSL 인증서 모니터링 라우터
-from app.ingestion.ssl_routes import router as ssl_router
+from app.ingestion.block_approval_routes import router as block_approval_router
+
 # v7.0 Break-Glass·Dead Man's Switch 라우터
 from app.ingestion.breakglass_routes import router as breakglass_router
+from app.ingestion.campaign_routes import router as campaign_router
+
+# v8.0 Canary API Route (미끼 엔드포인트 — 공격자 탐지용)
+from app.ingestion.canary_api_routes import router as canary_api_router
+from app.ingestion.canary_pack_routes import router as canary_pack_router
+
+# v6.0 CIS Benchmark 라우터
+from app.ingestion.cis_routes import router as cis_router
+from app.ingestion.command_routes import router as command_router
+
+# v6.0 운영 품질·보안 KPI 라우터
+from app.ingestion.compliance_routes import router as compliance_router
+
+# v3.0 CTI 수동 조회 라우터
+from app.ingestion.cti_routes import router as cti_router
 from app.ingestion.deadman_routes import router as deadman_router
+
+# v3.0 Debug / 재생 라우터 (dev/staging 전용)
+from app.ingestion.debug_routes import router as debug_router
+from app.ingestion.deception_routes import router as deception_router
+from app.ingestion.enterprise_routes import router as enterprise_router
+
+# v4.0 Falco/eBPF 연동 라우터
+from app.ingestion.falco_routes import router as falco_router
+
 # v8.0 신규 라우터
 from app.ingestion.first_exec_routes import router as first_exec_router
-from app.ingestion.honey_key_routes import router as honey_key_router
-from app.ingestion.jit_ssh_routes import router as jit_ssh_router
-from app.ingestion.canary_pack_routes import router as canary_pack_router
-from app.models.auth import LoginRequest, RegisterRequest, StatusUpdateRequest, TokenResponse
-from app.models.llm import LLMResult
-from app.workers.llm.service import analyze_contract_with_cache
+from app.ingestion.fluent_routes import router as fluent_router
 
+# v5.0 포렌식·취약점 스캐너 라우터
+from app.ingestion.forensic_routes import router as forensic_router
+
+# v7 GDPR 삭제 충돌 해결 라우터
+from app.ingestion.gdpr_routes import router as gdpr_router
+from app.ingestion.health_routes import router as health_router
+from app.ingestion.honey_key_routes import router as honey_key_router
+
+# Phase 1~5 고도화 라우터
+from app.ingestion.incident_routes import router as incident_workflow_router
+
+# v4.0 Integration Hub 테스트 라우터
+from app.ingestion.integrations_routes import router as integrations_router
+from app.ingestion.jit_ssh_routes import router as jit_ssh_router
+from app.ingestion.kpi_routes import router as kpi_router
+
+# v7.0 Zeek/Suricata 네트워크 센서 연동 라우터
+from app.ingestion.network_sensor_routes import router as network_sensor_router
+from app.ingestion.policy_routes import router as policy_router
+from app.ingestion.routes import router as ingestion_router
+from app.ingestion.rule_mgmt_routes import router as rule_mgmt_router
+from app.ingestion.settings_routes import router as settings_router
+
+# v4.0 SIGMA 룰 관리 라우터
+from app.ingestion.sigma_routes import router as sigma_router
+from app.ingestion.sse_routes import router as sse_router
+
+# v6.0 SSL 인증서 모니터링 라우터
+from app.ingestion.ssl_routes import router as ssl_router
+from app.ingestion.suppression_routes import router as suppression_router
+
+# v3.0 신규 라우터
+from app.ingestion.tamper_routes import router as tamper_router
+
+# v4.0 UEBA 행동 분석 라우터
+from app.ingestion.ueba_routes import router as ueba_router
+from app.ingestion.user_routes import router as user_router
+from app.ingestion.vuln_routes import router as vuln_router
+from app.ingestion.web_routes import router as web_router
+
+# v7.0 mTLS 미들웨어
+from app.middleware.mtls import MTLSMiddleware
+from app.models.auth import (
+    LoginRequest,
+    RegisterRequest,
+    StatusUpdateRequest,
+    TokenResponse,
+)
+from app.models.llm import LLMResult
+from app.redis_kv import keys as redis_keys
+from app.redis_kv.client import get_redis
+from app.workers.llm.service import analyze_contract_with_cache
 
 configure_logging()
 settings = get_settings()
@@ -449,9 +472,11 @@ async def unblock_ip(
     tenant_id = claims["tenant_id"]
     removed = await rollback_denylist(tenant_id, ip, actor=str(claims.get("sub", "unknown")))
     try:
-        from sqlalchemy import text
-        from app.db.connection import get_session
         from datetime import datetime, timezone
+
+        from sqlalchemy import text
+
+        from app.db.connection import get_session
         async with get_session() as session:
             await session.execute(
                 text("""

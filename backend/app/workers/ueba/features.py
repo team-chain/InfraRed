@@ -3,10 +3,8 @@ UEBA 피처 추출 - 사용자 행동 프로파일링.
 v4.0 설계서 §7 참조.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
-from datetime import date
-from uuid import UUID
-from typing import Optional
+
+from dataclasses import dataclass
 
 
 @dataclass
@@ -65,9 +63,10 @@ async def extract_daily_profile_from_db(
     tenant_id: str, user: str, target_date: str
 ) -> "UserBehaviorFeatures":
     """signals 테이블에서 하루치 사용자 행동 집계."""
-    from app.db.connection import get_session
+
     from sqlalchemy import text
-    import math
+
+    from app.db.connection import get_session
 
     async with get_session() as session:
         # 로그인 이벤트 집계
@@ -138,8 +137,9 @@ async def extract_daily_profile_from_db(
 
 async def aggregate_daily_profiles(tenant_id: str, target_date: str) -> list["UserBehaviorFeatures"]:
     """테넌트의 모든 사용자 daily profile 일괄 집계."""
-    from app.db.connection import get_session
     from sqlalchemy import text
+
+    from app.db.connection import get_session
 
     async with get_session() as session:
         result = await session.execute(text("""
@@ -164,8 +164,9 @@ async def aggregate_daily_profiles(tenant_id: str, target_date: str) -> list["Us
 
 async def save_daily_profile(profile: "UserBehaviorFeatures") -> None:
     """집계된 프로파일을 daily_user_profiles 테이블에 upsert."""
-    from app.db.connection import get_session
     from sqlalchemy import text
+
+    from app.db.connection import get_session
 
     async with get_session() as session:
         await session.execute(text("""

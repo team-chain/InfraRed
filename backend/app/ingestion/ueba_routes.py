@@ -21,7 +21,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db.connection import get_session
-from app.iam.rbac_v2 import require_role, require_any_role
+from app.iam.rbac_v2 import require_any_role, require_role
 
 router = APIRouter(prefix="/api/v1/ueba", tags=["ueba"])
 log = logging.getLogger(__name__)

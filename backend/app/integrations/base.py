@@ -4,9 +4,9 @@ Integration Hub 기반 클래스.
 v4.0 설계서 §10 참조.
 """
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass

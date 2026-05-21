@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
-from datetime import datetime, timezone
 from typing import Optional
 
 from app.common.logging import get_logger

@@ -18,7 +18,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db.connection import get_session
-from app.iam.rbac_v2 import require_role, require_any_role
+from app.iam.rbac_v2 import require_any_role, require_role
 
 router = APIRouter(prefix="/api/v1/sigma", tags=["sigma"])
 log = logging.getLogger(__name__)
@@ -332,7 +332,6 @@ async def get_sync_status(
     claims: dict = Depends(require_any_role),
 ) -> dict:
     """SIGMA 동기화 상태 조회."""
-    tenant_id = claims.get("tenant_id", "")
     async with get_session() as session:
         row = await session.execute(text("""
             SELECT
@@ -413,7 +412,6 @@ async def activate_sigma_marketplace_rule(
 
         # 새 IR 룰 생성
         new_rule_id = uuid.uuid4()
-        logsource = sigma_row.logsource or {}
         await session.execute(text("""
             INSERT INTO detection_rules (
                 rule_id, tenant_id, display_name, source, severity,

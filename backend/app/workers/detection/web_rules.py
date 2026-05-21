@@ -14,12 +14,17 @@ import re
 
 from redis.asyncio import Redis
 
-from app.common.constants import HONEYPOT_DEMO_PATH, HONEYPOT_PATH_SEVERITY, KillChainStage, RuleId, SignalCategory
+from app.common.constants import (
+    HONEYPOT_DEMO_PATH,
+    HONEYPOT_PATH_SEVERITY,
+    KillChainStage,
+    RuleId,
+    SignalCategory,
+)
 from app.models.envelope import NormalizedEvent
 from app.models.signal import Signal
 from app.redis_kv import keys
 from app.workers.detection.rule_settings import get_rule_settings
-
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
 

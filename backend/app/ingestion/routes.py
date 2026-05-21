@@ -16,7 +16,6 @@ from app.models.heartbeat import Heartbeat
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
 
-
 router = APIRouter()
 
 
@@ -87,6 +86,7 @@ async def ingest_event(
     # v4.0: SQS 발행 (enabled 시)
     if settings.sqs_enabled and settings.sqs_events_url:
         import asyncio
+
         from app.sqs.publisher import get_sqs_publisher
         publisher = get_sqs_publisher()
         await asyncio.to_thread(

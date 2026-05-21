@@ -29,17 +29,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from app.config import get_settings
 from app.iam.api_key import verify_api_key
 from app.models.envelope import RawEventEnvelope
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
-
 
 router = APIRouter()
 

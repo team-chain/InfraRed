@@ -3,16 +3,20 @@ TOTP 기반 MFA (Google Authenticator 호환).
 v4.0 설계서 §9.2 참조.
 """
 from __future__ import annotations
-import secrets, logging, base64
+
+import base64
+import logging
+import secrets
 from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 try:
+    from io import BytesIO
+
     import pyotp
     import qrcode
-    from io import BytesIO
     PYOTP_AVAILABLE = True
 except ImportError:
     PYOTP_AVAILABLE = False
@@ -24,7 +28,7 @@ try:
 except ImportError:
     FERNET_AVAILABLE = False
 
-from app.config import get_settings
+from app.config import get_settings  # noqa: E402
 
 
 def _get_fernet():
