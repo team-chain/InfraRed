@@ -20,11 +20,18 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   ECR_BASE: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com
+  # OIDC 기반 keyless 인증 — terraform `output github_actions_role_arn` 값
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::139139347353:role/infrared-dev-github-actions-deploy
 
 jobs:
   build-and-push:
     name: Build & Push to ECR
     runs-on: ubuntu-22.04
+
+    # OIDC: GitHub이 발급한 JWT를 STS에 제출하려면 id-token 쓰기 권한 필요
+    permissions:
+      id-token: write
+      contents: read
 
     outputs:
       backend_changed: ${{ steps.changed.outputs.backend }}
@@ -65,11 +72,11 @@ jobs:
           echo "$CHANGED" | grep -qE '^frontend/|^infra/docker/frontend\.' && echo "frontend=true" >> $GITHUB_OUTPUT || echo "frontend=false" >> $GITHUB_OUTPUT
           echo "$CHANGED" | grep -qE '^agent/|^infra/docker/agent\.' && echo "agent=true" >> $GITHUB_OUTPUT || echo "agent=false" >> $GITHUB_OUTPUT
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gh-actions-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -131,14 +138,10 @@ jobs:
       needs.build-and-push.outputs.frontend_changed == 'true' ||
       needs.build-and-push.outputs.agent_changed == 'true'
 
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+    # 이 job은 SSH로만 EC2를 조작함. ECR pull은 EC2의 amazon-ecr-credential-helper가
+    # 인스턴스 IAM role로 처리하므로 GitHub Actions 측 AWS 자격증명 불필요.
 
+    steps:
       - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
