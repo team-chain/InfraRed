@@ -180,10 +180,12 @@ class TestAttackChainScenarios:
         "PRIVILEGE_ESCALATION",
         "RANSOMWARE_PRECURSOR",
         "LATERAL_MOVEMENT",
+        "CRED_SPREAD",
+        "SUPPLY_CHAIN_BINARY_REPLACEMENT",
     }
 
-    def test_all_five_scenarios_exist(self) -> None:
-        """5개 시나리오 ID가 모두 SCENARIOS에 존재하는지 확인."""
+    def test_all_expected_scenarios_exist(self) -> None:
+        """모든 expected 시나리오 ID가 SCENARIOS에 존재하는지 확인."""
         actual_ids = {sc.id for sc in SCENARIOS}
         assert self.EXPECTED_SCENARIO_IDS == actual_ids
 
