@@ -16,7 +16,10 @@
 """
 from __future__ import annotations
 
+import logging
+from asyncio import to_thread
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -24,6 +27,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db.connection import get_session
+from app.dispatcher.email import send_email_alert
 from app.iam.audit import write_audit_log
 from app.iam.rbac_v2 import require_role
 from app.iam.security import create_token, verify_user_token
@@ -39,7 +43,6 @@ async def _send_invite_email(email: str, tenant_id: str, role: str) -> None:
 
     pending_invitation 저장 직후 호출. SMTP/SES 미설정시 조용히 skip.
     """
-    from urllib.parse import urlencode
     settings = get_settings()
     base = settings.frontend_base_url or "https://app.infrared.kr"
     params = urlencode({"invite_email": email, "tenant_id": tenant_id, "role": role})
@@ -51,8 +54,6 @@ async def _send_invite_email(email: str, tenant_id: str, role: str) -> None:
         f"본인이 가입한 적이 없다면 무시하셔도 됩니다."
     )
     try:
-        from asyncio import to_thread
-        from app.dispatcher.email import send_email_alert
         await to_thread(
             send_email_alert,
             f"[InfraRed] {tenant_id} 초대",
@@ -60,7 +61,6 @@ async def _send_invite_email(email: str, tenant_id: str, role: str) -> None:
             to_override=email,
         )
     except Exception as exc:  # noqa: BLE001
-        import logging
         logging.getLogger(__name__).warning(
             "invite_email_send_failed email=%s tenant=%s error=%s",
             email, tenant_id, exc,

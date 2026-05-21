@@ -17,7 +17,6 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-
 from sqlalchemy import text
 
 from app.autoresponse.actions import ActionType

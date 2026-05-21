@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import secrets as _secrets
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ from starlette.responses import JSONResponse, Response
 
 # v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
 from app.auth.routes import router as auth_enterprise_router
+from app.auth.verification_routes import _send_verification_email
 from app.auth.verification_routes import router as auth_verification_router
 
 # v4.0 Stripe 과금 라우터
@@ -378,10 +380,8 @@ async def register(
 
     # 가입 직후 이메일 인증 토큰 자동 발급 + 메일 발송 (best-effort)
     try:
-        import secrets as _secrets
-        from sqlalchemy import text as _text
-        from app.db.connection import get_session as _get_session
-        from app.auth.verification_routes import _send_verification_email
+        from sqlalchemy import text as _text  # noqa: PLC0415 — local import to avoid cycle
+        from app.db.connection import get_session as _get_session  # noqa: PLC0415
         verification_token = _secrets.token_urlsafe(32)
         async with _get_session() as _session:
             await _session.execute(

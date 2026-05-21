@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Activity, AlertTriangle, Bell, BrainCircuit, CheckCircle2,
   ClipboardList, Cog, GitCommitVertical, LogOut, Monitor,
-  RefreshCw, Shield, Siren, UserPlus,
+  RefreshCw, Shield, ShieldAlert, ShieldCheck, Siren, UserPlus,
   Heart, BookOpen, VolumeX, Users, FileText, Search,
   Lock, Unlock, Clock, Target,
 } from "lucide-react";
@@ -353,8 +353,39 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
                     </button>
                   ))}
                 {!incidents.length && (
-                  <div style={{padding:"48px 24px", textAlign:"center", color:"var(--text-3)", fontSize:13.5}}>
-                    탐지된 인시던트가 없습니다
+                  <div style={{padding:"48px 24px", textAlign:"center"}}>
+                    <div style={{
+                      display: "inline-flex", justifyContent: "center", alignItems: "center",
+                      width: 56, height: 56, borderRadius: "50%",
+                      background: "var(--c-green-50, #f0fdf4)",
+                      color: "var(--c-green-600, #16a34a)",
+                      marginBottom: 14,
+                    }}>
+                      <ShieldCheck size={28} />
+                    </div>
+                    <div style={{fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text-1)"}}>
+                      모든 시스템 정상
+                    </div>
+                    <div style={{fontSize: 13, color: "var(--text-3)", lineHeight: 1.6, maxWidth: 320, margin: "0 auto"}}>
+                      현재 탐지된 위협이 없습니다.<br/>
+                      Agent가 모니터링 중이며 첫 위협이 감지되면<br/>여기에 자동으로 표시됩니다.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onOpenOnboarding}
+                      style={{
+                        marginTop: 16,
+                        padding: "8px 16px",
+                        background: "transparent",
+                        border: "1px solid var(--c-gray-150, #e5e7eb)",
+                        borderRadius: 8,
+                        cursor: "pointer",
+                        fontSize: 12.5,
+                        color: "var(--text-2)",
+                      }}
+                    >
+                      Agent 설치 가이드 보기
+                    </button>
                   </div>
                 )}
               </div>

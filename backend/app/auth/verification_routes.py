@@ -18,15 +18,19 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from asyncio import to_thread
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
 
 from app.common.logging import get_logger
 from app.config import get_settings
 from app.db.connection import get_session
+from app.dispatcher.email import send_email_alert
 from app.iam.audit import write_audit_log
 from app.iam.security import verify_user_token
+from app.iam.token_revocation import revoke_user_tokens
 from app.middleware.rate_limit import (
     limit_forgot_pw,
     limit_request_verif,
@@ -60,8 +64,6 @@ async def _send_verification_email(email: str, token: str, tenant_id: str) -> No
     # Best-effort 발송 — 실패해도 가입은 진행 (사용자가 나중에 재발송 요청 가능)
     try:
         # email 모듈은 동기 — to_thread 로 wrap
-        from asyncio import to_thread
-        from app.dispatcher.email import send_email_alert
         await to_thread(send_email_alert, "[InfraRed] 이메일 인증", body, to_override=email)
         log.info("verification_email_sent", email_hash=hash(email), tenant_id=tenant_id)
     except Exception as exc:  # noqa: BLE001
@@ -79,8 +81,6 @@ async def _send_reset_email(email: str, token: str) -> None:
         f"본인이 요청하지 않았다면 이 메일을 무시하세요. 비밀번호는 변경되지 않습니다."
     )
     try:
-        from asyncio import to_thread
-        from app.dispatcher.email import send_email_alert
         await to_thread(send_email_alert, "[InfraRed] 비밀번호 재설정", body, to_override=email)
         log.info("reset_email_sent", email_hash=hash(email))
     except Exception as exc:  # noqa: BLE001
@@ -269,7 +269,6 @@ async def reset_password(
 
     # 모든 기존 토큰 revoke (security best practice)
     try:
-        from app.iam.token_revocation import revoke_user_tokens
         await revoke_user_tokens(user["user_id"])
     except Exception as exc:  # noqa: BLE001
         log.warning("revoke_after_reset_failed", error=str(exc))

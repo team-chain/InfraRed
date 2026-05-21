@@ -73,8 +73,10 @@ export function ResetPasswordPage({ token, onDone }: Props) {
   return (
     <main className="login-shell">
       <form className="login-panel" onSubmit={submit}>
-        <span className="brand"><Siren size={20} /> InfraRed SOC</span>
-        <h1>새 비밀번호 설정</h1>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+          <Logo height={48} />
+        </div>
+        <h1 style={{ textAlign: "center" }}>새 비밀번호 설정</h1>
         {error && <div className="alert">{error}</div>}
         <label>
           새 비밀번호
