@@ -325,7 +325,7 @@ async def _execute_resolution(
 @router.post("/erasure-request")
 async def submit_erasure_request(
     body: ErasureRequestCreate,
-    claims: dict = Depends(require_any_role),
+    claims: dict = Depends(require_any_role("analyst", "security_manager", "owner", "admin")),
 ) -> dict:
     """GDPR 삭제 요청(Art. 17 Right to Erasure)을 제출한다."""
     tenant_id = claims.get("tenant_id", "")

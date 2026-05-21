@@ -10,10 +10,40 @@ import {
   inviteMember,
   changeMemberRole,
   removeMember,
+  fetchPendingInvitations,
+  cancelPendingInvitation,
   type Member,
   type AuthUser,
+  type PendingInvitation,
 } from "../lib/api";
-import { UserPlus, Trash2, RefreshCw, Crown, Shield, Eye } from "lucide-react";
+import { UserPlus, Trash2, RefreshCw, Crown, Shield, Eye, MailQuestion, X as XIcon, Link2 } from "lucide-react";
+
+function buildInviteUrl(email: string, tenantId: string, role: string): string {
+  const params = new URLSearchParams({ invite_email: email, tenant_id: tenantId, role });
+  return `${window.location.origin}/?${params.toString()}`;
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    // Fallback for non-HTTPS / older browsers
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 type Props = { user: AuthUser };
 
@@ -39,6 +69,7 @@ const ROLE_ICON: Record<string, React.ReactNode> = {
 
 export function MembersPage({ user }: Props) {
   const [members, setMembers] = useState<Member[]>([]);
+  const [pending, setPending] = useState<PendingInvitation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,8 +83,12 @@ export function MembersPage({ user }: Props) {
   async function load() {
     setLoading(true);
     try {
-      const m = await fetchTenantMembers(user.tenant_id);
+      const [m, p] = await Promise.all([
+        fetchTenantMembers(user.tenant_id),
+        fetchPendingInvitations(user.tenant_id).catch(() => []),
+      ]);
       setMembers(m);
+      setPending(p);
     } catch (e: any) {
       setError(e.message || "멤버 목록 로드 실패");
     } finally {
@@ -63,20 +98,55 @@ export function MembersPage({ user }: Props) {
 
   useEffect(() => { load(); }, []);
 
+  // 알림 자동 해제 (5초)
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     if (!inviteEmail.trim()) { setError("이메일을 입력하세요"); return; }
     setInviteLoading(true);
     setError(null);
     try {
-      await inviteMember(user.tenant_id, inviteEmail, inviteRole);
-      setNotice(`${inviteEmail}을(를) ${ROLE_LABEL[inviteRole]}로 초대했습니다`);
+      const result = await inviteMember(user.tenant_id, inviteEmail, inviteRole);
+      if (result.status === "pending") {
+        setNotice(
+          `${inviteEmail}님은 아직 가입 전이에요. ${result.expires_in_days ?? 14}일 안에 가입하시면 ${ROLE_LABEL[inviteRole]}로 자동 합류해요.`,
+        );
+      } else {
+        setNotice(`${inviteEmail}을(를) ${ROLE_LABEL[inviteRole]}로 초대했습니다`);
+      }
       setInviteEmail("");
       await load();
     } catch (e: any) {
-      setError(e.message || "초대 실패");
+      const msg = String(e?.message ?? "");
+      if (msg.includes("409")) {
+        setError("이미 이 테넌트의 멤버예요.");
+      } else if (msg.includes("403")) {
+        setError("초대 권한이 없습니다 (owner 필요).");
+      } else {
+        setError(e.message || "초대 실패");
+      }
     } finally {
       setInviteLoading(false);
+    }
+  }
+
+  async function handleCancelPending(id: string, email: string) {
+    if (!confirm(`${email} 대상 대기 초대를 취소할까요?`)) return;
+    setBusyId(id);
+    setError(null);
+    try {
+      await cancelPendingInvitation(user.tenant_id, id);
+      setNotice(`${email} 대기 초대가 취소됐어요`);
+      setPending((prev) => prev.filter((p) => p.id !== id));
+    } catch (e: any) {
+      setError(e.message || "취소 실패");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -181,6 +251,94 @@ export function MembersPage({ user }: Props) {
             </button>
           </div>
         </form>
+      )}
+
+      {/* 대기 중 초대 */}
+      {pending.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, padding: "12px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <MailQuestion size={14} style={{ color: "var(--text-3)" }} />
+            <strong style={{ fontSize: 13 }}>가입 대기 중 초대 ({pending.length})</strong>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>
+            아직 InfraRed에 가입하지 않은 이메일이에요. 가입하면 자동으로 합류합니다.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {pending.map((p) => {
+              const expiresIn = p.expires_at
+                ? Math.ceil(
+                    (new Date(p.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+                  )
+                : null;
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 12px",
+                    background: "var(--c-amber-50, #fffbeb)",
+                    borderRadius: 6,
+                    border: "1px solid var(--c-amber-200, #fde68a)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{p.email}</span>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 10,
+                        background: `${ROLE_COLOR[p.role] ?? "#6b7280"}15`,
+                        color: ROLE_COLOR[p.role] ?? "#6b7280",
+                        fontSize: 11,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {ROLE_LABEL[p.role] ?? p.role}
+                    </span>
+                    {expiresIn !== null && (
+                      <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+                        {expiresIn > 0 ? `${expiresIn}일 남음` : "만료됨"}
+                      </span>
+                    )}
+                  </div>
+                  {isOwner && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={async () => {
+                          const url = buildInviteUrl(p.email, user.tenant_id, p.role);
+                          const ok = await copyToClipboard(url);
+                          if (ok) {
+                            setNotice(`초대 링크가 복사되었습니다 — ${p.email}에게 전달하세요`);
+                          } else {
+                            setError("클립보드 복사 실패 — 수동 복사: " + url);
+                          }
+                        }}
+                        title="초대 링크 복사 (수동 공유)"
+                        style={{ padding: "4px 8px" }}
+                      >
+                        <Link2 size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => handleCancelPending(p.id, p.email)}
+                        disabled={busyId === p.id}
+                        title="대기 초대 취소"
+                        style={{ padding: "4px 8px" }}
+                      >
+                        <XIcon size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* 멤버 목록 */}

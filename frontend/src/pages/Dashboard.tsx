@@ -189,7 +189,7 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
     // 개발 모드에서는 Vite 프록시를 통해 상대 경로 사용 (CORS 우회)
     const apiBase = import.meta.env.DEV
       ? ""
-      : (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+      : (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
     const es = new EventSource(`${apiBase}/events/stream`, { withCredentials: true });
     es.addEventListener("incident_created", () => { load(); });
     es.addEventListener("incident_updated", () => { load(); });

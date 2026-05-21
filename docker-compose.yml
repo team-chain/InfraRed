@@ -1,297 +1,154 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: infrared-postgres
-    environment:
-      POSTGRES_USER: infrared
-      POSTGRES_PASSWORD: infrared-dev-pw
-      POSTGRES_DB: infrared
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./infra/postgres/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
-      - ./backend/app/db/migrate_v2.sql:/docker-entrypoint-initdb.d/03_migrate_v2.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U infrared -d infrared"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     container_name: infrared-redis
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    command: >
+      redis-server
+      --requirepass infrared-redis-pw
+      --maxmemory 100mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+    mem_limit: 100m
     volumes:
       - redis-data:/data
-      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "infrared-redis-dev-pw", "ping"]
-      interval: 5s
+      test: ["CMD", "redis-cli", "-a", "infrared-redis-pw", "ping"]
+      interval: 10s
       timeout: 3s
-      retries: 10
-
-  ingestion:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-ingestion
-    command: ["sh", "-c", "python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend:/app
-
-  detection-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-detection
-    command: ["python", "-m", "app.workers.detection.worker"]
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-
-  enrichment-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-enrichment
-    command: ["python", "-m", "app.workers.enrichment.worker"]
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-
-  incident-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-incident
-    command: ["python", "-m", "app.workers.correlation.worker"]
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-
-  llm-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-llm
-    command: ["python", "-m", "app.workers.llm.worker"]
-    env_file: .env
-    depends_on:
-      ingestion:
-        condition: service_started
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-
-  # v3.0 — 공격 캠페인 집계 워커
-  campaign-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-campaign
-    command: ["python", "-m", "app.workers.campaign.worker"]
-    env_file: .env
-    depends_on:
-      ingestion:
-        condition: service_started
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    restart: unless-stopped
-
-  cleanup-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-cleanup
-    command: ["python", "-m", "app.workers.cleanup.worker"]
-    env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    restart: unless-stopped
-
-  # v4.0 §12 — UEBA Autoencoder (사용자 행동 기반 이상탐지)
-  ueba-worker:
-    build:
-      context: ./backend
-      dockerfile: ../infra/docker/backend.Dockerfile
-    container_name: infrared-ueba
-    command: ["python", "-m", "app.workers.ueba.worker"]
-    env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    restart: unless-stopped
-
-  agent:
-    build:
-      context: ./agent
-      dockerfile: ../infra/docker/agent.Dockerfile
-    container_name: infrared-agent
-    env_file: .env
-    depends_on:
-      ingestion:
-        condition: service_started
-    volumes:
-      - ./infra/sample-logs:/host/var/log:ro
-      - agent-state:/var/lib/infrared
-    # 설계서 v2.0 Phase 3-D: Cgroup 리소스 제한
-    # systemd 환경: infra/systemd/infrared-agent.service 참조 (CPUQuota=5%, MemoryMax=100M)
-    # Docker 환경: 아래 deploy.resources로 동일한 제한 적용
-    deploy:
-      resources:
-        limits:
-          cpus: "0.05"      # CPUQuota=5% 대응
-          memory: 100M      # MemoryMax=100M 대응
-        reservations:
-          memory: 50M
-    restart: on-failure     # Restart=on-failure (StartLimitBurst=5는 main.py에서 추적)
-
-  # v3.0 — 에이전트와 독립 프로세스로 Tamper Detection 수행
-  # 에이전트가 중단/변조되어도 watchdog는 계속 실행되어 tamper-report 전송
-  watchdog:
-    build:
-      context: ./agent
-      dockerfile: ../infra/docker/agent.Dockerfile
-    container_name: infrared-watchdog
-    command: ["python", "-m", "infrared_agent.watchdog"]
-    env_file: .env
-    depends_on:
-      ingestion:
-        condition: service_started
-    volumes:
-      - ./infra/sample-logs:/host/var/log:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "0.02"
-          memory: 50M
-    restart: always   # 항상 재시작 — 감시 공백 방지
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: ../infra/docker/frontend.Dockerfile
-    container_name: infrared-frontend
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
-      VITE_BACKEND_PROXY_URL: http://ingestion:8000
-    depends_on:
-      ingestion:
-        condition: service_started
-    ports:
-      - "3000:3000"
-
-  # ── Fluent Bit: 로그 수집 → InfraRed API + (선택) S3 ──────────────────────
-  # S3로 보내려면 .env에 S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-  # AWS_REGION 을 추가하고 command를 아래로 교체:
-  #   command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf",
-  #             "--config", "/fluent-bit/etc/fluent-bit-s3.conf"]
-  fluentbit:
-    image: fluent/fluent-bit:3.1
-    container_name: infrared-fluentbit
-    environment:
-      INFRARED_HOST: ingestion
-      INFRARED_PORT: "8000"
-      INFRARED_API_KEY: ${FLUENTBIT_API_KEY:-ir_demo_key_company_a_000000000000}
-      INFRARED_TENANT_ID: ${FLUENTBIT_TENANT_ID:-company-a}
-      S3_BUCKET: ${S3_BUCKET:-}
-      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
-    command: ["fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
-    volumes:
-      - ./infra/fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-      - ./infra/fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
-      - ./infra/fluentbit/fluent-bit-s3.conf:/fluent-bit/etc/fluent-bit-s3.conf:ro
-      - ./infra/sample-logs:/host/var/log:ro
-      - fluentbit-db:/var/lib/fluentbit
-    depends_on:
-      ingestion:
-        condition: service_started
-    ports:
-      - "2020:2020"   # Fluent Bit HTTP 메트릭 엔드포인트
-    profiles:
-      - full           # docker compose --profile full up 으로 활성화
-                       # 기본 up에서는 제외 (샘플 로그 없는 환경 고려)
-
-  prometheus:
-    image: prom/prometheus:v2.54.1
-    container_name: infrared-prometheus
-    volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    depends_on:
-      ingestion:
-        condition: service_started
-
-  grafana:
-    image: grafana/grafana:11.2.2
-    container_name: infrared-grafana
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3001:3000"
-    depends_on:
-      prometheus:
-        condition: service_started
-
+      retries: 5
 
   step-ca:
     image: smallstep/step-ca:latest
     container_name: infrared-step-ca
     mem_limit: 80m
-    restart: unless-stopped
     volumes:
       - step-ca-data:/home/step
-    environment:
-      - DOCKER_STEPCA_INIT_NAME=InfraRed CA
-      - DOCKER_STEPCA_INIT_DNS_NAMES=step-ca,localhost
-      - DOCKER_STEPCA_INIT_ADDRESS=:9000
-      - DOCKER_STEPCA_INIT_PROVISIONER_NAME=infrared-provisioner
-    expose:
-      - "9000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  ingestion:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend:latest
+    container_name: infrared-ingestion
+    command: ["sh", "-c", "python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    env_file: /opt/infrared/.env
+    mem_limit: 175m
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  detection-worker:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend:latest
+    container_name: infrared-detection
+    command: ["python", "-m", "app.workers.detection.worker"]
+    env_file: /opt/infrared/.env
+    mem_limit: 145m
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  enrichment-worker:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend:latest
+    container_name: infrared-enrichment
+    command: ["python", "-m", "app.workers.enrichment.worker"]
+    env_file: /opt/infrared/.env
+    mem_limit: 60m
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  incident-worker:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend:latest
+    container_name: infrared-incident
+    command: ["python", "-m", "app.workers.correlation.worker"]
+    env_file: /opt/infrared/.env
+    mem_limit: 115m
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  campaign-worker:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend:latest
+    container_name: infrared-campaign
+    command: ["python", "-m", "app.workers.campaign.worker"]
+    env_file: /opt/infrared/.env
+    mem_limit: 50m
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cleanup-worker:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend:latest
+    container_name: infrared-cleanup
+    command: ["python", "-m", "app.workers.cleanup.worker"]
+    env_file: /opt/infrared/.env
+    mem_limit: 80m
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-frontend:latest
+    container_name: infrared-frontend
+    env_file: /opt/infrared/.env
+    mem_limit: 300m
+    ports:
+      - "3000:3000"
+    depends_on:
+      - ingestion
+    restart: unless-stopped
+
+  agent:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-agent:latest
+    container_name: infrared-agent
+    env_file: /opt/infrared/.env
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 60m
+    volumes:
+      - /var/log:/host/var/log:ro
+      - agent-state:/var/lib/infrared
+    depends_on:
+      - ingestion
+    restart: on-failure
+
+  watchdog:
+    image: 139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-agent:latest
+    container_name: infrared-watchdog
+    command: ["python", "-m", "infrared_agent.watchdog"]
+    env_file: /opt/infrared/.env
+    deploy:
+      resources:
+        limits:
+          cpus: "0.02"
+          memory: 30m
+    depends_on:
+      - ingestion
+    restart: always
 
 volumes:
-  postgres-data:
   redis-data:
-  agent-state:
-  grafana-data:
-  fluentbit-db:
   step-ca-data:
+    external: true
+    name: step-ca-data
+  agent-state:

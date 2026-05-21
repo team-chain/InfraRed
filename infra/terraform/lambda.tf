@@ -72,13 +72,13 @@ resource "aws_iam_role_policy" "lambda_ai_worker" {
           aws_sqs_queue.ai_tasks_dlq.arn,
         ]
       },
-      # Bedrock 호출 (Claude Haiku + Sonnet)
+      # Bedrock 호출 (Claude Haiku + Sonnet) — bedrock_region 변수 사용 (기본: us-east-1)
       {
         Effect = "Allow"
         Action = ["bedrock:InvokeModel"]
         Resource = [
-          "arn:aws:bedrock:${var.region}::foundation-model/anthropic.claude-haiku-4-5-20251001",
-          "arn:aws:bedrock:${var.region}::foundation-model/anthropic.claude-sonnet-4-6",
+          "arn:aws:bedrock:${var.bedrock_region}::foundation-model/anthropic.claude-haiku-4-5-20251001",
+          "arn:aws:bedrock:${var.bedrock_region}::foundation-model/anthropic.claude-sonnet-4-6",
         ]
       },
       # SSM Parameter Store (DB 비밀번호 조회)
@@ -117,7 +117,7 @@ resource "aws_lambda_function" "ai_worker" {
   environment {
     variables = {
       ENV           = var.env
-      BEDROCK_REGION = var.region   # AWS_REGION은 Lambda 예약어 — 자동 주입됨
+      BEDROCK_REGION = var.bedrock_region   # Bedrock 호출 리전 (기본: us-east-1, Claude 모델 지원 리전)
       POSTGRES_HOST  = aws_db_instance.main.address
       POSTGRES_PORT  = "5432"
       POSTGRES_DB    = var.db_name
@@ -133,8 +133,7 @@ resource "aws_lambda_function" "ai_worker" {
     security_group_ids = [aws_security_group.ec2.id]
   }
 
-  # Bedrock 리전 (ap-northeast-2에서 지원 모델 확인 필요)
-  # Claude Haiku / Sonnet은 us-east-1에서 호출 후 결과 저장도 가능
+  # BEDROCK_REGION은 var.bedrock_region (기본 us-east-1) — Claude 모델 지원 리전 사용
 
   tags = { Name = "${local.name_prefix}-ai-worker" }
 }

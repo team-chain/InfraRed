@@ -57,7 +57,7 @@ class TrainingTriggerResponse(BaseModel):
 
 @router.get("/status")
 async def ueba_status(
-    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner"])),
+    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner", "admin"])),
 ) -> dict:
     """UEBA 활성화 여부 및 모델 상태 반환."""
     if not settings.ueba_enabled:
@@ -103,7 +103,7 @@ async def ueba_status(
 @router.post("/score", response_model=ScoreResponse)
 async def score_user(
     body: ScoreRequest,
-    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner"])),
+    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner", "admin"])),
 ) -> ScoreResponse:
     """특정 사용자의 오늘 행동 이상도 점수 반환."""
     if not settings.ueba_enabled:
@@ -185,7 +185,7 @@ async def trigger_collection(
 async def list_profiles(
     limit: int = 50,
     user: str | None = None,
-    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner"])),
+    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner", "admin"])),
 ) -> dict:
     """최근 사용자 행동 프로파일 목록 반환."""
     if not settings.ueba_enabled:

@@ -4,12 +4,13 @@ import { login, type AuthUser } from "../lib/api";
 
 type Props = {
   onLogin: (user: AuthUser) => void;
+  onGoToRegister?: () => void;
 };
 
-export function LoginPage({ onLogin }: Props) {
+export function LoginPage({ onLogin, onGoToRegister }: Props) {
   const [tenantId, setTenantId] = useState("company-a");
-  const [email, setEmail] = useState("admin@infrared.local");
-  const [password, setPassword] = useState("infrared123");
+  const [email, setEmail] = useState("admin@company-a.com");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
 
@@ -53,6 +54,24 @@ export function LoginPage({ onLogin }: Props) {
           <LogIn size={18} />
           {loading ? "Signing in" : "Sign in"}
         </button>
+        {onGoToRegister && (
+          <p style={{ textAlign: "center", marginTop: "0.75rem", fontSize: "0.875rem" }}>
+            아직 계정이 없으신가요?{" "}
+            <button
+              type="button"
+              onClick={onGoToRegister}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--accent)",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Sign up
+            </button>
+          </p>
+        )}
       </form>
     </main>
   );

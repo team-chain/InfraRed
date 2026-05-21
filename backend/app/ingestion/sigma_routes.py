@@ -120,7 +120,7 @@ async def list_sigma_rules(
     severity: str | None = None,
     status: str | None = None,
     limit: int = 100,
-    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner"])),
+    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner", "admin"])),
 ) -> dict:
     """동기화된 SIGMA 룰 목록 조회."""
     conditions = ["is_active = true"]
@@ -176,7 +176,7 @@ async def list_sigma_rules(
 @router.get("/rules/{rule_id}")
 async def get_sigma_rule(
     rule_id: str,
-    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner"])),
+    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner", "admin"])),
 ) -> dict:
     """특정 SIGMA 룰 상세 조회."""
     try:
@@ -235,7 +235,7 @@ async def list_marketplace_rules(
     keyword: str = "",
     page: int = 1,
     page_size: int = 20,
-    claims: dict = Depends(require_any_role),
+    claims: dict = Depends(require_any_role("analyst", "security_manager", "owner", "admin")),
 ) -> dict:
     """
     마켓플레이스 SIGMA 룰 목록 조회.
@@ -280,12 +280,12 @@ async def list_marketplace_rules(
             sr.synced_at          AS last_synced,
             sr.is_active,
             dr.rule_id            AS ir_rule_id,
-            (dr.rule_id IS NOT NULL AND dr.is_active = true)::bool AS is_activated
+            (dr.rule_id IS NOT NULL AND dr.status = 'active')::bool AS is_activated
         FROM sigma_rules sr
         LEFT JOIN detection_rules dr
             ON dr.sigma_source_id = sr.sigma_id
             AND dr.tenant_id = :tenant_id
-            AND dr.is_active = true
+            AND dr.status = 'active'
         {where_clause}
         ORDER BY sr.severity DESC, sr.sigma_title
         LIMIT :limit OFFSET :offset
@@ -329,23 +329,23 @@ async def list_marketplace_rules(
 
 @router.get("/sync/status")
 async def get_sync_status(
-    claims: dict = Depends(require_any_role),
+    claims: dict = Depends(require_any_role("analyst", "security_manager", "owner", "admin")),
 ) -> dict:
     """SIGMA 동기화 상태 조회."""
     async with get_session() as session:
         row = await session.execute(text("""
             SELECT
-                MAX(synced_at)          AS last_sync,
-                COUNT(*)                AS total_rules,
-                SUM(CASE WHEN is_active THEN 1 ELSE 0 END) AS activated_rules
+                MAX(synced_at)                                       AS last_sync,
+                COALESCE(COUNT(*), 0)                                AS total_rules,
+                COALESCE(SUM(CASE WHEN is_active THEN 1 ELSE 0 END), 0) AS activated_rules
             FROM sigma_rules
         """))
         r = row.fetchone()
 
     return {
         "last_sync": r.last_sync.isoformat() if r and r.last_sync else None,
-        "total_rules": int(r.total_rules) if r else 0,
-        "activated_rules": int(r.activated_rules) if r else 0,
+        "total_rules": int(r.total_rules or 0) if r else 0,
+        "activated_rules": int(r.activated_rules or 0) if r else 0,
         "sync_in_progress": False,
         "next_scheduled_sync": None,
     }
@@ -354,7 +354,7 @@ async def get_sync_status(
 @router.get("/preview/{sigma_rule_id}")
 async def preview_sigma_rule(
     sigma_rule_id: str,
-    claims: dict = Depends(require_any_role),
+    claims: dict = Depends(require_any_role("analyst", "security_manager", "owner", "admin")),
 ) -> dict:
     """SIGMA 룰의 InfraRed 변환 결과와 원본 YAML을 미리보기로 반환한다."""
     async with get_session() as session:

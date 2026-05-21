@@ -460,18 +460,26 @@ export function RuleManagementPage() {
                           <Play size={11} /> Dry-run
                         </button>
                       )}
-                      {/* 활성화: draft / disabled */}
-                      {(rule.status === "draft" || rule.status === "disabled") && (
-                        <button
-                          className="btn btn-sm"
-                          style={{ background: "#d1fae5", color: "#065f46", border: "1px solid #6ee7b7" }}
-                          onClick={() => handleActivate(rule.rule_id)}
-                          disabled={isBusy}
-                          title="활성화"
-                        >
-                          <CheckCircle2 size={11} /> 활성화
-                        </button>
-                      )}
+                      {/* 활성화: draft / disabled — draft는 dry-run 완료 후에만 가능 */}
+                      {(rule.status === "draft" || rule.status === "disabled") && (() => {
+                        const needsDryRun = rule.status === "draft" && !rule.dry_run_result;
+                        return (
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: needsDryRun ? "#f3f4f6" : "#d1fae5",
+                              color: needsDryRun ? "#9ca3af" : "#065f46",
+                              border: `1px solid ${needsDryRun ? "#e5e7eb" : "#6ee7b7"}`,
+                              cursor: needsDryRun ? "not-allowed" : "pointer",
+                            }}
+                            onClick={() => handleActivate(rule.rule_id)}
+                            disabled={isBusy || needsDryRun}
+                            title={needsDryRun ? "먼저 Dry-run을 실행해야 활성화할 수 있습니다" : "활성화"}
+                          >
+                            <CheckCircle2 size={11} /> 활성화
+                          </button>
+                        );
+                      })()}
                       {/* 비활성화: active */}
                       {rule.status === "active" && (
                         <button

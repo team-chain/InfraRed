@@ -2,6 +2,23 @@
 from __future__ import annotations
 
 ROLE_PERMISSIONS: dict[str, set[str]] = {
+    "owner": {
+        "incident:read",
+        "incident:write",
+        "rule:read",
+        "rule:write",
+        "audit:read",
+        "user:read",
+        "user:write",
+        "settings:read",
+        "settings:write",
+        "asset:read",
+        "asset:write",
+        "report:read",
+        "report:write",
+        "api_key:read",
+        "api_key:write",
+    },
     "admin": {
         "incident:read",
         "incident:write",

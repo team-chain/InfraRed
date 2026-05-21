@@ -276,6 +276,20 @@ async def run_migration(database_url: str) -> None:
         print("[migrate] applying seed.sql")
         await _execute_script(conn, seed, "seed.sql", skip_errors=True)
 
+        # First-admin bootstrap (env-driven, idempotent).
+        # 매번 fresh deploy 후에도 즉시 로그인 가능하도록 보장.
+        # INITIAL_ADMIN_EMAIL/PASSWORD가 없으면 조용히 skip.
+        if os.getenv("INITIAL_ADMIN_EMAIL") and os.getenv("INITIAL_ADMIN_PASSWORD"):
+            try:
+                from .bootstrap_admin import bootstrap_admin_on
+                print("[migrate] running bootstrap_admin (env-driven)")
+                await bootstrap_admin_on(conn)
+            except Exception as e:
+                # bootstrap 실패는 migrate 전체를 죽이지 않음 — 로그만 남기고 계속
+                print(f"[migrate] WARN bootstrap_admin failed: {e}", file=sys.stderr)
+        else:
+            print("[migrate] bootstrap_admin skipped — INITIAL_ADMIN_EMAIL/PASSWORD not set")
+
     finally:
         await conn.close()
 

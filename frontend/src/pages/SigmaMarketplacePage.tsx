@@ -45,8 +45,8 @@ interface SyncStatus {
 // ─── API 호출 ──────────────────────────────────────────────────────────────
 
 const API_BASE = import.meta.env.DEV
-  ? "http://localhost:8000"
-  : (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000");
+  ? ""
+  : (import.meta.env.VITE_API_BASE_URL ?? "");
 
 async function fetchSigmaRules(params: {
   category?: string;
@@ -64,7 +64,7 @@ async function fetchSigmaRules(params: {
   if (params.page) qs.set("page", String(params.page));
   qs.set("page_size", "20");
 
-  const resp = await fetch(`${API_BASE}/sigma/marketplace?${qs}`, {
+  const resp = await fetch(`${API_BASE}/api/v1/sigma/marketplace?${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -73,7 +73,7 @@ async function fetchSigmaRules(params: {
 
 async function fetchSyncStatus(): Promise<SyncStatus> {
   const token = localStorage.getItem("ir_token") ?? "";
-  const resp = await fetch(`${API_BASE}/sigma/sync/status`, {
+  const resp = await fetch(`${API_BASE}/api/v1/sigma/sync/status`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -82,7 +82,7 @@ async function fetchSyncStatus(): Promise<SyncStatus> {
 
 async function triggerSync(): Promise<{ ok: boolean; message: string }> {
   const token = localStorage.getItem("ir_token") ?? "";
-  const resp = await fetch(`${API_BASE}/sigma/sync`, {
+  const resp = await fetch(`${API_BASE}/api/v1/sigma/sync`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -92,7 +92,7 @@ async function triggerSync(): Promise<{ ok: boolean; message: string }> {
 
 async function activateSigmaRule(sigmaRuleId: string): Promise<{ ok: boolean; ir_rule_id: string }> {
   const token = localStorage.getItem("ir_token") ?? "";
-  const resp = await fetch(`${API_BASE}/sigma/activate/${sigmaRuleId}`, {
+  const resp = await fetch(`${API_BASE}/api/v1/sigma/activate/${sigmaRuleId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   });
@@ -102,7 +102,7 @@ async function activateSigmaRule(sigmaRuleId: string): Promise<{ ok: boolean; ir
 
 async function deactivateSigmaRule(sigmaRuleId: string): Promise<{ ok: boolean }> {
   const token = localStorage.getItem("ir_token") ?? "";
-  const resp = await fetch(`${API_BASE}/sigma/deactivate/${sigmaRuleId}`, {
+  const resp = await fetch(`${API_BASE}/api/v1/sigma/deactivate/${sigmaRuleId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -112,7 +112,7 @@ async function deactivateSigmaRule(sigmaRuleId: string): Promise<{ ok: boolean }
 
 async function previewSigmaRule(sigmaRuleId: string): Promise<{ ir_rule: object; yaml: string }> {
   const token = localStorage.getItem("ir_token") ?? "";
-  const resp = await fetch(`${API_BASE}/sigma/preview/${sigmaRuleId}`, {
+  const resp = await fetch(`${API_BASE}/api/v1/sigma/preview/${sigmaRuleId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -622,10 +622,7 @@ export function SigmaMarketplacePage() {
   );
 }
 
-// helper — XCircle
+// helper — XCircle (로컬 fallback. CheckCircle2는 lucide-react에서 import.)
 function XCircle({ size }: { size: number }) {
   return <span style={{ fontSize: size, lineHeight: 1 }}>✕</span>;
-}
-function CheckCircle2({ size }: { size: number }) {
-  return <span style={{ fontSize: size, lineHeight: 1 }}>✓</span>;
 }

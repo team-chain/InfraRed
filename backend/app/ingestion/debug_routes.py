@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.db.connection import get_session
+from app.db.connection import get_session, SessionLocal
 from app.iam.rbac_v2 import require_role
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
@@ -29,6 +29,17 @@ router = APIRouter(prefix="/api/v1/debug", tags=["debug"])
 log = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+async def _get_db():
+    """FastAPI Depends용 세션 dependency."""
+    async with SessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def _require_non_prod() -> None:
@@ -141,7 +152,7 @@ async def get_recent_signals(
     rule_id: str | None = None,
     asset_id: str | None = None,
     claims: dict = Depends(require_role("analyst")),
-    session=Depends(get_session),
+    session=Depends(_get_db),
 ) -> dict:
     """최근 시그널 목록 조회 (Threat Hunting 디버깅용).
 

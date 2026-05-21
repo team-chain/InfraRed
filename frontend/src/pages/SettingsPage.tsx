@@ -770,11 +770,12 @@ interface IntegrationCardProps {
   onTest?: () => void;
   saving: boolean;
   testStatus?: "idle" | "testing" | "ok" | "fail";
+  testMessage?: string;
 }
 
 function IntegrationCard({
   name, description, logo, fields, values, onChange, onSave, onTest,
-  saving, testStatus = "idle",
+  saving, testStatus = "idle", testMessage = "",
 }: IntegrationCardProps) {
   return (
     <div className="setting-group" style={{ marginBottom: 24 }}>
@@ -837,6 +838,21 @@ function IntegrationCard({
           </button>
         )}
       </div>
+      {testMessage && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "8px 12px",
+            borderRadius: 6,
+            fontSize: 12,
+            background: testStatus === "ok" ? "var(--c-green-50, #ecfdf5)" : "var(--c-red-50, #fef2f2)",
+            color: testStatus === "ok" ? "var(--c-green-700, #047857)" : "var(--c-red-700, #b91c1c)",
+            border: `1px solid ${testStatus === "ok" ? "var(--c-green-200, #a7f3d0)" : "var(--c-red-200, #fecaca)"}`,
+          }}
+        >
+          {testMessage}
+        </div>
+      )}
     </div>
   );
 }
@@ -855,6 +871,7 @@ function IntegrationHubSection({
   });
   const [slackSaving, setSlackSaving] = useState(false);
   const [slackTestStatus, setSlackTestStatus] = useState<"idle"|"testing"|"ok"|"fail">("idle");
+  const [slackTestMsg, setSlackTestMsg] = useState<string>("");
 
   // PagerDuty
   const [pdValues, setPdValues] = useState<Record<string, string>>({
@@ -874,19 +891,47 @@ function IntegrationHubSection({
   const [jiraSaving, setJiraSaving] = useState(false);
 
   async function testSlack() {
+    const url = (slackValues.slack_webhook_url ?? "").trim();
+    // 사전 검증: 빈 값 / 잘못된 형식이면 호출 자체를 안 함
+    if (!url) {
+      setSlackTestStatus("fail");
+      setSlackTestMsg("Webhook URL을 입력하고 저장한 뒤 테스트하세요.");
+      setTimeout(() => { setSlackTestStatus("idle"); setSlackTestMsg(""); }, 6000);
+      return;
+    }
+    if (!url.startsWith("https://hooks.slack.com/")) {
+      setSlackTestStatus("fail");
+      setSlackTestMsg("Slack Webhook URL은 https://hooks.slack.com/services/... 형식이어야 해요.");
+      setTimeout(() => { setSlackTestStatus("idle"); setSlackTestMsg(""); }, 6000);
+      return;
+    }
+
     setSlackTestStatus("testing");
+    setSlackTestMsg("");
     try {
       const res = await fetch("/api/v1/integrations/slack/test", {
         method: "POST",
         headers: { "Content-Type": "application/json",
                    "Authorization": `Bearer ${localStorage.getItem("ir_token") ?? ""}` },
-        body: JSON.stringify({ webhook_url: slackValues.slack_webhook_url }),
+        body: JSON.stringify({ webhook_url: url }),
       });
-      setSlackTestStatus(res.ok ? "ok" : "fail");
-    } catch {
+      if (res.ok) {
+        setSlackTestStatus("ok");
+        setSlackTestMsg("Slack 채널에 테스트 메시지를 보냈어요.");
+      } else {
+        setSlackTestStatus("fail");
+        let detail = "";
+        try {
+          const body = await res.json();
+          detail = body?.detail ? ` — ${body.detail}` : "";
+        } catch {}
+        setSlackTestMsg(`전송 실패 (HTTP ${res.status})${detail}`);
+      }
+    } catch (err: any) {
       setSlackTestStatus("fail");
+      setSlackTestMsg(`네트워크 오류: ${err?.message ?? "unknown"}`);
     }
-    setTimeout(() => setSlackTestStatus("idle"), 4000);
+    setTimeout(() => { setSlackTestStatus("idle"); setSlackTestMsg(""); }, 6000);
   }
 
   async function testPagerDuty() {
@@ -942,6 +987,7 @@ function IntegrationHubSection({
         onTest={testSlack}
         saving={slackSaving}
         testStatus={slackTestStatus}
+        testMessage={slackTestMsg}
       />
 
       {/* PagerDuty */}

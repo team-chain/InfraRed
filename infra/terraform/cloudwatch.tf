@@ -234,6 +234,10 @@ resource "aws_cloudwatch_metric_alarm" "lambda_concurrency" {
 }
 
 # ── Outputs ──────────────────────────────────────────────────
+# 참고: 설계서 §4.1에 명시된 커스텀 메트릭 알람 4개
+#   (EC2 메모리, 탐지 지연 P95, 에이전트 온라인율, Bedrock 성공률)는
+#   프리티어 무료 알람 10개 한도 초과 → 비용 발생($0.10/알람/월)으로 미구현.
+#   프리티어 졸업(1년) 후 또는 유료 전환 시 추가 예정.
 output "sns_alarm_topic_arn" {
   description = "CloudWatch 알람 SNS 토픽 ARN"
   value       = aws_sns_topic.alarms.arn
