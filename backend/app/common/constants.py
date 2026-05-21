@@ -1,4 +1,4 @@
-"""Shared enums and constants used across InfraRed."""
+﻿"""Shared enums and constants used across InfraRed."""
 from __future__ import annotations
 
 from enum import Enum
@@ -45,7 +45,6 @@ class EventType(str, Enum):
     SSH_INVALID_USER = "ssh_invalid_user"
     AGENT_HEARTBEAT = "agent_heartbeat"
     WEB_REQUEST = "web_request"
-    # Agent-side pre-classified events
     FIM_CHANGE = "fim_change"
     SUSPICIOUS_PROCESS_EXECUTION = "suspicious_process_execution"
     WEBSHELL_EXECUTION = "webshell_execution"
@@ -68,17 +67,51 @@ class RuleId(str, Enum):
     WEB_PATH_TRAVERSAL = "WEB-006"
     WEB_CVE_PROBE = "WEB-007"
     WEB_HONEYPOT = "WEB-HNY-001"
-    # Credential Access 고급 룰 (설계서 3.1)
     AUTH_CRED_STUFFING = "AUTH-006A"
     AUTH_PASSWORD_SPRAYING = "AUTH-006B"
-    # 네트워크 공격 탐지 (설계서 3.1)
     NET_HTTP_FLOOD = "NET-001"
-    # Deception (설계서 v6)
     DECEPTION_HONEYTOKEN_FILE = "DECEPTION-001"
     DECEPTION_HONEYTOKEN_ACCOUNT = "DECEPTION-002"
-    # Agent-side rules (사전 분류된 이벤트, agent가 직접 rule_id 매김)
-    EXEC_TMP = "EXEC-001"                # /tmp 계열에서 실행 중인 프로세스
-    EXEC_WEBSHELL = "EXEC-002"           # 웹서버 child process가 shell
-    EXEC_BULK_MOD = "EXEC-003"           # 대량 파일 변경
-    FIM_AUTHORIZED_KEYS = "FIM-001"      # /root/.ssh/authorized_keys 변조
-    FIM_SSHD_CONFIG = "FIM-002"          # sshd_config 변조
+    EXEC_TMP = "EXEC-001"
+    EXEC_WEBSHELL = "EXEC-002"
+    EXEC_BULK_MOD = "EXEC-003"
+    FIM_AUTHORIZED_KEYS = "FIM-001"
+    FIM_SSHD_CONFIG = "FIM-002"
+    FIM_CRONTAB = "FIM-003"
+    FIM_PASSWD = "FIM-004"
+    FIM_SUDOERS = "FIM-005"
+
+
+class LLMStatus(str, Enum):
+    PENDING = "pending"
+    SUCCESS = "success"
+    FALLBACK = "fallback"
+
+
+class SignalCategory(str, Enum):
+    DEMO = "demo"
+    THREAT = "threat"
+
+
+class PolicyType(str, Enum):
+    AGENT_ACCESS = "agent_access"
+    THREAT_IP = "threat_ip"
+    DASHBOARD_ACCESS = "dashboard_access"
+
+
+HONEYPOT_PATH_SEVERITY: dict[str, str] = {
+    "/demo":            "info",
+    "/.env":            "high",
+    "/wp-login.php":    "medium",
+    "/.git":            "high",
+    "/actuator":        "high",
+    "/wp-config.php":   "critical",
+    "/phpmyadmin":      "high",
+    "/admin":           "medium",
+    "/config.php":      "high",
+    "/backup":          "medium",
+}
+
+HONEYPOT_DEMO_PATH = "/demo"
+
+MASKING_VERSION = "v1"
