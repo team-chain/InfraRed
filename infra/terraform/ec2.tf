@@ -176,7 +176,8 @@ locals {
     AWS_REGION=${var.region}
 
     # Frontend
-    VITE_API_BASE_URL=http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8000
+    # 운영 도메인 운영 후: Cloudflare → EC2 nginx(443) → ingestion
+    VITE_API_BASE_URL=https://api.infrared.kr
 
     # Detection thresholds
     AUTH_BRUTE_FORCE_THRESHOLD=3
@@ -238,13 +239,21 @@ locals {
       smallstep/step-ca:latest 2>/dev/null || true
 
     # ── docker-compose.yml 생성 (프리티어 최적화, 메모리 한도 명시) ─
-    # 설계서 2.3절 메모리 배분 기준 (t2.micro 1GB 한도):
-    #   redis: 100MB | ingestion: 160MB | detection: 130MB
-    #   incident: 110MB | enrichment: 60MB | campaign: 55MB
-    #   cleanup: 45MB | frontend: 130MB | step-ca: 80MB
-    #   agent: 60MB   | watchdog: 30MB  (v3.0 신규)
-    #   합계: ~960MB  (OS + Docker 데몬 ~40MB 포함 ~1000MB)
+    # 설계서 §2.3 메모리 배분 기준 (설계서 원본 vs t2.micro 조정값):
+    #   redis:     100MB (설계서 100MB)
+    #   step-ca:    80MB (설계서  80MB)
+    #   ingestion: 175MB (설계서 180MB — t2.micro 안정성 위해 -5MB)
+    #   detection: 145MB (설계서 150MB — t2.micro 안정성 위해 -5MB)
+    #   incident:  115MB (설계서 120MB — t2.micro 안정성 위해 -5MB)
+    #   enrichment: 60MB (설계서  60MB)
+    #   campaign:   50MB (설계서  55MB — t2.micro 안정성 위해 -5MB)
+    #   cleanup:    45MB (설계서  45MB)
+    #   frontend:  130MB (설계서 130MB)
+    #   agent:      60MB (설계서  60MB)
+    #   watchdog:   30MB (설계서  30MB)
+    #   합계:      990MB → OS+Docker 데몬 ~10MB 포함 시 1000MB 이내
     # llm-worker: Lambda로 분리 (EC2에서 제외, 메모리 절약)
+    # ※ t3.small(2GB) 이상으로 업그레이드 시 설계서 원본 수치 그대로 적용 가능
     cat > /opt/infrared/docker-compose.yml <<'COMPOSEEOF'
     services:
       redis:
@@ -285,7 +294,7 @@ locals {
         container_name: infrared-ingestion
         command: ["sh", "-c", "python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
         env_file: /opt/infrared/.env
-        mem_limit: 160m
+        mem_limit: 175m
         ports:
           - "8000:8000"
         depends_on:
@@ -303,7 +312,7 @@ locals {
         container_name: infrared-detection
         command: ["python", "-m", "app.workers.detection.worker"]
         env_file: /opt/infrared/.env
-        mem_limit: 130m
+        mem_limit: 145m
         depends_on:
           redis:
             condition: service_healthy
@@ -325,7 +334,7 @@ locals {
         container_name: infrared-incident
         command: ["python", "-m", "app.workers.correlation.worker"]
         env_file: /opt/infrared/.env
-        mem_limit: 110m
+        mem_limit: 115m
         depends_on:
           redis:
             condition: service_healthy
@@ -336,7 +345,7 @@ locals {
         container_name: infrared-campaign
         command: ["python", "-m", "app.workers.campaign.worker"]
         env_file: /opt/infrared/.env
-        mem_limit: 55m
+        mem_limit: 50m
         depends_on:
           redis:
             condition: service_healthy

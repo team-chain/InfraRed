@@ -28,7 +28,9 @@ $ECR_BACKEND    = (terraform output -raw ecr_backend_uri)
 $ECR_FRONTEND   = (terraform output -raw ecr_frontend_uri)
 $ECR_AGENT      = (terraform output -raw ecr_agent_uri)
 $EC2_IP         = (terraform output -raw ec2_public_ip)
-$API_URL        = "http://${EC2_IP}:8000"
+# 운영 도메인 운영 후: api는 Cloudflare → EC2 nginx 통해 ingestion으로 라우팅
+# 로컬 dev 빌드 시 EC2 IP로 직접 호출하려면 -ApiUrl 파라미터로 오버라이드
+$API_URL        = "https://api.infrared.kr"
 Pop-Location
 
 Write-Host ""

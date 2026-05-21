@@ -45,8 +45,31 @@ const proxyEntries = Object.fromEntries(
       target: backendTarget,
       changeOrigin: true,
       secure: false,
+      // 브라우저 페이지 이동(HTML 요청)은 프록시하지 않고 SPA index.html 반환
+      bypass: (req: any) => {
+        if (req.headers?.accept?.includes("text/html")) {
+          return "/index.html";
+        }
+      },
     },
   ])
+);
+
+// Vite 5+ Host 헤더 검증: 알 수 없는 호스트는 403. 도메인 운영용 화이트리스트.
+// VITE_ALLOWED_HOSTS 환경변수 (쉼표 구분)로 추가 호스트를 주입할 수 있음.
+const defaultAllowedHosts = [
+  "app.infrared.kr",
+  "infrared.kr",
+  ".infrared.kr",
+  "localhost",
+  "127.0.0.1",
+];
+const extraAllowedHosts = (process.env.VITE_ALLOWED_HOSTS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const allowedHosts = Array.from(
+  new Set([...defaultAllowedHosts, ...extraAllowedHosts])
 );
 
 export default defineConfig({
@@ -55,6 +78,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3000,
     proxy: proxyEntries,
+    allowedHosts,
   },
   build: {
     emptyOutDir: false,

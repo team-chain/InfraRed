@@ -54,6 +54,10 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.4"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 
   # ── S3 원격 상태 (팀 협업 시 활성화) ─────────────────────

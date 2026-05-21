@@ -38,11 +38,11 @@ variable "availability_zones" {
   default = ["ap-northeast-2a", "ap-northeast-2b"]
 }
 
-# ── EC2 (프리티어: t2.micro) ──────────────────────────────────
+# ── EC2 (프리티어: t3.small) ──────────────────────────────────
 variable "ec2_instance_type" {
-  description = "EC2 인스턴스 타입 — t2.micro 프리티어"
+  description = "EC2 인스턴스 타입 — t3.small"
   type        = string
-  default     = "t2.micro"
+  default     = "t3.small"
 }
 
 variable "ec2_key_name" {
@@ -119,8 +119,9 @@ variable "asset_id" {
 }
 
 variable "cors_origins" {
-  type    = string
-  default = "*"
+  description = "CORS 허용 origin 목록 (쉼표 구분). 운영 도메인 명시 — 와일드카드 금지"
+  type        = string
+  default     = "https://app.infrared.kr,https://infrared.kr"
 }
 
 # ── Bedrock (LLM) ────────────────────────────────────────────
@@ -204,9 +205,16 @@ variable "watchdog_token" {
   sensitive   = true
 }
 
-# ── Watchdog JWT 토큰 — v3.0 AgentWatchdog ───────────────────
-variable "watchdog_token" {
-  description = "AgentWatchdog 전용 JWT 토큰 (scripts/generate_jwt.py --role watchdog 로 생성)"
+# ── Cloudflare DNS ──────────────────────────────────────────
+variable "cloudflare_api_token" {
+  description = "Cloudflare API Token (Zone:DNS:Edit + Zone:Zone:Read on infrared.kr)"
   type        = string
   sensitive   = true
+  default     = ""  # 비어있으면 cloudflare.tf의 리소스 생성 시 에러 — 첫 apply 전 채워야 함
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID for infrared.kr (대시보드 우측 사이드바 API 섹션)"
+  type        = string
+  default     = ""
 }
