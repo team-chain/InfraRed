@@ -572,6 +572,11 @@ async def register_user(
     password: str,
     role: str = "analyst",
 ) -> dict[str, Any] | None:
+    """신규 사용자 가입.
+
+    가입 후 동일 이메일에 대한 pending_invitations (모든 테넌트)을 조회하여
+    자동으로 tenant_memberships에 적용. 적용된 pending은 삭제.
+    """
     async with get_session() as session:
         tenant_result = await session.execute(
             text("SELECT 1 FROM tenants WHERE tenant_id = :tenant_id"),
@@ -597,7 +602,61 @@ async def register_user(
             },
         )
         row = result.mappings().first()
-        return _row(row) if row else None
+        if not row:
+            return None
+
+        user_id = row["user_id"]
+
+        # 가입 tenant의 멤버십도 추가 (기존 사용자 흐름과 호환 위해 idempotent)
+        await session.execute(
+            text(
+                """
+                INSERT INTO tenant_memberships (tenant_id, user_id, role)
+                VALUES (:tenant_id, :user_id, :role)
+                ON CONFLICT (tenant_id, user_id) DO NOTHING
+                """
+            ),
+            {"tenant_id": tenant_id, "user_id": user_id, "role": role},
+        )
+
+        # pending_invitations 적용 (만료되지 않은 모든 테넌트의 초대)
+        pending_result = await session.execute(
+            text(
+                """
+                SELECT id, tenant_id, role
+                FROM pending_invitations
+                WHERE email = :email AND expires_at > NOW()
+                """
+            ),
+            {"email": email},
+        )
+        pending_rows = pending_result.mappings().fetchall()
+
+        for inv in pending_rows:
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO tenant_memberships (tenant_id, user_id, role)
+                    VALUES (:tenant_id, :user_id, :role)
+                    ON CONFLICT (tenant_id, user_id) DO NOTHING
+                    """
+                ),
+                {
+                    "tenant_id": inv["tenant_id"],
+                    "user_id": user_id,
+                    "role": inv["role"],
+                },
+            )
+
+        # 적용된 pending 모두 삭제
+        await session.execute(
+            text(
+                "DELETE FROM pending_invitations WHERE email = :email"
+            ),
+            {"email": email},
+        )
+
+        return _row(row)
 
 
 async def list_detection_rules(tenant_id: str | None = None) -> list[dict[str, Any]]:
