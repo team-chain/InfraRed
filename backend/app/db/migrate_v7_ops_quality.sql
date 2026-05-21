@@ -86,9 +86,7 @@ CREATE TABLE IF NOT EXISTS ssl_certificates (
     expires_at    TIMESTAMPTZ NOT NULL,
     last_checked  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     issuer        TEXT,
-    days_remaining INT GENERATED ALWAYS AS (
-        EXTRACT(DAY FROM (expires_at - NOW()))::INT
-    ) STORED
+    days_remaining INT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ssl_certs_domain

@@ -8,7 +8,7 @@
 
 CREATE TABLE IF NOT EXISTS login_location_history (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id    UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id    TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     account      VARCHAR(255) NOT NULL,
     source_ip    INET NOT NULL,
     city         VARCHAR(100),
@@ -35,7 +35,7 @@ COMMENT ON COLUMN login_location_history.account IS
 
 CREATE TABLE IF NOT EXISTS known_binary_hashes (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id  UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id  TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     sha256     CHAR(64) NOT NULL,
     exe_path   TEXT NOT NULL,
     first_seen TIMESTAMPTZ DEFAULT now(),
@@ -64,7 +64,7 @@ COMMENT ON COLUMN known_binary_hashes.exe_path IS
 
 CREATE TABLE IF NOT EXISTS known_process_pairs (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     parent_name VARCHAR(255) NOT NULL,
     child_name  VARCHAR(255) NOT NULL,
     first_seen  TIMESTAMPTZ DEFAULT now(),
@@ -86,8 +86,8 @@ COMMENT ON TABLE known_process_pairs IS
 
 CREATE TABLE IF NOT EXISTS jit_ssh_keys (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    agent_id        UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    agent_id        TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     command_id      UUID NOT NULL REFERENCES agent_commands(id) ON DELETE SET NULL,
     target_user     VARCHAR(100) NOT NULL,
     key_fingerprint VARCHAR(255) NOT NULL,
@@ -118,7 +118,7 @@ COMMENT ON COLUMN jit_ssh_keys.revoke_reason IS
 
 CREATE TABLE IF NOT EXISTS honey_key_configs (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id     TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     iam_user      VARCHAR(255) NOT NULL,
     access_key_id VARCHAR(20)  NOT NULL,
     created_at    TIMESTAMPTZ DEFAULT now(),
@@ -149,8 +149,8 @@ COMMENT ON COLUMN honey_key_configs.access_key_id IS
 
 CREATE TABLE IF NOT EXISTS canary_pack_deployments (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    agent_id    UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    agent_id    TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     profile     VARCHAR(100) NOT NULL,
     deployed_at TIMESTAMPTZ DEFAULT now(),
     removed_at  TIMESTAMPTZ,

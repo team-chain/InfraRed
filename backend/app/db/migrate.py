@@ -25,6 +25,7 @@ MIGRATE_V7B_SQL = DB_DIR / "migrate_v7_ops_quality.sql"  # OPS 품질
 MIGRATE_V8_SQL  = DB_DIR / "migrate_v8_security.sql"  # v7 Dead Man's Switch, UEBA Drift
 MIGRATE_V9_SQL  = DB_DIR / "migrate_v9_timescale.sql" # TimescaleDB hypertable
 MIGRATE_V10_SQL = DB_DIR / "migrate_v10_v8_tables.sql" # v8.0 심화: TRAVEL/EXEC-FIRST/JIT-SSH/HoneyKey/CanaryPack
+MIGRATE_V11_SQL = DB_DIR / "migrate_v11_pending_invitations.sql" # 미가입 사용자 초대
 SEED_SQL = Path(__file__).parent.parent.parent.parent / "infra" / "postgres" / "seed.sql"
 DEFAULT_SEED_SQL = """
 INSERT INTO tenant_settings (tenant_id)
@@ -266,6 +267,10 @@ async def run_migration(database_url: str) -> None:
         if MIGRATE_V10_SQL.exists():
             print("[migrate] applying migrate_v10_v8_tables.sql (v8.0: TRAVEL/EXEC-FIRST/JIT-SSH/HoneyKey/CanaryPack)")
             await _execute_script(conn, MIGRATE_V10_SQL.read_text(encoding="utf-8"), "migrate_v10_v8_tables.sql")
+
+        if MIGRATE_V11_SQL.exists():
+            print("[migrate] applying migrate_v11_pending_invitations.sql (미가입 사용자 초대)")
+            await _execute_script(conn, MIGRATE_V11_SQL.read_text(encoding="utf-8"), "migrate_v11_pending_invitations.sql")
 
         seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
         print("[migrate] applying seed.sql")

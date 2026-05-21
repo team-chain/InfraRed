@@ -279,3 +279,45 @@ CREATE TABLE IF NOT EXISTS ip_policies (
     UNIQUE (tenant_id, policy_type)
 );
 CREATE INDEX IF NOT EXISTS idx_ip_policies_tenant ON ip_policies(tenant_id, policy_type);
+
+-- sigma_rules: SigmaHQ에서 동기화된 탐지 룰 (v4.0 설계서 §8)
+CREATE TABLE IF NOT EXISTS sigma_rules (
+    rule_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    display_name       TEXT NOT NULL,
+    source             TEXT NOT NULL DEFAULT 'sigmahq',
+    severity           TEXT NOT NULL DEFAULT 'MEDIUM',
+    mitre_techniques   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    base_confidence    FLOAT NOT NULL DEFAULT 0.5,
+    sigma_id           TEXT UNIQUE,
+    sigma_status       TEXT DEFAULT '',
+    sigma_title        TEXT DEFAULT '',
+    logsource          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tags               JSONB NOT NULL DEFAULT '[]'::jsonb,
+    raw_yaml           TEXT,
+    is_active          BOOLEAN NOT NULL DEFAULT true,
+    synced_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sigma_rules_severity  ON sigma_rules(severity) WHERE is_active;
+CREATE INDEX IF NOT EXISTS idx_sigma_rules_sigma_id  ON sigma_rules(sigma_id) WHERE sigma_id IS NOT NULL;
+
+-- sigma_rules: SigmaHQ에서 동기화된 탐지 룰 (v4.0 설계서 §8)
+CREATE TABLE IF NOT EXISTS sigma_rules (
+    rule_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    display_name       TEXT NOT NULL,
+    source             TEXT NOT NULL DEFAULT 'sigmahq',
+    severity           TEXT NOT NULL DEFAULT 'MEDIUM',
+    mitre_techniques   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    base_confidence    FLOAT NOT NULL DEFAULT 0.5,
+    sigma_id           TEXT UNIQUE,
+    sigma_status       TEXT DEFAULT '',
+    sigma_title        TEXT DEFAULT '',
+    logsource          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tags               JSONB NOT NULL DEFAULT '[]'::jsonb,
+    raw_yaml           TEXT,
+    is_active          BOOLEAN NOT NULL DEFAULT true,
+    synced_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sigma_rules_severity ON sigma_rules(severity) WHERE is_active;
+CREATE INDEX IF NOT EXISTS idx_sigma_rules_sigma_id ON sigma_rules(sigma_id) WHERE sigma_id IS NOT NULL;

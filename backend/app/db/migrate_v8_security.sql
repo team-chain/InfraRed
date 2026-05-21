@@ -68,7 +68,7 @@ COMMENT ON COLUMN ueba_drift_events.affected_features IS
 -- ---------------------------------------------------------------------------
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action
-    ON audit_logs(tenant_id, action, created_at DESC);
+    ON audit_logs(tenant_id, action, timestamp DESC);
 
 COMMENT ON INDEX idx_audit_logs_action IS
     'Break-Glass 이벤트 조회 최적화 (action=BREAK_GLASS 필터링)';
