@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Siren, CheckCircle2, AlertTriangle } from "lucide-react";
+import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { Logo } from "../components/Logo";
 
 type Props = {
   token: string;
@@ -38,7 +39,9 @@ export function VerifyEmailPage({ token, onDone }: Props) {
   return (
     <main className="login-shell">
       <div className="login-panel" style={{ textAlign: "center" }}>
-        <span className="brand"><Siren size={20} /> InfraRed SOC</span>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+          <Logo height={48} />
+        </div>
         <h1>이메일 인증</h1>
         {state === "verifying" && <p>확인 중…</p>}
         {state === "ok" && (

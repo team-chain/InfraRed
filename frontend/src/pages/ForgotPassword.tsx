@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
-import { Siren, MailCheck } from "lucide-react";
+import { MailCheck } from "lucide-react";
+import { Logo } from "../components/Logo";
 
 type Props = {
   onGoToLogin: () => void;
@@ -41,8 +42,10 @@ export function ForgotPasswordPage({ onGoToLogin }: Props) {
   return (
     <main className="login-shell">
       <form className="login-panel" onSubmit={submit}>
-        <span className="brand"><Siren size={20} /> InfraRed SOC</span>
-        <h1>비밀번호 재설정</h1>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+          <Logo height={48} />
+        </div>
+        <h1 style={{ textAlign: "center" }}>비밀번호 재설정</h1>
         {submitted ? (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
             <MailCheck size={48} style={{ color: "var(--c-green-500, #16a34a)" }} />

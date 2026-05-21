@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import {
   Activity, AlertTriangle, Bell, BrainCircuit, CheckCircle2,
   ClipboardList, Cog, GitCommitVertical, LogOut, Monitor,
-  RefreshCw, Shield, ShieldAlert, Siren, UserPlus,
+  RefreshCw, Shield, Siren, UserPlus,
   Heart, BookOpen, VolumeX, Users, FileText, Search,
   Lock, Unlock, Clock, Target,
 } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { SettingsPage } from "./SettingsPage";
 import { AssetsPage } from "./AssetsPage";
 import { HealthDashboardPage } from "./HealthDashboardPage";
@@ -265,9 +266,8 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
     <div className="shell">
       {/* ── Top bar ── */}
       <header className="topbar">
-        <div className="brand">
-          <div className="brand-logo"><ShieldAlert size={18} /></div>
-          <span className="brand-name">InfraRed SOC</span>
+        <div className="brand" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Logo height={28} alt="InfraRed" />
           <span className="brand-badge">Beta</span>
         </div>
         <div className="top-actions">

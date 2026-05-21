@@ -8,6 +8,13 @@
   --font: Inter, "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
   --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 
+  /* ── InfraRed brand colors ────────────────────────────────────────────── */
+  --brand-primary:        #E07000;
+  --brand-primary-light:  #FF8A3D;
+  --brand-primary-dark:   #B85A00;
+  --brand-text-on-brand:  #FFFFFF;
+  --brand-gradient:       linear-gradient(135deg, #E07000 0%, #FF8A3D 100%);
+
   /* Greys */
   --c-white:   #ffffff;
   --c-gray-25: #fafafa;

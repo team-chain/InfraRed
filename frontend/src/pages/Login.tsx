@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
-import { LogIn, Siren } from "lucide-react";
+import { LogIn } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { login, type AuthUser } from "../lib/api";
 
 type Props = {
@@ -32,8 +33,10 @@ export function LoginPage({ onLogin, onGoToRegister, onForgotPassword }: Props) 
   return (
     <main className="login-shell">
       <form className="login-panel" onSubmit={submit}>
-        <span className="brand"><Siren size={20} /> InfraRed SOC</span>
-        <h1>Analyst Sign In</h1>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+          <Logo height={48} />
+        </div>
+        <h1 style={{ textAlign: "center" }}>로그인</h1>
         {error && <div className="alert">{error}</div>}
         <label>
           Tenant

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { UserPlus, Siren, MailCheck } from "lucide-react";
+import { UserPlus, MailCheck } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { register, type AuthUser } from "../lib/api";
 
 type Props = {
@@ -87,8 +88,10 @@ export function RegisterPage({ onRegister, onGoToLogin }: Props) {
   return (
     <main className="login-shell">
       <form className="login-panel" onSubmit={submit}>
-        <span className="brand"><Siren size={20} /> InfraRed SOC</span>
-        <h1>계정 만들기</h1>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+          <Logo height={48} />
+        </div>
+        <h1 style={{ textAlign: "center" }}>계정 만들기</h1>
 
         {isInvited && (
           <div

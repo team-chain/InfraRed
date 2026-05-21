@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
-import { Siren, KeyRound, CheckCircle2 } from "lucide-react";
+import { KeyRound, CheckCircle2 } from "lucide-react";
+import { Logo } from "../components/Logo";
 
 type Props = {
   token: string;
@@ -55,7 +56,9 @@ export function ResetPasswordPage({ token, onDone }: Props) {
     return (
       <main className="login-shell">
         <div className="login-panel" style={{ textAlign: "center" }}>
-          <span className="brand"><Siren size={20} /> InfraRed SOC</span>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+            <Logo height={48} />
+          </div>
           <h1>비밀번호 변경 완료</h1>
           <CheckCircle2 size={48} style={{ color: "var(--c-green-500, #16a34a)", margin: "20px auto" }} />
           <p>새 비밀번호로 로그인해주세요.</p>
