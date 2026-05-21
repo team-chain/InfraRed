@@ -1,10 +1,16 @@
-import { useState } from "react";
-import { createApiKey } from "../lib/api";
+import { useEffect, useRef, useState } from "react";
+import {
+  createApiKey,
+  completeOnboardingStep,
+  fetchOnboardingStatus,
+} from "../lib/api";
 
 type Step = "env" | "install" | "verify";
 type Env = "server" | "web" | "api";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = import.meta.env.DEV
+  ? ""
+  : (import.meta.env.VITE_API_BASE_URL ?? "");
 
 type Props = { tenantId: string; onDone: () => void };
 
@@ -13,16 +19,83 @@ export function OnboardingPage({ tenantId, onDone }: Props) {
   const [env, setEnv] = useState<Env>("server");
   const [apiKey, setApiKey] = useState<string>("");
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  // 연결 검증 상태
+  const [verifyState, setVerifyState] = useState<"waiting" | "connected">("waiting");
+  const [verifyStartedAt, setVerifyStartedAt] = useState<number | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const pollRef = useRef<number | null>(null);
+  const tickerRef = useRef<number | null>(null);
 
   async function generateKey() {
     setGenerating(true);
+    setError(undefined);
     try {
       const res = await createApiKey(`${env} 연동 키`, env);
       setApiKey(res.api_key);
+      // 백엔드에 step 1/2 완료 기록 (실패해도 흐름은 진행 — backend 미세팅 환경 대비)
+      void completeOnboardingStep(1).catch(() => {});
+      void completeOnboardingStep(2).catch(() => {});
       setStep("install");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "API Key 발급 실패");
     } finally {
       setGenerating(false);
     }
+  }
+
+  function goToVerify() {
+    void completeOnboardingStep(3).catch(() => {});
+    setStep("verify");
+    setVerifyState("waiting");
+    setVerifyStartedAt(Date.now());
+  }
+
+  // Step 3에서 백엔드 onboarding/status를 polling
+  useEffect(() => {
+    if (step !== "verify") return;
+    if (verifyState === "connected") return;
+
+    async function check() {
+      try {
+        const status = await fetchOnboardingStatus();
+        if (status.agent_connected) {
+          setVerifyState("connected");
+          void completeOnboardingStep(4).catch(() => {});
+          // step 5는 사용자가 "대시보드로 이동" 클릭 시 자동 호출
+        }
+      } catch {
+        // 무시 — 다음 polling에서 재시도
+      }
+    }
+
+    // 즉시 한 번, 이후 5초 간격
+    check();
+    pollRef.current = window.setInterval(check, 5000);
+
+    // 경과 시간 표시 ticker
+    tickerRef.current = window.setInterval(() => {
+      if (verifyStartedAt !== null) {
+        setElapsedSec(Math.floor((Date.now() - verifyStartedAt) / 1000));
+      }
+    }, 1000);
+
+    return () => {
+      if (pollRef.current !== null) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      if (tickerRef.current !== null) {
+        window.clearInterval(tickerRef.current);
+        tickerRef.current = null;
+      }
+    };
+  }, [step, verifyState, verifyStartedAt]);
+
+  function finish() {
+    void completeOnboardingStep(5).catch(() => {});
+    onDone();
   }
 
   return (
@@ -42,6 +115,12 @@ export function OnboardingPage({ tenantId, onDone }: Props) {
           </div>
         ))}
       </div>
+
+      {error && (
+        <div className="alert" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
 
       {/* Step 1: 환경 선택 */}
       {step === "env" && (
@@ -77,6 +156,13 @@ export function OnboardingPage({ tenantId, onDone }: Props) {
             borderRadius: "var(--border-radius-md)", background: "var(--color-text-primary)",
             color: "var(--color-background-primary)",
           }}>{generating ? "API Key 발급 중..." : "다음"}</button>
+          <button type="button" onClick={onDone} style={{
+            marginTop: 10, width: "100%", padding: "8px",
+            fontSize: 12, color: "var(--color-text-tertiary)",
+            background: "none", border: "none", cursor: "pointer",
+          }}>
+            나중에 설정 — 대시보드로 바로 이동
+          </button>
         </div>
       )}
 
@@ -139,31 +225,59 @@ X-Tenant-Token: ${apiKey}
             이 키는 다시 확인할 수 없습니다. 안전한 곳에 보관하세요.
           </div>
 
-          <button onClick={() => setStep("verify")} style={{
+          <button onClick={goToVerify} style={{
             marginTop: "1.5rem", width: "100%", padding: "12px",
             fontSize: 14, fontWeight: 500, cursor: "pointer",
             border: "0.5px solid var(--color-border-secondary)",
             borderRadius: "var(--border-radius-md)", background: "var(--color-text-primary)",
             color: "var(--color-background-primary)",
-          }}>설치 완료했어요 →</button>
+          }}>설치 완료했어요 → 연결 확인</button>
         </div>
       )}
 
-      {/* Step 3: 연결 확인 */}
+      {/* Step 3: 연결 확인 — 실시간 polling으로 agent heartbeat 감지 */}
       {step === "verify" && (
         <div style={{ textAlign: "center", paddingTop: "2rem" }}>
-          <div style={{ fontSize: 48, marginBottom: "1rem" }}>✅</div>
-          <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>연결 설정 완료</h2>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: "2rem" }}>
-            첫 번째 이벤트가 수신되면 대시보드에 자동으로 표시됩니다.<br />
-            서버 Agent는 30초 이내에 온라인 상태로 전환됩니다.
-          </p>
-          <button onClick={onDone} style={{
-            padding: "12px 32px", fontSize: 14, fontWeight: 500, cursor: "pointer",
-            border: "0.5px solid var(--color-border-secondary)",
-            borderRadius: "var(--border-radius-md)", background: "var(--color-text-primary)",
-            color: "var(--color-background-primary)",
-          }}>대시보드로 이동</button>
+          {verifyState === "waiting" ? (
+            <>
+              <div style={{
+                display: "inline-block",
+                width: 56, height: 56, borderRadius: "50%",
+                border: "4px solid var(--color-background-secondary)",
+                borderTopColor: "var(--color-text-primary)",
+                animation: "spin 0.9s linear infinite",
+                marginBottom: "1rem",
+              }} />
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Agent 연결 대기중…</h2>
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: "0.5rem" }}>
+                서버에서 InfraRed Agent가 첫 heartbeat을 보내면 자동으로 감지됩니다.
+              </p>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: "2rem" }}>
+                경과 {elapsedSec}초 · 보통 30초 안에 연결됩니다
+              </p>
+              <button onClick={onDone} style={{
+                padding: "10px 24px", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                border: "0.5px solid var(--color-border-tertiary)",
+                borderRadius: "var(--border-radius-md)",
+                background: "transparent", color: "var(--color-text-secondary)",
+              }}>건너뛰고 대시보드로 이동</button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 48, marginBottom: "1rem" }}>✅</div>
+              <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Agent 연결 완료</h2>
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: "2rem" }}>
+                첫 heartbeat 수신됨. 이제부터 이벤트가 자동으로 수집되고 분석됩니다.
+              </p>
+              <button onClick={finish} style={{
+                padding: "12px 32px", fontSize: 14, fontWeight: 500, cursor: "pointer",
+                border: "0.5px solid var(--color-border-secondary)",
+                borderRadius: "var(--border-radius-md)", background: "var(--color-text-primary)",
+                color: "var(--color-background-primary)",
+              }}>대시보드로 이동</button>
+            </>
+          )}
         </div>
       )}
     </div>

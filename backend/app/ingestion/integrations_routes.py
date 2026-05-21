@@ -168,7 +168,7 @@ async def test_splunk(
 
 @router.get("/status")
 async def integration_status(
-    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner"])),
+    claims: dict = Depends(require_any_role(*["analyst", "security_manager", "owner", "admin"])),
 ) -> dict:
     """
     테넌트 설정에 저장된 Integration 연결 상태 요약.

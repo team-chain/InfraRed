@@ -48,7 +48,7 @@ class BillingHandler:
                         trial_ends_at = :trial_ends,
                         plan_started_at = NOW(),
                         agent_limit = :limit
-                    WHERE id = :tenant_id
+                    WHERE tenant_id = :tenant_id
                 """), {
                     "plan": plan, "email": email,
                     "trial_ends": trial_ends,
@@ -94,7 +94,7 @@ class BillingHandler:
                     plan_started_at = NOW(),
                     trial_ends_at = :trial_ends,
                     agent_limit = :limit
-                WHERE id = :tenant_id
+                WHERE tenant_id = :tenant_id
             """), {
                 "plan": plan, "email": email,
                 "customer_id": customer.id,
@@ -161,7 +161,7 @@ class BillingHandler:
                 SELECT plan, plan_started_at, trial_ends_at,
                        stripe_customer_id, stripe_subscription_id,
                        billing_email, grace_period_ends_at, agent_limit
-                FROM tenants WHERE id = :tenant_id
+                FROM tenants WHERE tenant_id = :tenant_id
             """), {"tenant_id": tenant_id})
             row = result.fetchone()
 
@@ -195,7 +195,7 @@ class BillingHandler:
         """구독 취소 → Starter 다운그레이드"""
         async with get_session() as session:
             result = await session.execute(text(
-                "SELECT stripe_subscription_id FROM tenants WHERE id = :tid"
+                "SELECT stripe_subscription_id FROM tenants WHERE tenant_id = :tid"
             ), {"tid": tenant_id})
             row = result.fetchone()
 
@@ -206,7 +206,7 @@ class BillingHandler:
             await session.execute(text("""
                 UPDATE tenants SET plan = 'starter', agent_limit = 3,
                     stripe_subscription_id = NULL, stripe_subscription_item_id = NULL
-                WHERE id = :tenant_id
+                WHERE tenant_id = :tenant_id
             """), {"tenant_id": tenant_id})
             await session.commit()
 
@@ -250,7 +250,7 @@ class BillingHandler:
             grace_ends = datetime.now(timezone.utc) + timedelta(days=7)
             async with get_session() as session:
                 await session.execute(text(
-                    "UPDATE tenants SET grace_period_ends_at = :grace WHERE id = :tid"
+                    "UPDATE tenants SET grace_period_ends_at = :grace WHERE tenant_id = :tid"
                 ), {"grace": grace_ends, "tid": tenant_id})
                 await session.commit()
 
@@ -259,7 +259,7 @@ class BillingHandler:
                 await session.execute(text("""
                     UPDATE tenants SET plan = 'starter', agent_limit = 3,
                         stripe_subscription_id = NULL
-                    WHERE id = :tid
+                    WHERE tenant_id = :tid
                 """), {"tid": tenant_id})
                 await session.commit()
 
@@ -268,7 +268,7 @@ class BillingHandler:
             new_plan = sub.metadata.get("plan", "growth")
             async with get_session() as session:
                 await session.execute(text(
-                    "UPDATE tenants SET plan = :plan, agent_limit = :limit WHERE id = :tid"
+                    "UPDATE tenants SET plan = :plan, agent_limit = :limit WHERE tenant_id = :tid"
                 ), {"plan": new_plan, "limit": self.PLAN_AGENT_LIMITS.get(new_plan, 3), "tid": tenant_id})
                 await session.commit()
 

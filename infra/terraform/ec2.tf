@@ -463,6 +463,15 @@ resource "aws_instance" "main" {
   user_data_replace_on_change = false
 
   tags = { Name = "${local.name_prefix}-server" }
+
+  # ── AMI/user_data drift 무시 ─────────────────────────────────
+  # data.aws_ami.amazon_linux_2023 은 most_recent=true 라 AWS가 새 AL2023 AMI
+  # 를 release할 때마다 새 ID를 반환 → terraform이 EC2 교체를 요구.
+  # 실제 운영 인스턴스는 그대로 두고, AMI 교체는 정기 유지보수로 별도 수행.
+  # user_data는 cloud-init 단계에서만 의미가 있고 실행 중인 인스턴스에 영향 없음.
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
 }
 
 # ── Elastic IP ───────────────────────────────────────────────

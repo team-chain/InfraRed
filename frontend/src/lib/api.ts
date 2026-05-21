@@ -3,7 +3,7 @@
 const API_BASE_URL =
   import.meta.env.DEV
     ? ""
-    : (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000");
+    : (import.meta.env.VITE_API_BASE_URL ?? "");
 
 export type AuthUser = {
   user_id?: string;
@@ -518,6 +518,7 @@ export type RuleItem = {
   version?: number;
   created_at?: string;
   updated_at?: string;
+  dry_run_result?: Record<string, unknown> | null;
 };
 
 export type DryRunResult = {
@@ -679,10 +680,46 @@ export async function fetchTenantMembers(tenantId: string): Promise<Member[]> {
   return data.items ?? [];
 }
 
-export async function inviteMember(tenantId: string, email: string, role: string): Promise<void> {
-  await apiFetch(`/users/${tenantId}/invite`, {
+export type InviteResult = {
+  status: "joined" | "pending";
+  email: string;
+  role: string;
+  user_id?: string;
+  expires_in_days?: number;
+};
+
+export async function inviteMember(
+  tenantId: string,
+  email: string,
+  role: string,
+): Promise<InviteResult> {
+  return apiFetch<InviteResult>(`/users/${tenantId}/invite`, {
     method: "POST",
     body: JSON.stringify({ email, role }),
+  });
+}
+
+export type PendingInvitation = {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string | null;
+  expires_at: string | null;
+};
+
+export async function fetchPendingInvitations(tenantId: string): Promise<PendingInvitation[]> {
+  const data = await apiFetch<{ items: PendingInvitation[] }>(
+    `/users/${tenantId}/pending-invitations`,
+  );
+  return data.items ?? [];
+}
+
+export async function cancelPendingInvitation(
+  tenantId: string,
+  invitationId: string,
+): Promise<void> {
+  await apiFetch(`/users/${tenantId}/pending-invitations/${invitationId}`, {
+    method: "DELETE",
   });
 }
 

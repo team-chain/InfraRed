@@ -20,6 +20,18 @@ resource "aws_s3_bucket_public_access_block" "logs" {
   restrict_public_buckets = true
 }
 
+# 설계서 §4.2: SSE-S3 서버 측 암호화 (추가 비용 없음)
+resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+    bucket_key_enabled = true
+  }
+}
+
 # 프리티어 5GB 한도 보호: 30일 후 자동 삭제
 resource "aws_s3_bucket_lifecycle_configuration" "logs" {
   bucket = aws_s3_bucket.logs.id
@@ -49,6 +61,18 @@ resource "aws_s3_bucket_public_access_block" "reports" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
+}
+
+# 설계서 §4.2: SSE-S3 서버 측 암호화
+resource "aws_s3_bucket_server_side_encryption_configuration" "reports" {
+  bucket = aws_s3_bucket.reports.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+    bucket_key_enabled = true
+  }
 }
 
 # 리포트 30일 후 삭제

@@ -5,7 +5,7 @@
 #   - db.t3.micro (또는 db.t2.micro)
 #   - 20GB gp2 스토리지
 #   - 750시간/월 (1년)
-#   - 자동 백업 0일 (백업도 스토리지 소비 → 프리티어 한도 주의)
+#   - 자동 백업: 7일 보존 (설계서 §4.2) — 백업 스토리지 = 인스턴스 용량까지 무료
 # ============================================================
 
 resource "aws_db_subnet_group" "main" {
@@ -39,8 +39,9 @@ resource "aws_db_instance" "main" {
   multi_az          = false  # 프리티어: Single AZ
   availability_zone = var.availability_zones[0]
 
-  # 프리티어: 백업 최소화 (스토리지 절약)
-  backup_retention_period = 0  # 자동 백업 비활성
+  # 프리티어 계정: 자동 백업 비활성 (backup_retention_period > 0 → FreeTierRestrictionError)
+  # 설계서 §4.2의 7일 보존은 프리티어 졸업 후 활성화 예정
+  backup_retention_period = 0
   skip_final_snapshot     = true
   deletion_protection     = false
 

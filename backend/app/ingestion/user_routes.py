@@ -116,13 +116,79 @@ async def list_members(
     }
 
 
+@router.get("/users/{tenant_id}/pending-invitations")
+async def list_pending_invitations(
+    tenant_id: str,
+    claims: dict = Depends(require_role("analyst")),
+) -> dict:
+    """미가입 사용자 대상 초대 목록 (가입 대기 중)."""
+    if claims["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=403, detail="tenant_mismatch")
+
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                SELECT id, email, role, created_at, expires_at
+                FROM pending_invitations
+                WHERE tenant_id = :tenant_id AND expires_at > NOW()
+                ORDER BY created_at DESC
+            """),
+            {"tenant_id": tenant_id},
+        )
+        rows = result.mappings().fetchall()
+
+    return {
+        "items": [
+            {
+                "id": str(r["id"]),
+                "email": r["email"],
+                "role": r["role"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "expires_at": r["expires_at"].isoformat() if r["expires_at"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/users/{tenant_id}/pending-invitations/{invitation_id}")
+async def cancel_pending_invitation(
+    tenant_id: str,
+    invitation_id: str,
+    claims: dict = Depends(require_role("owner")),
+) -> dict:
+    """대기 중인 초대 취소."""
+    if claims["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=403, detail="tenant_mismatch")
+
+    async with get_session() as session:
+        result = await session.execute(
+            text("""
+                DELETE FROM pending_invitations
+                WHERE id = :id AND tenant_id = :tenant_id
+                RETURNING email
+            """),
+            {"id": invitation_id, "tenant_id": tenant_id},
+        )
+        deleted = result.fetchone()
+        if not deleted:
+            raise HTTPException(status_code=404, detail="invitation_not_found")
+        await session.commit()
+
+    return {"status": "cancelled", "email": deleted[0]}
+
+
 @router.post("/users/{tenant_id}/invite", status_code=201)
 async def invite_member(
     tenant_id: str,
     payload: InviteRequest,
     claims: dict = Depends(require_role("owner")),
 ) -> dict:
-    """멤버 초대 (owner만 가능)."""
+    """멤버 초대 (owner만 가능).
+
+    가입된 사용자면 즉시 tenant_memberships에 추가.
+    미가입자면 pending_invitations에 저장하여 가입 시 자동 적용.
+    """
     if claims["tenant_id"] != tenant_id:
         raise HTTPException(status_code=403, detail="tenant_mismatch")
 
@@ -131,31 +197,62 @@ async def invite_member(
     async with get_session() as session:
         # 사용자 조회
         user_row = await session.execute(
-            text("SELECT user_id FROM users WHERE email = :email"),
+            text("SELECT user_id FROM users WHERE email = :email LIMIT 1"),
             {"email": payload.email},
         )
         user = user_row.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="user_not_found")
 
-        user_id = str(user[0])
+        if user:
+            # 기존 가입자 → 즉시 멤버십 부여
+            user_id = str(user[0])
 
-        # 이미 멤버인지 확인
-        exists = await session.execute(
-            text("SELECT 1 FROM tenant_memberships WHERE tenant_id = :tid AND user_id = :uid"),
-            {"tid": tenant_id, "uid": user_id},
-        )
-        if exists.fetchone():
-            raise HTTPException(status_code=409, detail="already_member")
+            exists = await session.execute(
+                text("SELECT 1 FROM tenant_memberships WHERE tenant_id = :tid AND user_id = :uid"),
+                {"tid": tenant_id, "uid": user_id},
+            )
+            if exists.fetchone():
+                raise HTTPException(status_code=409, detail="already_member")
 
+            await session.execute(
+                text("""
+                    INSERT INTO tenant_memberships (tenant_id, user_id, role, invited_by)
+                    VALUES (:tenant_id, :user_id, :role, :invited_by)
+                """),
+                {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "role": payload.role,
+                    "invited_by": inviter_id,
+                },
+            )
+            await session.commit()
+
+            await write_audit_log(
+                tenant_id=tenant_id, actor=inviter_id, action="user.invite",
+                resource=payload.email,
+                metadata={"role": payload.role, "status": "joined"},
+            )
+            return {
+                "status": "joined",
+                "user_id": user_id,
+                "email": payload.email,
+                "role": payload.role,
+            }
+
+        # 미가입자 → pending_invitations에 저장
+        # 동일 (tenant_id, email) pending이 있으면 role/inviter/expires_at 갱신
         await session.execute(
             text("""
-                INSERT INTO tenant_memberships (tenant_id, user_id, role, invited_by)
-                VALUES (:tenant_id, :user_id, :role, :invited_by)
+                INSERT INTO pending_invitations (tenant_id, email, role, invited_by, expires_at)
+                VALUES (:tenant_id, :email, :role, :invited_by, NOW() + INTERVAL '14 days')
+                ON CONFLICT (tenant_id, email) DO UPDATE SET
+                    role = EXCLUDED.role,
+                    invited_by = EXCLUDED.invited_by,
+                    expires_at = EXCLUDED.expires_at
             """),
             {
                 "tenant_id": tenant_id,
-                "user_id": user_id,
+                "email": payload.email,
                 "role": payload.role,
                 "invited_by": inviter_id,
             },
@@ -164,9 +261,15 @@ async def invite_member(
 
     await write_audit_log(
         tenant_id=tenant_id, actor=inviter_id, action="user.invite",
-        resource=payload.email, metadata={"role": payload.role},
+        resource=payload.email,
+        metadata={"role": payload.role, "status": "pending"},
     )
-    return {"user_id": user_id, "email": payload.email, "role": payload.role}
+    return {
+        "status": "pending",
+        "email": payload.email,
+        "role": payload.role,
+        "expires_in_days": 14,
+    }
 
 
 @router.patch("/users/{tenant_id}/members/{target_user_id}/role")

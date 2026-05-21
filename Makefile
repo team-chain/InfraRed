@@ -66,6 +66,20 @@ setup: ## .env 생성 + AGENT_TOKEN 자동 발급
 token: ## AGENT_TOKEN만 새로 발급 (화면 출력)
 	@$(PYTHON) scripts/generate_jwt.py --role agent
 
+.PHONY: bootstrap-admin
+bootstrap-admin: ## 첫 admin 계정 생성 (INITIAL_ADMIN_EMAIL/PASSWORD env 필요, 멱등)
+	@if [ -z "$$INITIAL_ADMIN_EMAIL" ] || [ -z "$$INITIAL_ADMIN_PASSWORD" ]; then \
+		echo "$(YELLOW)⚠ INITIAL_ADMIN_EMAIL 또는 INITIAL_ADMIN_PASSWORD 환경변수가 설정되지 않았습니다.$(RESET)"; \
+		echo ""; \
+		echo "사용 예시:"; \
+		echo "  INITIAL_ADMIN_EMAIL=ops@infrared.kr \\"; \
+		echo "  INITIAL_ADMIN_PASSWORD='change-me-now' \\"; \
+		echo "  INITIAL_ADMIN_TENANT_ID=default \\"; \
+		echo "  make bootstrap-admin"; \
+		exit 1; \
+	fi
+	@cd backend && $(PYTHON) -m app.db.bootstrap_admin
+
 # ============================================================
 # Docker 스택
 # ============================================================
