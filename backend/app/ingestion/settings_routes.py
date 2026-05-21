@@ -10,7 +10,6 @@ from app.iam.security import require_permission
 from app.redis_kv import keys
 from app.redis_kv.client import get_redis
 
-
 router = APIRouter()
 
 DETECTION_SETTING_FIELDS = (
@@ -148,7 +147,8 @@ async def create_api_key(
     payload: dict,
     claims: dict = Depends(require_permission("incident:write")),
 ) -> dict:
-    import hashlib, secrets
+    import hashlib
+    import secrets
     tenant_id = claims["tenant_id"]
     raw_key = f"ir_{secrets.token_hex(20)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()

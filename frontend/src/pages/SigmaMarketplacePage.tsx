@@ -10,7 +10,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  Search, Download, CheckCircle2, RefreshCw, AlertTriangle,
+  Search, Download, RefreshCw, AlertTriangle,
   Filter, Eye, Zap, Shield, Globe, Lock
 } from "lucide-react";
 

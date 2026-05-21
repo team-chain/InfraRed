@@ -65,8 +65,8 @@ async def _fetch_asn_from_api(ip: str) -> Optional[dict[str, Any]]:
     """ipapi.co에서 IP의 ASN 정보를 조회한다."""
     try:
         import asyncio  # noqa: PLC0415
-        import urllib.request  # noqa: PLC0415
         import json  # noqa: PLC0415
+        import urllib.request  # noqa: PLC0415
 
         def _sync_fetch():
             url = f"https://ipapi.co/{ip}/json/"
@@ -88,6 +88,7 @@ async def _fetch_asn_ipwhois(ip: str) -> Optional[dict[str, Any]]:
     """ipwhois 라이브러리로 ASN 조회 (ipapi.co 실패 시 폴백)."""
     try:
         import asyncio  # noqa: PLC0415
+
         from ipwhois import IPWhois  # noqa: PLC0415
 
         def _sync():

@@ -14,7 +14,6 @@ from app.workers.forensic.collector import ForensicCollector
 from app.workers.recovery.file_restore import FileRestoreHandler
 from app.workers.recovery.reinfection import ReinfectionPrevention
 
-
 router = APIRouter()
 log = logging.getLogger(__name__)
 

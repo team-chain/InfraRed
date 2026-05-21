@@ -21,7 +21,6 @@ from app.config import get_settings
 from app.db.connection import get_session
 from app.redis_kv.client import get_redis
 
-
 configure_logging()
 log = get_logger(__name__)
 

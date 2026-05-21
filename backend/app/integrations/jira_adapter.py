@@ -3,8 +3,10 @@ Jira Integration Adapter - 인시던트 → Jira 티켓 자동 생성.
 v4.0 설계서 §10.2 참조.
 """
 from __future__ import annotations
+
 import logging
-from app.integrations.base import NotificationAdapter, IncidentPayload
+
+from app.integrations.base import IncidentPayload, NotificationAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +32,21 @@ class JiraAdapter(NotificationAdapter):
         if not JIRA_AVAILABLE:
             logger.error("jira package not installed")
             return False
-        
+
         server_url = config.get("server_url", "")
         email = config.get("email", "")
         api_token = config.get("api_token", "")
         project_key = config.get("project_key", "SEC")
-        
+
         if not all([server_url, email, api_token]):
             logger.error("Jira config incomplete")
             return False
-        
+
         try:
             jira = JIRA(server=server_url, basic_auth=(email, api_token))
-            
+
             description = self._build_description(incident)
-            
+
             issue = jira.create_issue(fields={
                 "project": {"key": project_key},
                 "summary": f"[InfraRed] {incident.severity} — {incident.display_name}",
@@ -53,7 +55,7 @@ class JiraAdapter(NotificationAdapter):
                 "priority": {"name": self.PRIORITY_MAP.get(incident.severity, "Medium")},
                 "labels": ["infrared-security", incident.severity.lower()],
             })
-            
+
             logger.info(f"Jira ticket created: {issue.key}")
             return True
         except Exception as e:

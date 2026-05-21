@@ -24,7 +24,8 @@ from app.config import get_settings
 from app.db.repositories import save_or_merge_incident
 from app.dispatcher.discord import send_discord_first_alert
 from app.dispatcher.service import _get_tenant_dispatch_config
-from app.models.incident import CtiEnrichment, Incident
+from app.ingestion.sse_routes import publish_incident_event
+from app.models.incident import CtiEnrichment
 from app.models.signal import Signal
 from app.redis_kv import keys, streams
 from app.redis_kv.client import ensure_group, get_redis
@@ -33,8 +34,6 @@ from app.workers.correlation.builder import build_incident
 from app.workers.detection.confidence import calculate_detection_confidence
 from app.workers.dlq import reclaim_pending
 from app.workers.llm.playbook import get_first_alert_summary, get_rule_title
-from app.ingestion.sse_routes import publish_incident_event
-
 
 configure_logging()
 log = get_logger(__name__)

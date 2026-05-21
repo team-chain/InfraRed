@@ -9,7 +9,7 @@ import json
 import logging
 import secrets
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -244,10 +244,11 @@ class DeadManSwitch:
         Returns:
             True — 명령 발행 성공
         """
-        import secrets as _secrets
-        import time as _time
         import hashlib as _hashlib
         import hmac as _hmac
+        import secrets as _secrets
+        import time as _time
+
         from app.config import get_settings
 
         redis = self._get_redis()
@@ -299,9 +300,10 @@ class DeadManSwitch:
         switch_id: str,
         ttl_seconds: int,
     ) -> None:
-        from app.db.connection import get_session
+
         from sqlalchemy import text
-        from datetime import datetime, timezone
+
+        from app.db.connection import get_session
 
         async with get_session() as session:
             await session.execute(
@@ -327,8 +329,9 @@ class DeadManSwitch:
         asset_id: str,
         switch_id: str,
     ) -> None:
-        from app.db.connection import get_session
         from sqlalchemy import text
+
+        from app.db.connection import get_session
 
         async with get_session() as session:
             await session.execute(
@@ -353,8 +356,9 @@ class DeadManSwitch:
         tenant_id: str,
         asset_id: str,
     ) -> None:
-        from app.db.connection import get_session
         from sqlalchemy import text
+
+        from app.db.connection import get_session
 
         async with get_session() as session:
             await session.execute(

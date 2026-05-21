@@ -1,8 +1,11 @@
 """Stripe 과금 API 라우터 — v4.0 §11."""
 from __future__ import annotations
+
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+
 from app.billing.stripe_handler import BillingHandler
 from app.iam.rbac_v2 import require_any_role
 
@@ -52,8 +55,9 @@ async def stripe_webhook(request: Request):
 @router.get("/usage")
 async def usage(claims: dict = Depends(require_any_role("owner", "security_manager"))):
     """이번 달 에이전트 사용량 + 과금 현황"""
-    from app.db.connection import get_session
     from sqlalchemy import text
+
+    from app.db.connection import get_session
     async with get_session() as session:
         result = await session.execute(text("""
             SELECT agent_count, reported_at, stripe_reported

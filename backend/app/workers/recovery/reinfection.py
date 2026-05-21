@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -105,7 +105,7 @@ class ReinfectionPrevention:
             ))
             return risks
 
-        lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
+        lines = [ln.strip() for ln in content.splitlines() if ln.strip() and not ln.strip().startswith("#")]
 
         # PermitRootLogin 확인
         permit_root = None
@@ -265,7 +265,7 @@ class ReinfectionPrevention:
             )
             if result.returncode not in (0, 100):
                 return None
-            lines = [l for l in result.stdout.splitlines() if "/" in l and "upgradable" not in l.lower()]
+            lines = [ln for ln in result.stdout.splitlines() if "/" in ln and "upgradable" not in ln.lower()]
             return len(lines)
         except FileNotFoundError:
             return None
@@ -289,8 +289,8 @@ class ReinfectionPrevention:
             if result.returncode not in (0, 100):
                 return None
             lines = [
-                l for l in result.stdout.splitlines()
-                if l.strip() and not l.startswith(" ") and not l.startswith("Last") and "." in l
+                ln for ln in result.stdout.splitlines()
+                if ln.strip() and not ln.startswith(" ") and not ln.startswith("Last") and "." in ln
             ]
             return len(lines)
         except FileNotFoundError:

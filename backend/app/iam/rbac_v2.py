@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException
 
-from app.iam.security import require_permission, verify_user_token
-
+from app.iam.security import verify_user_token
 
 # ============================================================
 # Role permission matrix

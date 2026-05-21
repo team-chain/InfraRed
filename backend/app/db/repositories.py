@@ -9,12 +9,12 @@ from sqlalchemy import text
 
 from app.common.constants import Confidence, KillChainStage, Priority, Severity
 from app.db.connection import get_session
+from app.models.auto_response import AutoResponseLog
+from app.models.demo_signal import DemoSignal
 from app.models.envelope import NormalizedEvent
 from app.models.heartbeat import Heartbeat
 from app.models.incident import CtiEnrichment, Incident
-from app.models.auto_response import AutoResponseLog
-from app.models.demo_signal import DemoSignal
-from app.models.llm import LLMResult, LLMPendingRow
+from app.models.llm import LLMPendingRow, LLMResult
 from app.models.signal import Signal
 
 

@@ -11,7 +11,6 @@ from jose import JWTError, jwt
 from app.config import get_settings
 from app.iam.rbac import has_permission
 
-
 _bearer = HTTPBearer(auto_error=False)
 
 

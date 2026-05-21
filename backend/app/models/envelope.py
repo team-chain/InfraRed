@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.common.constants import EventType
 
-
 ENVELOPE_REQUIRED_FIELDS = ("event_id", "tenant_id", "agent_id", "timestamp")
 
 

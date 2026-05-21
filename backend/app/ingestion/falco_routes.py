@@ -4,17 +4,17 @@ Falco가 HTTP output으로 InfraRed에 eBPF 탐지 결과를 전송.
 v4.0 설계서 §6 참조.
 """
 from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from app.iam.security import verify_agent_token
+from app.config import get_settings
 from app.redis_kv import streams
 from app.redis_kv.client import get_redis
-from app.config import get_settings
 
 router = APIRouter(tags=["falco"])
 logger = logging.getLogger(__name__)
@@ -53,13 +53,13 @@ async def ingest_falco_event(
     settings = get_settings()
     severity = PRIORITY_TO_SEVERITY.get(event.priority.upper(), "MEDIUM")
     rule_id = f"FALCO-{event.rule.replace(' ', '_').upper()[:20]}"
-    
+
     mitre = ""
     if event.tags:
         mitre_tags = [t for t in event.tags if t.startswith("T") and "." in t]
         if mitre_tags:
             mitre = mitre_tags[0]
-    
+
     # InfraRed AgentEvent 형식으로 변환
     agent_event = {
         "tenant_id": settings.tenant_id,
@@ -76,7 +76,7 @@ async def ingest_falco_event(
         "output_fields": event.output_fields or {},
         "hostname": event.hostname,
     }
-    
+
     try:
         redis = get_redis()
         stream_key = streams.raw_events(settings.tenant_id)
@@ -90,7 +90,7 @@ async def ingest_falco_event(
     except Exception as e:
         logger.error(f"Falco event ingestion failed: {e}")
         raise HTTPException(status_code=500, detail="ingestion_failed")
-    
+
     return {"status": "accepted", "rule_id": rule_id, "severity": severity}
 
 

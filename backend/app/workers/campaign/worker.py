@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 
 import httpx
@@ -30,7 +29,6 @@ from app.models.signal import Signal
 from app.redis_kv import streams
 from app.redis_kv.client import ensure_group, get_redis
 from app.workers.dlq import reclaim_pending
-
 
 configure_logging()
 log = get_logger(__name__)

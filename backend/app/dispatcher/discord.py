@@ -19,7 +19,6 @@ import httpx
 
 from app.config import get_settings
 
-
 DISCORD_FIELD_LIMIT = 1024
 
 # 임베드 좌측 색상 바 — severity 유일한 시각 표시 수단

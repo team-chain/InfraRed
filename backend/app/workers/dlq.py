@@ -14,7 +14,6 @@ survives container restarts but cleans itself up automatically.
 """
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 

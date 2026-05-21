@@ -1,5 +1,6 @@
 """Action type definitions for AI auto-response."""
 from __future__ import annotations
+
 from enum import Enum
 
 

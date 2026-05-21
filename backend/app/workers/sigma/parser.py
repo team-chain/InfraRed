@@ -3,7 +3,9 @@ SIGMA 룰 파서 + InfraRed 탐지 룰 변환.
 v4.0 설계서 §8 참조.
 """
 from __future__ import annotations
-import re, logging
+
+import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 

@@ -17,7 +17,6 @@ from app.common.constants import EventType
 from app.config import get_settings
 from app.models.envelope import NormalizedEvent, RawEventEnvelope
 
-
 AUTH_PREFIX = re.compile(
     r"^(?P<month>\w{3})\s+(?P<day>\d{1,2})\s+"
     r"(?P<clock>\d{2}:\d{2}:\d{2})\s+"

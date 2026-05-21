@@ -10,8 +10,7 @@ import boto3
 from app.common.logging import get_logger
 from app.config import get_settings
 from app.models.llm import LLMResult
-from app.workers.llm.playbook import playbook_from_contract, summarize_with_playbook
-
+from app.workers.llm.playbook import playbook_from_contract
 
 log = get_logger(__name__)
 

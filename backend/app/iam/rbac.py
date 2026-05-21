@@ -1,7 +1,6 @@
 """Starter role definitions for C's IAM/RBAC track."""
 from __future__ import annotations
 
-
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": {
         "incident:read",

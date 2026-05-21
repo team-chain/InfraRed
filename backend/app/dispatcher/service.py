@@ -13,7 +13,6 @@ from app.dispatcher.discord import send_discord_ai_analysis
 from app.dispatcher.email import send_email_alert
 from app.models.llm import LLMResult
 
-
 log = get_logger(__name__)
 
 

@@ -21,8 +21,8 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.iam.rbac_v2 import require_role
-from app.workers.deception.honeytoken import HoneytokenManager
 from app.workers.deception.canary_pack import get_canary_pack_manager
+from app.workers.deception.honeytoken import HoneytokenManager
 
 router = APIRouter(prefix="/deception", tags=["deception"])
 log = logging.getLogger(__name__)

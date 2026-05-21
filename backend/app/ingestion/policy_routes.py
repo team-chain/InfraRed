@@ -24,6 +24,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import text
 
+from app.common.constants import PolicyType
+from app.common.logging import get_logger
 from app.db.connection import get_session
 from app.iam.security import verify_user_token as get_current_user
 from app.models.ip_policy import (
@@ -37,8 +39,6 @@ from app.models.ip_policy import (
 )
 from app.redis_kv import keys
 from app.redis_kv.client import get_redis
-from app.common.constants import PolicyType
-from app.common.logging import get_logger
 
 router = APIRouter(prefix="/api/policy", tags=["policy"])
 log = get_logger(__name__)

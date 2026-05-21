@@ -11,17 +11,16 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.db.connection import get_session
 from app.iam.rbac_v2 import require_role
-from app.workers.compliance.report import ComplianceReporter, _SUPPORTED_FRAMEWORKS
-from sqlalchemy import text
+from app.workers.compliance.report import _SUPPORTED_FRAMEWORKS, ComplianceReporter
 
 router = APIRouter(prefix="/compliance", tags=["compliance"])
 log = logging.getLogger(__name__)

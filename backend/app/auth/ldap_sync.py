@@ -4,20 +4,20 @@ LDAP / Active Directory 동기화.
 v4.0 설계서 §9.3 참조.
 """
 from __future__ import annotations
-import logging, asyncio
+
+import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from ldap3 import Server, Connection, ALL, NTLM, SIMPLE
+    from ldap3 import ALL, NTLM, SIMPLE, Connection, Server
     LDAP_AVAILABLE = True
 except ImportError:
     LDAP_AVAILABLE = False
     logger.warning("ldap3 not available. LDAP sync disabled.")
 
-from app.config import get_settings
-
+from app.config import get_settings  # noqa: E402
 
 GROUP_TO_ROLE_MAPPING = {
     "CN=InfraRed-Admins,OU=Groups": "owner",
@@ -151,7 +151,6 @@ class LDAPSyncWorker:
 
 # Lambda 진입점
 def lambda_handler(event, context):
-    settings = get_settings()
     # event에서 테넌트별 LDAP 설정 로드
     tenant_configs = event.get("tenants", [])
     results = []

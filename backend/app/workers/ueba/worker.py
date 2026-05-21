@@ -4,17 +4,20 @@ EventBridge Lambda 또는 주기적 백그라운드 태스크로 실행.
 v4.0 설계서 §7 참조.
 """
 from __future__ import annotations
-import asyncio, logging
+
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
-from app.workers.ueba.model import get_ueba_model, UEBAModel
+
+from app.config import get_settings
 from app.workers.ueba.autoencoder import AutoencoderModel
 from app.workers.ueba.features import (
     UserBehaviorFeatures,
-    extract_daily_profile_from_db,
     aggregate_daily_profiles,
+    extract_daily_profile_from_db,
     save_daily_profile,
 )
-from app.config import get_settings
+from app.workers.ueba.model import UEBAModel, get_ueba_model
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +65,9 @@ async def run_ueba_training(tenant_id: str) -> dict:
     if not settings.ueba_enabled:
         return {"status": "disabled"}
 
-    from app.db.connection import get_session
     from sqlalchemy import text
+
+    from app.db.connection import get_session
 
     try:
         async with get_session() as session:

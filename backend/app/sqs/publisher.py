@@ -1,4 +1,8 @@
-import boto3, json, logging
+import json
+import logging
+
+import boto3
+
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)

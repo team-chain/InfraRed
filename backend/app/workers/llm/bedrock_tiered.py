@@ -3,11 +3,16 @@ Bedrock 3단계 AI 호출 티어링 + S3 응답 캐시.
 v4.0 설계서 §3 참조.
 """
 from __future__ import annotations
-import hashlib, json, logging, io
-from datetime import datetime, timedelta
+
+import hashlib
+import json
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional
+
 import boto3
+
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)

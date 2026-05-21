@@ -13,9 +13,7 @@ from __future__ import annotations
 import redis.asyncio as redis_async
 
 from app.config import get_settings
-
 from app.redis_kv import keys, streams  # noqa: F401  (재노출)
-
 
 _client: redis_async.Redis | None = None
 

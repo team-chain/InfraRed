@@ -6,14 +6,15 @@ import hashlib
 import hmac
 import json
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+from sqlalchemy import text
 
 from app.common.logging import get_logger
 from app.config import get_settings
 from app.db.connection import get_session
-from sqlalchemy import text
 
 log = get_logger(__name__)
 
@@ -198,7 +199,6 @@ class ForensicCollector:
 
         try:
             import boto3  # type: ignore[import]
-            from botocore.exceptions import ClientError  # type: ignore[import]
 
             session_kwargs: dict = {"region_name": settings.s3_region}
             if settings.aws_access_key_id and settings.aws_secret_access_key:

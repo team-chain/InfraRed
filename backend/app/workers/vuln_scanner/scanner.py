@@ -4,8 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
-import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
