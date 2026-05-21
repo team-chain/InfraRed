@@ -45,7 +45,8 @@ _redis_cm.__aenter__ = AsyncMock(return_value=MagicMock())
 _redis_cm.__aexit__ = AsyncMock(return_value=False)
 sys.modules["app.redis_kv.client"].get_redis = MagicMock(return_value=_redis_cm)
 
-# get_current_user stub
+# get_current_user stub (policy_routes.py imports as `verify_user_token as get_current_user`)
+sys.modules["app.iam.security"].verify_user_token = MagicMock()
 sys.modules["app.iam.security"].get_current_user = MagicMock()
 
 # ── 이제 안전하게 import ──────────────────────────────────────────────────────

@@ -33,7 +33,6 @@ from infrared_agent.offset_store import OffsetStore
 from infrared_agent.s3_uploader import S3LogUploader
 from infrared_agent.tailer import AuthLogTailer
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("infrared_agent")
 

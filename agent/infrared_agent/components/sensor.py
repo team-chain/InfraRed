@@ -18,20 +18,18 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from infrared_agent.component_bridge import (
-    MSG_ACK,
+from infrared_agent.component_bridge import (  # noqa: E402
     MSG_EVENT,
     UDSClient,
-    UDSServer,
 )
-from infrared_agent.config import AgentSettings
-from infrared_agent.fim_watcher import (
+from infrared_agent.config import AgentSettings  # noqa: E402
+from infrared_agent.fim_watcher import (  # noqa: E402
     BulkFileModificationMonitor,
     FIMWatcher,
     TmpExecutionMonitor,
     WebServerChildProcessMonitor,
 )
-from infrared_agent.ntp_monitor import NTPMonitor
+from infrared_agent.ntp_monitor import NTPMonitor  # noqa: E402
 
 log = logging.getLogger("infrared.sensor")
 

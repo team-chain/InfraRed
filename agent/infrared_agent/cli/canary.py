@@ -19,12 +19,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # typer는 선택적 의존성 — 없으면 안내 메시지 출력
 try:

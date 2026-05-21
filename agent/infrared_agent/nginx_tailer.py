@@ -18,7 +18,6 @@ from infrared_agent.config import AgentSettings
 from infrared_agent.masking import mask_line
 from infrared_agent.offset_store import OffsetStore
 
-
 # nginx Combined Log Format 정규식
 _NGINX_RE = re.compile(
     r'(?P<remote_addr>\S+)'           # IP

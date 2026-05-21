@@ -19,14 +19,14 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from infrared_agent.component_bridge import (
+from infrared_agent.commander import Commander  # noqa: E402
+from infrared_agent.component_bridge import (  # noqa: E402
     MSG_ACK,
     MSG_COMMAND,
     MSG_ERROR,
     UDSServer,
 )
-from infrared_agent.commander import Commander
-from infrared_agent.config import AgentSettings
+from infrared_agent.config import AgentSettings  # noqa: E402
 
 log = logging.getLogger("infrared.responder")
 
