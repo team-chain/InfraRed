@@ -155,7 +155,41 @@ if settings.sentry_dsn:
     except Exception as exc:  # noqa: BLE001
         log.warning("sentry_init_failed", error=str(exc))
 
-app = FastAPI(title="InfraRed API", version="0.1.0")
+_TAGS_METADATA = [
+    {"name": "auth",               "description": "로그인 / 가입 / JWT / 토큰 revoke"},
+    {"name": "auth-verification",  "description": "이메일 인증 + 비밀번호 재설정"},
+    {"name": "users",              "description": "RBAC 멤버십, 초대, 온보딩"},
+    {"name": "incidents",          "description": "인시던트 조회 / 상태 변경 / 코멘트 / 링크"},
+    {"name": "rules",              "description": "탐지 룰 목록 / 관리 / 임계값 조정"},
+    {"name": "containers",         "description": "컨테이너 격리/해제 명령 (owner only)"},
+    {"name": "agents",             "description": "에이전트 등록 / heartbeat / 명령 polling"},
+    {"name": "alerts",             "description": "Discord/Slack/Email 알림 설정"},
+    {"name": "billing",            "description": "Stripe 구독 / 인보이스 / 플랜"},
+    {"name": "compliance",         "description": "정기 보고서 / KPI / 감사 로그"},
+    {"name": "deception",          "description": "HoneyKey / CanaryPack / 미끼 자산"},
+    {"name": "jit-ssh",            "description": "Just-in-time SSH 키 발급/만료"},
+]
+
+app = FastAPI(
+    title="InfraRed API",
+    version="1.0.0",
+    summary="Multi-tenant SOC platform — detection + automatic response",
+    description=(
+        "**InfraRed** is a hosted SOC for Linux/Container infrastructure.\n\n"
+        "- Real-time SSH/Web attack detection (28 production rules)\n"
+        "- Automatic iptables IP block within ~10s for high-confidence threats\n"
+        "- MITRE ATT&CK attack-chain correlation\n"
+        "- AI incident summarization (Bedrock Claude with static fallback)\n"
+        "- Discord / Slack / Email alerts\n\n"
+        "Authentication: Bearer JWT from `/auth/login`. Most endpoints are RBAC-scoped to a tenant."
+    ),
+    contact={"name": "InfraRed", "url": "https://infrared.kr"},
+    license_info={"name": "Source-available, contact for production use"},
+    openapi_tags=_TAGS_METADATA,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
