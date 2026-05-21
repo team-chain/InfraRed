@@ -15,10 +15,9 @@
 from __future__ import annotations
 
 import secrets
+from asyncio import to_thread
 from datetime import datetime, timedelta, timezone
 from typing import Any
-
-from asyncio import to_thread
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field

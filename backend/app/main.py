@@ -9,13 +9,17 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from pydantic import BaseModel
+from sqlalchemy import text as _text
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 # v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
 from app.auth.routes import router as auth_enterprise_router
-from app.auth.verification_routes import _send_verification_email
-from app.auth.verification_routes import router as auth_verification_router
+from app.auth.verification_routes import (
+    _send_verification_email,
+    router as auth_verification_router,
+)
+from app.db.connection import get_session as _get_session
 
 # v4.0 Stripe 과금 라우터
 from app.billing.routes import router as billing_router
@@ -380,8 +384,6 @@ async def register(
 
     # 가입 직후 이메일 인증 토큰 자동 발급 + 메일 발송 (best-effort)
     try:
-        from sqlalchemy import text as _text  # noqa: PLC0415 — local import to avoid cycle
-        from app.db.connection import get_session as _get_session  # noqa: PLC0415
         verification_token = _secrets.token_urlsafe(32)
         async with _get_session() as _session:
             await _session.execute(
