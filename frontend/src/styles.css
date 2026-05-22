@@ -3781,3 +3781,91 @@ input[type=range]::-moz-range-thumb {
   border-color: #0A0A0A;
   box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.06);
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   LANDING — Beta pricing card (3-tier 대체)
+══════════════════════════════════════════════════════════════════ */
+.ln-beta-card {
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 14px;
+  padding: 36px 36px 30px;
+  box-shadow: 0 20px 40px -28px rgba(15, 20, 25, 0.18);
+  max-width: 880px;
+  margin: 0 auto;
+}
+.ln-beta-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding-bottom: 26px;
+  border-bottom: 1px solid #EFEFF1;
+  margin-bottom: 24px;
+}
+.ln-beta-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #E07000;
+  margin-bottom: 10px;
+}
+.ln-beta-title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.ln-beta-desc {
+  font-size: 14.5px;
+  color: #4B5260;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 520px;
+}
+.ln-beta-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 28px;
+}
+.ln-beta-features li {
+  font-size: 14px;
+  color: #2F343C;
+  padding-left: 18px;
+  position: relative;
+  line-height: 1.5;
+}
+.ln-beta-features li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #E07000;
+}
+.ln-beta-footer {
+  border-top: 1px solid #EFEFF1;
+  padding-top: 20px;
+  font-size: 13px;
+  color: #4B5260;
+  line-height: 1.55;
+}
+.ln-beta-footer a {
+  color: #E07000;
+  font-weight: 500;
+}
+.ln-beta-footer a:hover { text-decoration: underline; }
+
+@media (max-width: 700px) {
+  .ln-beta-card { padding: 28px 22px; }
+  .ln-beta-features { grid-template-columns: 1fr; }
+  .ln-beta-card-head { flex-direction: column; }
+}

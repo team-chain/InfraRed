@@ -84,7 +84,7 @@ function LandingNav({ onGoToLogin, onGoToRegister }: Props) {
         <div className="ln-nav-right">
           <button className="ln-nav-login" onClick={onGoToLogin}>로그인</button>
           <button className="ln-btn ln-btn-primary ln-btn-sm" onClick={onGoToRegister}>
-            무료로 시작 <ArrowRight size={13} />
+            베타 시작하기 <ArrowRight size={13} />
           </button>
         </div>
       </div>
@@ -101,7 +101,7 @@ function Hero({ onGoToRegister }: { onGoToRegister: () => void }) {
         <div className="ln-hero-copy">
           <a href="/changelog" className="ln-eyebrow">
             <span className="ln-eyebrow-dot" />
-            Public Beta · MIT 라이선스
+            Public Beta · 한정 액세스
             <ArrowUpRight size={12} />
           </a>
           <h1 className="ln-h1">
@@ -117,14 +117,14 @@ function Hero({ onGoToRegister }: { onGoToRegister: () => void }) {
           </p>
           <div className="ln-hero-cta">
             <button className="ln-btn ln-btn-primary" onClick={onGoToRegister}>
-              무료로 시작하기 <ArrowRight size={14} />
+              베타 시작하기 <ArrowRight size={14} />
             </button>
             <a href="#how" className="ln-btn ln-btn-ghost">
               동작 원리 보기
             </a>
           </div>
           <div className="ln-hero-meta">
-            <span>신용카드 없이 가입</span>
+            <span>공개 베타 진행 중</span>
             <span className="ln-meta-sep">·</span>
             <span>한 줄 설치</span>
             <span className="ln-meta-sep">·</span>
@@ -508,35 +508,15 @@ function PreviewIncidentRow({
 /* ─────────────────────────────────────────────────────────────────── */
 
 function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
-  const tiers = [
-    {
-      name: "Free",
-      price: "₩0",
-      period: "forever",
-      desc: "개인 · 사이드 프로젝트.",
-      features: ["에이전트 3대", "탐지 룰 28개", "Discord 알림", "7일 로그 보관", "커뮤니티 지원"],
-      cta: "무료로 시작",
-      onCta: onGoToRegister,
-    },
-    {
-      name: "Pro",
-      price: "₩99,000",
-      period: "/월",
-      desc: "성장하는 팀 · 운영 환경.",
-      features: ["에이전트 25대", "전체 룰 + 커스텀", "Slack · Email · Discord", "AI 인시던트 분석 포함", "90일 로그 보관", "감사 로그 export", "Email 지원"],
-      cta: "14일 무료 체험",
-      onCta: onGoToRegister,
-      highlighted: true,
-    },
-    {
-      name: "Enterprise",
-      price: "문의",
-      period: "",
-      desc: "규제 산업 · 대규모 인프라.",
-      features: ["무제한 에이전트", "SSO · SAML · MFA", "전담 SLA · 99.9%", "On-prem 배포", "1년+ 로그 보관", "전용 보안 컨설팅", "전담 슬랙 채널"],
-      cta: "영업팀 문의",
-      onCta: () => (window.location.href = "mailto:sales@infrared.kr"),
-    },
+  const included = [
+    "에이전트 대수 제한 없음 (베타 기간 한정)",
+    "28개 MITRE ATT&CK 탐지 룰 전체",
+    "AI 인시던트 분석 (AWS Bedrock)",
+    "자동 대응 — iptables · 컨테이너 격리 · 토큰 폐기",
+    "Slack · Discord · Email 알림",
+    "변조 불가 감사 로그",
+    "멀티 테넌트 · RBAC · SSO · MFA",
+    "Self-host 옵션 (Docker Compose)",
   ];
 
   return (
@@ -544,33 +524,38 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
       <div className="ln-container">
         <div className="ln-section-head">
           <span className="ln-section-tag">Pricing</span>
-          <h2 className="ln-h2">투명한 사용량 기반 과금.</h2>
-          <p className="ln-section-lead">숨겨진 비용 없습니다. 에이전트 수와 보관 기간으로만 정해집니다.</p>
+          <h2 className="ln-h2">공개 베타 진행 중.</h2>
+          <p className="ln-section-lead">
+            InfraRed는 현재 공개 베타 단계입니다.
+            정식 출시 시 가격을 발표하며, 베타 사용자에게는 Founding 요금 혜택을 제공할 예정입니다.
+          </p>
         </div>
 
-        <div className="ln-pricing">
-          {tiers.map((t) => (
-            <div key={t.name} className={`ln-tier${t.highlighted ? " ln-tier-highlighted" : ""}`}>
-              {t.highlighted && <div className="ln-tier-badge">인기</div>}
-              <div className="ln-tier-name">{t.name}</div>
-              <div className="ln-tier-price">
-                <span className="ln-tier-amount">{t.price}</span>
-                {t.period && <span className="ln-tier-period">{t.period}</span>}
-              </div>
-              <p className="ln-tier-desc">{t.desc}</p>
-              <ul className="ln-tier-features">
-                {t.features.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-              <button
-                className={`ln-btn ${t.highlighted ? "ln-btn-primary" : "ln-btn-outline"} ln-tier-cta`}
-                onClick={t.onCta}
-              >
-                {t.cta}
-              </button>
+        <div className="ln-beta-card">
+          <div className="ln-beta-card-head">
+            <div>
+              <span className="ln-beta-eyebrow">Public Beta</span>
+              <h3 className="ln-beta-title">전체 기능 · 베타 액세스</h3>
+              <p className="ln-beta-desc">
+                정식 출시 전까지 InfraRed의 모든 기능을 사용할 수 있습니다.
+                과금은 정식 출시 시점부터 시작됩니다.
+              </p>
             </div>
-          ))}
+            <button className="ln-btn ln-btn-primary ln-btn-lg" onClick={onGoToRegister}>
+              베타 시작하기 <ArrowRight size={15} />
+            </button>
+          </div>
+          <ul className="ln-beta-features">
+            {included.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+          <div className="ln-beta-footer">
+            정식 출시 일정과 가격 정책은 가입한 사용자에게 먼저 안내됩니다.
+            대규모 인프라 · 규제 산업 도입 문의는{" "}
+            <a href="mailto:sales@infrared.kr">sales@infrared.kr</a>
+            로 연락 부탁드립니다.
+          </div>
         </div>
       </div>
     </section>
@@ -582,7 +567,7 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
 const FAQS = [
   {
     q: "기존 보안 솔루션과 어떻게 다른가요?",
-    a: "전통적인 보안 솔루션은 도입에 많은 시간과 인력이 필요하고, 룰을 직접 작성·튜닝해야 합니다. InfraRed는 사전 정의된 28개 룰과 AI 인시던트 분석이 즉시 동작하도록 설계됐습니다. 5분 설치, 추가 컨설팅 없이 운영을 시작할 수 있습니다.",
+    a: "전통적인 보안 솔루션은 도입에 많은 시간과 인력이 필요하고, 룰을 직접 작성·튜닝해야 합니다. InfraRed는 사전 정의된 28개 룰과 AI 인시던트 분석이 즉시 동작합니다. 5분 설치, 추가 컨설팅 없이 운영을 시작할 수 있습니다. 현재 공개 베타 단계이며, 모든 기능을 사용할 수 있습니다.",
   },
   {
     q: "Self-host 할 수 있나요?",
@@ -647,11 +632,11 @@ function FinalCta({ onGoToRegister }: { onGoToRegister: () => void }) {
           지금 인프라를 보호하세요.
         </h2>
         <p className="ln-final-sub">
-          5분이면 끝납니다. 신용카드 없이 시작.
+          공개 베타 진행 중. 5분 설치로 즉시 운영을 시작하세요.
         </p>
         <div className="ln-final-cta">
           <button className="ln-btn ln-btn-primary ln-btn-lg" onClick={onGoToRegister}>
-            무료로 시작하기 <ArrowRight size={15} />
+            베타 시작하기 <ArrowRight size={15} />
           </button>
           <a href="/docs" className="ln-btn ln-btn-ghost ln-btn-lg">
             <Code2 size={15} /> 문서 보기

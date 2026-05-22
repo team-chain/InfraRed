@@ -21,7 +21,7 @@ const COPY = {
   register: {
     eyebrow: "Get started",
     title: "5분이면 시작할 수 있습니다.",
-    sub: "신용카드 없이 무료. 에이전트 한 줄 설치로 24시간 자동 방어가 켜집니다.",
+    sub: "공개 베타 진행 중. 한 줄 설치로 24시간 자동 방어를 시작하세요.",
   },
 } as const;
 
