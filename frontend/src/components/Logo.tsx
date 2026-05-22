@@ -35,7 +35,7 @@ export function Logo({
   if (monogram) {
     return (
       <img
-        src="/favicon.svg"
+        src="/favicon.svg?v=2"
         alt={alt}
         height={height}
         width={height}
@@ -66,7 +66,7 @@ export function Logo({
       aria-label={alt}
     >
       <img
-        src="/favicon.svg"
+        src="/favicon.svg?v=2"
         alt=""
         aria-hidden="true"
         height={height}
