@@ -4315,3 +4315,173 @@ input[type=range]::-moz-range-thumb {
 }
 .ln-footer-biz div { margin-bottom: 2px; }
 .ln-footer-biz-muted { color: #898E9A; font-size: 11px; margin-top: 4px !important; }
+
+/* ══════════════════════════════════════════════════════════════════
+   TRENDY POLISH — 각진 톤 완화
+   - 더 큰 radius, 부드러운 코너
+   - Hero soft glow (코너 한정)
+   - Terminal 미세 기울임 + LIVE sticker
+   - Stats band 비대칭
+══════════════════════════════════════════════════════════════════ */
+
+/* 카드·박스 radius 키움 */
+.ln-feature-card,
+.ln-incident-mini,
+.ln-preview,
+.ln-preview-window,
+.ln-beta-card,
+.ln-term {
+  border-radius: 20px;
+}
+.ln-tier { border-radius: 18px; }
+
+/* Hero soft glow — 우측 상단 corner에만 */
+.ln-hero {
+  position: relative;
+  overflow: hidden;
+}
+.ln-hero::before {
+  content: "";
+  position: absolute;
+  top: -160px;
+  right: -120px;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(224, 112, 0, 0.16) 0%, rgba(255, 138, 61, 0.06) 35%, transparent 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+.ln-hero::after {
+  content: "";
+  position: absolute;
+  bottom: -100px;
+  left: -80px;
+  width: 380px;
+  height: 380px;
+  background: radial-gradient(circle, rgba(224, 112, 0, 0.08) 0%, transparent 60%);
+  filter: blur(50px);
+  pointer-events: none;
+  z-index: 0;
+}
+.ln-hero-grid { position: relative; z-index: 1; }
+
+/* Terminal 살짝 기울임 + 그림자 강화 */
+.ln-term {
+  transform: rotate(-1deg);
+  transition: transform 0.4s ease;
+}
+.ln-term:hover { transform: rotate(0deg); }
+
+/* LIVE sticker badge */
+.ln-term-head { position: relative; }
+.ln-term-live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: rgba(34, 197, 94, 0.14);
+  border: 0.5px solid rgba(34, 197, 94, 0.3);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #6EE7B7;
+  font-family: var(--mono);
+}
+.ln-term-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+  animation: ln-live-pulse 2s ease-in-out infinite;
+}
+@keyframes ln-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
+  50%      { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+}
+
+/* Stats band 비대칭 — 첫 카드 강조 */
+.ln-stats-grid {
+  grid-template-columns: 1.4fr 1fr 1fr 1fr !important;
+  align-items: stretch;
+}
+.ln-stat:first-child {
+  background: linear-gradient(135deg, rgba(224, 112, 0, 0.06) 0%, rgba(255, 138, 61, 0.02) 100%);
+  border-radius: 18px;
+  padding: 18px 22px;
+  align-items: flex-start;
+  text-align: left;
+}
+.ln-stat:first-child .ln-stat-value { font-size: 56px; color: #E07000; }
+.ln-stat:first-child .ln-stat-unit { color: #C46300; }
+.ln-stat:first-child .ln-stat-label { color: var(--text-2, #4B5260); }
+
+/* Feature card hover lift — 미세 인터랙션 */
+.ln-feature-card {
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.ln-feature-card:hover {
+  transform: translateY(-2px);
+  background: rgba(224, 112, 0, 0.02);
+}
+
+/* Step card 미세 회전 (장식적) */
+.ln-step-card { border-radius: 16px; }
+.ln-incident-mini { transform: rotate(0.5deg); }
+
+@media (max-width: 700px) {
+  .ln-stats-grid { grid-template-columns: 1fr 1fr !important; }
+  .ln-stat:first-child .ln-stat-value { font-size: 40px; }
+  .ln-term { transform: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   INFO FAQ (info-faq-*) — /faq 페이지용
+═══════════════════════════════════════════════════════════════════ */
+.info-faq-list {
+  margin: 24px 0 0;
+  display: flex;
+  flex-direction: column;
+}
+.info-faq-item {
+  border-top: 0.5px solid var(--border, #E5E7EB);
+}
+.info-faq-item:last-child { border-bottom: 0.5px solid var(--border, #E5E7EB); }
+.info-faq-q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 18px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  color: #0A0A0A;
+  text-align: left;
+  letter-spacing: -0.005em;
+}
+.info-faq-q:hover { color: #E07000; }
+.info-faq-chev {
+  display: inline-block;
+  color: #898E9A;
+  font-size: 22px;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.info-faq-open .info-faq-chev { transform: rotate(-90deg); color: #E07000; }
+.info-faq-a {
+  padding: 0 4px 22px;
+  font-size: 14.5px;
+  color: #4B5260;
+  line-height: 1.65;
+  max-width: 660px;
+}

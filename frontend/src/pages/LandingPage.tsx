@@ -56,7 +56,6 @@ export function LandingPage({ onGoToLogin, onGoToRegister }: Props) {
       <FeaturesSection />
       <ProductPreviewSection />
       <PricingSection onGoToRegister={onGoToRegister} />
-      <FaqSection />
       <FinalCta onGoToRegister={onGoToRegister} />
       <Footer />
     </div>
@@ -79,6 +78,7 @@ function LandingNav({ onGoToLogin, onGoToRegister }: Props) {
           <a href="#how">동작</a>
           <a href="#pricing">요금</a>
           <a href="/docs">문서</a>
+          <a href="/faq">FAQ</a>
           <a href="/status">상태</a>
         </nav>
         <div className="ln-nav-right">
@@ -146,6 +146,7 @@ function HeroTerminal() {
         <span className="ln-term-dot ln-term-dot-y" />
         <span className="ln-term-dot ln-term-dot-g" />
         <span className="ln-term-path">infrared@web-prod-02:~</span>
+        <span className="ln-term-live"><span className="ln-term-live-dot" />LIVE</span>
       </div>
       <div className="ln-term-body">
         <div className="ln-term-line"><span className="ln-term-prompt">$</span> infrared status</div>
@@ -692,6 +693,7 @@ function Footer() {
           <a href="/docs/api">API 레퍼런스</a>
           <a href="/docs/agent">에이전트 설치 가이드</a>
           <a href="https://github.com/team-chain/InfraRed" target="_blank" rel="noreferrer">GitHub <ExternalLink size={11} /></a>
+          <a href="/faq">FAQ</a>
         </FooterCol>
         <FooterCol title="운영">
           <a href="/status">서비스 상태</a>

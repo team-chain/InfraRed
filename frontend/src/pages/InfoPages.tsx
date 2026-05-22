@@ -11,10 +11,11 @@
  * 디자인: Landing과 같은 톤(Linear). 단일 컬럼 prose 레이아웃.
  */
 
+import { useState } from "react";
 import { ArrowLeft, Mail } from "lucide-react";
 import { Logo } from "../components/Logo";
 
-type Variant = "docs" | "changelog" | "privacy" | "terms" | "security";
+type Variant = "docs" | "changelog" | "privacy" | "terms" | "security" | "faq";
 
 const META: Record<Variant, { eyebrow: string; title: string }> = {
   docs:      { eyebrow: "Docs", title: "문서" },
@@ -22,6 +23,7 @@ const META: Record<Variant, { eyebrow: string; title: string }> = {
   privacy:   { eyebrow: "Privacy", title: "개인정보처리방침" },
   terms:     { eyebrow: "Terms", title: "이용약관" },
   security:  { eyebrow: "Security", title: "보안 실천사항" },
+  faq:       { eyebrow: "FAQ", title: "자주 묻는 질문" },
 };
 
 export function InfoPage({ variant }: { variant: Variant }) {
@@ -46,6 +48,7 @@ export function InfoPage({ variant }: { variant: Variant }) {
           {variant === "privacy" && <PrivacyContent />}
           {variant === "terms" && <TermsContent />}
           {variant === "security" && <SecurityContent />}
+          {variant === "faq" && <FaqContent />}
         </div>
       </article>
 
@@ -346,3 +349,63 @@ function SecurityContent() {
     </>
   );
 }
+
+/* ─────────────────────────────────────────────────────────────────── */
+
+function FaqContent() {
+  const [open, setOpen] = useState<number | null>(0);
+  const items = [
+    {
+      q: "기존 보안 솔루션과 어떻게 다른가요?",
+      a: "전통적인 보안 솔루션은 도입에 많은 시간과 인력이 필요하고, 룰을 직접 작성·튜닝해야 합니다. InfraRed는 사전 정의된 28개 룰과 AI 인시던트 분석이 즉시 동작합니다. 5분 설치, 추가 컨설팅 없이 운영을 시작할 수 있습니다. 현재 공개 베타 단계이며, 모든 기능을 사용할 수 있습니다.",
+    },
+    {
+      q: "Self-host 할 수 있나요?",
+      a: "네. 모든 코드는 MIT 라이선스로 GitHub에 공개되어 있고, Docker Compose 한 줄로 띄울 수 있습니다. Enterprise 플랜은 on-prem 배포 지원을 포함합니다.",
+    },
+    {
+      q: "자동 대응이 정상 트래픽을 차단하면 어떻게 하나요?",
+      a: "자동 대응은 confidence ≥ 0.85 인시던트에만 적용되고, 모든 차단 IP는 24시간 후 자동 해제됩니다. 사내 IP/known good 목록은 settings에서 영구 화이트리스트 가능합니다. 의심스러우면 dry-run 모드로 전환해 알림만 받을 수도 있습니다.",
+    },
+    {
+      q: "로그를 InfraRed 서버로 보내는데, 보안은 어떻게 보장하나요?",
+      a: "에이전트와 백엔드는 mTLS로 통신합니다. 모든 로그는 전송 중·저장 시 암호화됩니다. PII는 필드 단위 마스킹 후 저장됩니다. 데이터는 호스팅 리전(현재 ap-northeast-2) 밖으로 나가지 않습니다.",
+    },
+    {
+      q: "어떤 환경을 지원하나요?",
+      a: "Linux (Ubuntu 20.04+, Debian 11+, RHEL 9, Amazon Linux 2023) · Docker · Kubernetes (DaemonSet). Windows 에이전트는 베타입니다. macOS는 Q3에 추가됩니다.",
+    },
+    {
+      q: "AI 분석에 우리 회사 로그가 외부 모델 학습에 사용되나요?",
+      a: "아니요. AWS Bedrock의 Claude를 사용하며, Bedrock는 정의상 입력 데이터를 모델 학습에 사용하지 않습니다. 추론 결과는 InfraRed DB에 저장되고, 원본 로그는 외부로 전송되지 않습니다.",
+    },
+    {
+      q: "정식 출시 시점은 언제인가요?",
+      a: "정식 출시 일정은 베타 사용자에게 먼저 안내됩니다. 베타 기간 동안 가입한 사용자에게는 Founding 요금 혜택이 적용됩니다.",
+    },
+  ];
+
+  return (
+    <>
+      <p className="info-lead">
+        InfraRed에 대해 가장 자주 들어오는 질문을 모았습니다.
+        추가 질문은 <a href="mailto:support@infrared.kr">support@infrared.kr</a>로 보내주세요.
+      </p>
+      <div className="info-faq-list">
+        {items.map((it, i) => (
+          <div key={i} className={`info-faq-item${open === i ? " info-faq-open" : ""}`}>
+            <button
+              className="info-faq-q"
+              onClick={() => setOpen(open === i ? null : i)}
+            >
+              <span>{it.q}</span>
+              <span className="info-faq-chev" aria-hidden="true">›</span>
+            </button>
+            {open === i && <div className="info-faq-a">{it.a}</div>}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+

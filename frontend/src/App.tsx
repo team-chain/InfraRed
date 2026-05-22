@@ -74,6 +74,9 @@ export function App() {
   if (path === "/security") {
     return <InfoPage variant="security" />;
   }
+  if (path === "/faq") {
+    return <InfoPage variant="faq" />;
+  }
 
   // URL 파라미터에서 토큰 추출 (page에 props로 전달)
   const verifyToken = getUrlParam("verify_email");
