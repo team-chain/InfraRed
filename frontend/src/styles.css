@@ -3869,3 +3869,195 @@ input[type=range]::-moz-range-thumb {
   .ln-beta-features { grid-template-columns: 1fr; }
   .ln-beta-card-head { flex-direction: column; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   APPLE-TONE OVERRIDES (ln-*)
+   원칙: 알터네이팅 light/dark 타일 + 센터드 스택 + pill CTA +
+        보더 제거 (색 변화가 디바이더) + 17px body + 그림자는 mockup 1개만.
+══════════════════════════════════════════════════════════════════ */
+
+/* 섹션 보더 제거 — 색 변화가 divider */
+.ln-section,
+.ln-hero {
+  border-bottom: none;
+}
+.ln-tech-strip { display: none !important; }
+
+/* 다크 타일 — Apple 시그니처 알터네이팅 */
+.ln-section-dark {
+  background: #18181A;
+  color: #F5F5F7;
+}
+.ln-section-dark .ln-h2,
+.ln-section-dark .ln-section-lead,
+.ln-section-dark .ln-three-title,
+.ln-section-dark .ln-three-desc,
+.ln-section-dark .ln-step-title,
+.ln-section-dark .ln-step-desc,
+.ln-section-dark .ln-feature-title,
+.ln-section-dark .ln-feature-desc,
+.ln-section-dark .ln-beta-title,
+.ln-section-dark .ln-beta-desc {
+  color: #F5F5F7;
+}
+.ln-section-dark .ln-section-lead,
+.ln-section-dark .ln-three-desc,
+.ln-section-dark .ln-step-desc,
+.ln-section-dark .ln-feature-desc,
+.ln-section-dark .ln-beta-desc {
+  color: #A1A1A6;
+}
+.ln-section-dark .ln-section-tag {
+  color: #FF8A3D;
+}
+.ln-section-dark .ln-three-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.ln-section-dark .ln-three-num {
+  color: #7C7C82;
+}
+.ln-section-dark .ln-feature-card {
+  background: #1E1E20;
+  color: #F5F5F7;
+}
+.ln-section-dark .ln-features {
+  background: #2A2A2C;
+  border-color: #2A2A2C;
+}
+.ln-section-dark .ln-feature-icon {
+  background: rgba(255, 138, 61, 0.12);
+  color: #FF8A3D;
+}
+
+/* 다크 타일 안의 Beta 카드 — 흰색 카드로 강조 */
+.ln-section-dark .ln-beta-card {
+  background: #F5F5F7;
+  color: #1D1D1F;
+  border-color: transparent;
+  box-shadow: rgba(0, 0, 0, 0.22) 3px 5px 30px 0;
+}
+.ln-section-dark .ln-beta-card .ln-beta-title,
+.ln-section-dark .ln-beta-card .ln-beta-desc,
+.ln-section-dark .ln-beta-card .ln-beta-features li,
+.ln-section-dark .ln-beta-card .ln-beta-footer {
+  color: #1D1D1F;
+}
+.ln-section-dark .ln-beta-card .ln-beta-desc,
+.ln-section-dark .ln-beta-card .ln-beta-footer {
+  color: #4B5260;
+}
+
+/* 센터드 섹션 head */
+.ln-section-head-center {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+.ln-section-head-center .ln-section-lead {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 헤드라인 — Apple "tight" 트래킹 */
+.ln-h1 {
+  font-size: 60px;
+  font-weight: 600;
+  letter-spacing: -0.028em;
+  line-height: 1.05;
+}
+.ln-h2 {
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -0.024em;
+  line-height: 1.08;
+}
+
+/* 본문 17px (Apple body 표준) */
+.ln-lead { font-size: 19px; line-height: 1.5; }
+.ln-section-lead { font-size: 19px; line-height: 1.5; }
+
+/* CTAs — pill */
+.ln-btn {
+  border-radius: 9999px;
+  padding: 12px 22px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: transform 0.12s, background 0.12s, border-color 0.12s;
+}
+.ln-btn:active { transform: scale(0.97); }
+.ln-btn-sm  { padding: 8px 16px; font-size: 13px; }
+.ln-btn-lg  { padding: 14px 26px; font-size: 15px; }
+
+/* Ghost CTA on dark tiles — 흰 보더 */
+.ln-section-dark .ln-btn-ghost {
+  color: #F5F5F7;
+}
+.ln-section-dark .ln-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Hero — 센터드 스택 (좌측 카피 + 우측 비주얼 그대로 유지하되 좀 더 여유) */
+.ln-hero { padding: 112px 0 96px; }
+
+/* Section padding 더 여유 (Apple 80px 표준 → 우리는 콘텐츠 한국어로 좀 더 여유) */
+.ln-section { padding: 112px 0; }
+
+/* 카드 보더 약화 (Apple은 보더보다 색 변화 선호) */
+.ln-feature-card { border-radius: 0; }
+.ln-features {
+  border-radius: 18px;
+  background: #E5E7EB;
+  border: 1px solid #E5E7EB;
+}
+
+/* Beta 카드 — 그림자 제거 (다크 타일 안에선 별도 처리, 라이트에선 깔끔하게) */
+.ln-beta-card {
+  border-radius: 18px;
+}
+
+/* Final CTA → 다크 타일과 alternating 위해 light로 변경 */
+.ln-final {
+  background: #F5F5F7;
+  border-top: none;
+}
+.ln-final-title {
+  font-size: 48px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+/* 푸터 보더 제거 */
+.ln-footer { border-top: none; background: #F5F5F7; }
+
+/* Terminal mockup — Apple "product shadow" 적용 */
+.ln-term {
+  box-shadow:
+    rgba(0, 0, 0, 0.22) 0 5px 30px 0,
+    rgba(0, 0, 0, 0.08) 0 1px 3px 0;
+}
+/* 다크 타일 안의 mockup은 그림자 약화 */
+.ln-section-dark .ln-term,
+.ln-section-dark .ln-preview {
+  box-shadow: rgba(0, 0, 0, 0.4) 0 8px 32px 0;
+}
+
+/* Hero 카피 너비 살짝 조정 */
+.ln-hero-copy { max-width: 580px; }
+.ln-lead { max-width: 540px; }
+
+/* "한정 액세스" eyebrow — 다크 타일에서 콘트라스트 */
+.ln-section-dark .ln-eyebrow {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #C5C5CA;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* 모바일 헤드라인 다운사이즈 */
+@media (max-width: 700px) {
+  .ln-h1 { font-size: 40px; }
+  .ln-h2 { font-size: 32px; }
+  .ln-final-title { font-size: 34px; }
+  .ln-section { padding: 72px 0; }
+  .ln-hero { padding: 72px 0; }
+  .ln-lead, .ln-section-lead { font-size: 17px; }
+}

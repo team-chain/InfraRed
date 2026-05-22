@@ -1,22 +1,21 @@
 /**
  * InfraRed brand logo component.
  *
- * 사용 예:
- *   <Logo />                          기본 (full lockup, 28px height)
- *   <Logo height={40} />              크기 지정
- *   <Logo monogram />                 모노그램만 (favicon 형태)
- *   <Logo monogram height={20} />     인라인 마크
- *   <Logo variant="dark" />           다크 배경용 (필요 시 향후)
+ * 두 가지 모드:
+ *   <Logo />              풀 로고 (iR 아이콘 + InfraRed 텍스트 lockup)
+ *   <Logo monogram />     모노그램만 (favicon 형태, 정사각형)
+ *
+ * height prop 으로 픽셀 단위 사이즈 지정 (default 28). 가로는 비율 유지.
  *
  * 이미지 자산:
- *   /logo.png        풀 로고 (iR + InfraRed 텍스트 + 태그라인)
- *   /logo-text.svg   (선택) 텍스트만 SVG 버전
- *   /favicon.png     iR 모노그램만 (정사각형)
- *   /favicon.svg     (선택) SVG 버전
+ *   /favicon.svg   iR 모노그램 (브랜드 SVG, 모든 모드의 아이콘 부분)
+ *   /favicon.ico   레거시 브라우저용 (HTML <link>에서만 사용)
+ *
+ * 풀 로고는 별도 PNG 자산 없이 컴포넌트에서 SVG + 텍스트를 합성합니다.
  */
 
 type Props = {
-  /** true면 모노그램(iR)만, false면 풀 로고 */
+  /** true면 모노그램(iR 아이콘)만, false면 풀 lockup (아이콘 + 텍스트) */
   monogram?: boolean;
   /** 픽셀 단위 height. 가로는 비율 유지 */
   height?: number;
@@ -28,19 +27,68 @@ type Props = {
 
 export function Logo({
   monogram = false,
-  height = 32,
+  height = 28,
   alt = "InfraRed",
   className,
 }: Props) {
-  const src = monogram ? "/favicon.png" : "/logo.png";
+  // 모노그램 — favicon.svg 단독 표시
+  if (monogram) {
+    return (
+      <img
+        src="/favicon.svg"
+        alt={alt}
+        height={height}
+        width={height}
+        style={{
+          height,
+          width: height,
+          display: "inline-block",
+          verticalAlign: "middle",
+        }}
+        className={className}
+      />
+    );
+  }
+
+  // 풀 lockup — 아이콘 + "InfraRed" 텍스트
+  // 텍스트 크기는 height에 비례 (Linear 톤: tight letter-spacing, weight 600)
+  const fontSize = Math.round(height * 0.62);
   return (
-    <img
-      src={src}
-      alt={alt}
-      height={height}
-      style={{ height, width: "auto", display: "inline-block", verticalAlign: "middle" }}
+    <span
       className={className}
-    />
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: Math.round(height * 0.28),
+        lineHeight: 1,
+        color: "var(--text, #0A0A0A)",
+      }}
+      aria-label={alt}
+    >
+      <img
+        src="/favicon.svg"
+        alt=""
+        aria-hidden="true"
+        height={height}
+        width={height}
+        style={{
+          height,
+          width: height,
+          display: "block",
+          flexShrink: 0,
+        }}
+      />
+      <span
+        style={{
+          fontSize,
+          fontWeight: 600,
+          letterSpacing: "-0.02em",
+          color: "inherit",
+        }}
+      >
+        InfraRed
+      </span>
+    </span>
   );
 }
 

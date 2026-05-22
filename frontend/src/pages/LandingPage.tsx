@@ -50,7 +50,6 @@ export function LandingPage({ onGoToLogin, onGoToRegister }: Props) {
     <div className="ln-root">
       <LandingNav onGoToLogin={onGoToLogin} onGoToRegister={onGoToRegister} />
       <Hero onGoToRegister={onGoToRegister} />
-      <TechStrip />
       <WhatIsSection />
       <HowItWorksSection />
       <FeaturesSection />
@@ -228,33 +227,32 @@ function TechStrip() {
 
 function WhatIsSection() {
   return (
-    <section className="ln-section">
+    <section className="ln-section ln-section-dark">
       <div className="ln-container">
-        <div className="ln-section-head">
+        <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">What is InfraRed</span>
-          <h2 className="ln-h2">작은 팀도 직접 운영할 수 있는 <span className="ln-accent">현대적 SOC 플랫폼.</span></h2>
+          <h2 className="ln-h2">작은 팀도 직접 운영할 수 있는<br /><span className="ln-accent">현대적 SOC 플랫폼.</span></h2>
           <p className="ln-section-lead">
             엔터프라이즈 보안 도구는 강력하지만 도입과 운영에 적지 않은 비용·인력이 필요합니다.
             InfraRed는 5분 안에 설치되고, 작은 팀이 직접 운영할 수 있게 설계됐습니다.
-            오픈소스이고, 모든 코드는 GitHub에 공개되어 있습니다.
           </p>
         </div>
 
-        <div className="ln-three">
+        <div className="ln-three ln-three-dark">
           <ThreeItem
             num="01"
             title="실시간 로그 분석"
-            desc="에이전트가 auth.log·nginx·docker·systemd 출력을 5초 이내 백엔드로 스트리밍합니다. PostgreSQL Timescale로 저장하고, Redis Streams로 워커에 분배합니다."
+            desc="에이전트가 auth.log · nginx · docker · systemd 출력을 5초 이내 스트리밍합니다."
           />
           <ThreeItem
             num="02"
             title="규칙 기반 + AI 분석"
-            desc="28개 MITRE ATT&CK 매핑 룰이 1차 매칭. 일치 시 AWS Bedrock의 Claude가 컨텍스트(자산·과거 인시던트·CTI)와 함께 위협도·근본 원인·권장 대응을 산출합니다."
+            desc="28개 MITRE ATT&CK 룰 + AWS Bedrock LLM이 위협도·근본 원인·권장 대응을 산출합니다."
           />
           <ThreeItem
             num="03"
             title="고신뢰 위협 자동 격리"
-            desc="confidence ≥ 0.85 인시던트는 자동 대응. iptables INPUT DROP, Docker network disconnect, JWT denylist 등 3종의 액션을 즉시 실행하고 모든 액션은 변조 불가 감사 로그에 기록됩니다."
+            desc="confidence ≥ 0.85 인시던트는 즉시 자동 대응. 모든 액션은 변조 불가 감사 로그에 기록됩니다."
           />
         </div>
       </div>
@@ -276,9 +274,9 @@ function ThreeItem({ num, title, desc }: { num: string; title: string; desc: str
 
 function HowItWorksSection() {
   return (
-    <section id="how" className="ln-section ln-section-alt">
+    <section id="how" className="ln-section">
       <div className="ln-container">
-        <div className="ln-section-head">
+        <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">How it works</span>
           <h2 className="ln-h2">설치 4분, 첫 인시던트 감지 30초.</h2>
           <p className="ln-section-lead">
@@ -386,11 +384,11 @@ function FeaturesSection() {
     { icon: <Users size={18} />, title: "멀티 테넌트 · RBAC", desc: "조직별 데이터 격리 · Owner/Admin/Analyst/Viewer 4단계 권한 · SAML SSO · TOTP MFA 지원." },
   ];
   return (
-    <section id="features" className="ln-section">
+    <section id="features" className="ln-section ln-section-dark">
       <div className="ln-container">
-        <div className="ln-section-head">
+        <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Features</span>
-          <h2 className="ln-h2">SOC 운영에 필요한 모든 것.</h2>
+          <h2 className="ln-h2">SOC 운영에 필요한<br />모든 것.</h2>
           <p className="ln-section-lead">탐지 · 분석 · 대응 · 알림 · 감사까지 한 플랫폼에서.</p>
         </div>
 
@@ -412,9 +410,9 @@ function FeaturesSection() {
 
 function ProductPreviewSection() {
   return (
-    <section className="ln-section ln-section-alt">
+    <section className="ln-section">
       <div className="ln-container">
-        <div className="ln-section-head">
+        <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Product</span>
           <h2 className="ln-h2">실제 대시보드.</h2>
           <p className="ln-section-lead">실시간 인시던트 스트림 · MTTR · 자산별 위험도 · 자동 대응 액션 이력.</p>
@@ -520,9 +518,9 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
   ];
 
   return (
-    <section id="pricing" className="ln-section">
+    <section id="pricing" className="ln-section ln-section-dark">
       <div className="ln-container">
-        <div className="ln-section-head">
+        <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Pricing</span>
           <h2 className="ln-h2">공개 베타 진행 중.</h2>
           <p className="ln-section-lead">
@@ -593,9 +591,9 @@ const FAQS = [
 
 function FaqSection() {
   return (
-    <section className="ln-section ln-section-alt">
+    <section className="ln-section">
       <div className="ln-container ln-faq-wrap">
-        <div className="ln-section-head ln-section-head-narrow">
+        <div className="ln-section-head ln-section-head-narrow ln-section-head-center">
           <span className="ln-section-tag">FAQ</span>
           <h2 className="ln-h2">자주 묻는 질문.</h2>
         </div>
