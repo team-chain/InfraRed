@@ -3,8 +3,8 @@ fastapi==0.115.4
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
 pydantic-settings==2.6.1
-# python-multipart: 0.0.20+ fixes Arbitrary File Write, DoS via boundary, unbounded headers (Dependabot #20/#8/#34, High)
-python-multipart==0.0.20
+# python-multipart: 0.0.29+ fixes Arbitrary File Write (#20), DoS unbounded headers (#34), DoS preamble (#33)
+python-multipart==0.0.29
 
 # Auth
 # python-jose: 3.5.0+ fixes CVE algorithm confusion on OpenSSH ECDSA keys (Dependabot #4, Critical)
@@ -12,8 +12,8 @@ python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 # email-validator: pydantic EmailStr 의존 (verification_routes.py)
 email-validator==2.2.0
-# cryptography: 44.0.1+ fixes SECT curves subgroup attack (Dependabot #21, High)
-cryptography==44.0.1
+# cryptography: 48.0.0 — fixes SECT curves subgroup attack (#21, High) + later CVEs
+cryptography==48.0.0
 
 # MFA / TOTP
 pyotp==2.9.0
@@ -28,8 +28,9 @@ sqlalchemy[asyncio]==2.0.36
 
 # HTTP client
 httpx==0.27.2
-# aiohttp: 3.12.x fixes zip bomb auto_decompress + multiple multipart/header DoS (Dependabot #11/#27 et al., High)
-aiohttp==3.12.15
+# aiohttp: 3.13.5 — fixes zip bomb auto_decompress (#11, High) + ALL moderate/low aiohttp CVEs
+# (#15, #16, #17, #23, #25, #26, #27, #28, #29, #30, #31, #32 + others)
+aiohttp==3.13.5
 
 # AWS Bedrock / S3
 boto3==1.35.71
@@ -45,8 +46,8 @@ sentry-sdk[fastapi]==2.19.2
 geoip2==4.8.0
 
 # PDF report (WeasyPrint)
-# weasyprint: 65.x fixes SSRF Protection Bypass via HTTP Redirect (Dependabot #19, High)
-weasyprint==65.1
+# weasyprint: 68.1 — fixes SSRF Protection Bypass via HTTP Redirect (#19, High)
+weasyprint==68.1
 
 # Stripe billing
 stripe==11.1.1
@@ -65,14 +66,16 @@ sigma-cli==1.0.0; python_version>="3.9"
 slack-sdk==3.33.3
 
 # Util
-python-dotenv==1.0.1
-# orjson: 3.10.18 fixes deeply-nested JSON recursion limit (Dependabot #5, High)
-orjson==3.10.18
+# python-dotenv: 1.2.2 — fixes symlink-following set_key arbitrary file overwrite (#7, Moderate)
+python-dotenv==1.2.2
+# orjson: 3.11.9 — fixes deeply-nested JSON recursion DoS (#5, High)
+orjson==3.11.9
 
 # ──────────────────────────────────────────────
 # Test dependencies
 # ──────────────────────────────────────────────
-pytest==8.3.3
+# pytest: 8.4.2 — fixes tmpdir handling vuln (#6, Moderate); stays on 8.x major to avoid breakage
+pytest==8.4.2
 pytest-asyncio==0.24.0
 fakeredis==2.26.1
 ruff==0.8.3
