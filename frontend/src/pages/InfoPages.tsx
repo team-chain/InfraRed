@@ -30,9 +30,7 @@ export function InfoPage({ variant }: { variant: Variant }) {
     <div className="info-root">
       <header className="info-nav">
         <div className="info-container info-nav-inner">
-          <a href="/" className="info-brand">
-            <Logo height={26} />
-          </a>
+          <Logo height={26} className="info-brand" />
           <a href="/" className="info-back">
             <ArrowLeft size={14} /> 홈으로
           </a>
