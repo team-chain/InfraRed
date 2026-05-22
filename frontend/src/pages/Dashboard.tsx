@@ -11,6 +11,7 @@ import { SettingsPage } from "./SettingsPage";
 import { AssetsPage } from "./AssetsPage";
 import { AuditLogPage } from "./AuditLogPage";
 import { BillingPage } from "./BillingPage";
+import { OpsMetricsPage } from "./OpsMetricsPage";
 import { HealthDashboardPage } from "./HealthDashboardPage";
 import { RuleManagementPage } from "./RuleManagementPage";
 import { SuppressionPage } from "./SuppressionPage";
@@ -32,7 +33,7 @@ import {
 
 type Props = { user: AuthUser; onLogout: () => void; onOpenOnboarding: () => void };
 type Tab =
-  | "incidents" | "assets" | "rules" | "audit" | "settings" | "billing"
+  | "incidents" | "assets" | "rules" | "audit" | "settings" | "billing" | "ops"
   | "health" | "rule_mgmt" | "suppression" | "members" | "reports" | "search" | "campaigns"
   | "threat_hunting"
   | "sigma_marketplace";
@@ -235,6 +236,7 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
     { key: "reports",  icon: <FileText size={15}/>,    name: "보고서", desc: "주간·월간" },
     { key: "rules",    icon: <Shield size={15}/>,      name: "룰 목록", desc: "탐지 패턴" },
     { key: "audit",    icon: <ClipboardList size={15}/>, name: "감사 로그", desc: "활동 기록" },
+    { key: "ops",      icon: <Activity size={15}/>,    name: "운영 메트릭", desc: "이벤트·에이전트·Redis" },
     { key: "billing",  icon: <CreditCard size={15}/>,  name: "결제", desc: "플랜·사용량" },
     { key: "settings", icon: <Cog size={15}/>,         name: "설정", desc: "알림·정책" },
   ] as const;
@@ -850,6 +852,9 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
 
       {/* ══ AUDIT (owner) ══ — 필터 + actor + action prefix + since/until */}
       {tab === "audit" && <AuditLogPage user={user} />}
+
+      {/* ══ OPS (owner) ══ — 운영 메트릭 */}
+      {tab === "ops" && <OpsMetricsPage user={user} />}
 
       {/* ══ BILLING ══ — 플랜 / 사용량 / 인보이스 */}
       {tab === "billing" && <BillingPage user={user} />}

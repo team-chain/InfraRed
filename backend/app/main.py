@@ -88,6 +88,8 @@ from app.ingestion.forensic_routes import router as forensic_router
 # v7 GDPR 삭제 충돌 해결 라우터
 from app.ingestion.gdpr_routes import router as gdpr_router
 from app.ingestion.health_routes import router as health_router
+from app.ingestion.ops_metrics_routes import router as ops_metrics_router
+from app.ingestion.status_routes import router as status_router
 from app.ingestion.honey_key_routes import router as honey_key_router
 
 # Phase 1~5 고도화 라우터
@@ -220,7 +222,7 @@ REQUEST_COUNT = Counter(
     ["method", "path", "status"],
 )
 
-_DENYLIST_EXEMPT_PREFIXES = ("/healthz", "/metrics", "/auth/", "/sdk.js")
+_DENYLIST_EXEMPT_PREFIXES = ("/healthz", "/metrics", "/auth/", "/sdk.js", "/status/")
 
 
 @app.middleware("http")
@@ -272,6 +274,8 @@ app.include_router(sse_router)
 # Phase 1~5 고도화 라우터
 app.include_router(incident_workflow_router)
 app.include_router(health_router)
+app.include_router(status_router)
+app.include_router(ops_metrics_router)
 app.include_router(rule_mgmt_router)
 app.include_router(suppression_router)
 app.include_router(user_router)
