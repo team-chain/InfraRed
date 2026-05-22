@@ -1,11 +1,16 @@
 """테넌트 설정 CRUD API."""
 from __future__ import annotations
 
+from asyncio import to_thread
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.db.connection import get_session
+from app.dispatcher.discord import send_discord_ai_analysis
+from app.dispatcher.email import send_email_alert
+from app.dispatcher.slack import send_slack_ai_analysis
 from app.iam.security import require_permission
 from app.redis_kv import keys
 from app.redis_kv.client import get_redis
@@ -230,7 +235,6 @@ async def test_webhook(
         if not url:
             return {"ok": False, "error": "no_discord_webhook_configured"}
         try:
-            from app.dispatcher.discord import send_discord_ai_analysis
             ok = await send_discord_ai_analysis(
                 incident_id="TEST-WEBHOOK",
                 tenant_id=tenant_id,
@@ -249,7 +253,6 @@ async def test_webhook(
         if not url:
             return {"ok": False, "error": "no_slack_webhook_configured"}
         try:
-            from app.dispatcher.slack import send_slack_ai_analysis
             ok = await send_slack_ai_analysis(
                 incident_id="TEST-WEBHOOK",
                 tenant_id=tenant_id,
@@ -268,8 +271,6 @@ async def test_webhook(
         if not to:
             return {"ok": False, "error": "no_email_configured"}
         try:
-            from asyncio import to_thread
-            from app.dispatcher.email import send_email_alert
             ok = await to_thread(send_email_alert, test_subject, test_body, to_override=to)
             return {"ok": bool(ok), "channel": "email", "to": to}
         except Exception as exc:  # noqa: BLE001
