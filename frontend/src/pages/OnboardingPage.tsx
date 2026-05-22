@@ -8,16 +8,58 @@ import {
 
 type Step = "env" | "install" | "verify";
 type Env = "server" | "web" | "api";
+type OsTab = "auto" | "ubuntu" | "rhel" | "docker";
 
 const API_BASE = import.meta.env.DEV
   ? ""
   : (import.meta.env.VITE_API_BASE_URL ?? "");
+
+// 명령어 표시용 절대 URL — 빈 값일 때 사용자가 복사해 갈 수 있도록 https://api.infrared.kr 폴백
+function displayBase(apiBase: string): string {
+  return apiBase || "https://api.infrared.kr";
+}
+
+function installCommand(tab: OsTab, apiKey: string, tenantId: string, apiBase: string): string {
+  const base = displayBase(apiBase);
+  if (tab === "docker") {
+    return `docker run -d --name infrared-agent --restart=always \\
+  --network host \\
+  -e TENANT_ID=${tenantId} \\
+  -e AGENT_TOKEN=${apiKey} \\
+  -e BACKEND_URL=${base}/ingest \\
+  -e HEARTBEAT_URL=${base}/heartbeat \\
+  -e AGENT_ID=$(hostname)-agent \\
+  -e ASSET_ID=$(hostname) \\
+  -v /var/log:/host/var/log:ro \\
+  -v infrared-data:/var/lib/infrared \\
+  ghcr.io/infrared-kr/agent:latest`;
+  }
+  // auto / ubuntu / rhel — 동일 명령. install.sh가 OS 자동 감지.
+  return `curl -fsSL "${base}/install-agent.sh" | sudo bash -s -- \\
+  --token "${apiKey}" \\
+  --tenant "${tenantId}"`;
+}
+
+function osHint(tab: OsTab): string {
+  switch (tab) {
+    case "ubuntu":
+      return "Ubuntu 18.04+ / Debian 10+ 에서 검증. apt-get 자동 사용.";
+    case "rhel":
+      return "RHEL 8+ · CentOS 8+ · Amazon Linux 2/2023 · Rocky · AlmaLinux. yum 자동 사용.";
+    case "docker":
+      return "이미지 publish 준비 중 — 현재는 자동 감지 / Ubuntu·Debian / RHEL 탭을 사용해주세요.";
+    case "auto":
+    default:
+      return "OS를 자동 감지 후 백엔드에서 agent 코드를 내려받아 Python venv 모드로 설치.";
+  }
+}
 
 type Props = { tenantId: string; onDone: () => void };
 
 export function OnboardingPage({ tenantId, onDone }: Props) {
   const [step, setStep] = useState<Step>("env");
   const [env, setEnv] = useState<Env>("server");
+  const [osTab, setOsTab] = useState<OsTab>("auto");
   const [apiKey, setApiKey] = useState<string>("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -192,15 +234,117 @@ export function OnboardingPage({ tenantId, onDone }: Props) {
 
           {env === "server" && (
             <div>
-              <p style={{ fontSize: 13, marginBottom: 10 }}>서버 터미널에서 아래 명령어를 실행하세요.</p>
+              <p style={{ fontSize: 13, marginBottom: 10 }}>서버 환경을 선택하면 맞춤 명령을 보여드려요.</p>
+
+              {/* OS 탭 */}
+              <div style={{
+                display: "flex", gap: 2, marginBottom: 10,
+                borderBottom: "1px solid var(--color-border-tertiary)",
+                flexWrap: "wrap",
+              }}>
+                {([
+                  { value: "auto", label: "자동 감지" },
+                  { value: "ubuntu", label: "Ubuntu / Debian" },
+                  { value: "rhel", label: "RHEL · Amazon Linux" },
+                  { value: "docker", label: "Docker (Preview)" },
+                ] as { value: OsTab; label: string }[]).map(t => {
+                  const active = osTab === t.value;
+                  return (
+                    <button key={t.value} onClick={() => setOsTab(t.value)} style={{
+                      padding: "8px 12px", fontSize: 12, fontWeight: 500, cursor: "pointer",
+                      background: "transparent", border: "none",
+                      borderBottom: active ? "2px solid var(--color-text-primary)" : "2px solid transparent",
+                      color: active ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                      marginBottom: -1,
+                    }}>{t.label}</button>
+                  );
+                })}
+              </div>
+
+              {/* Docker 탭 경고 — 이미지 publish 전 */}
+              {osTab === "docker" && (
+                <div style={{
+                  background: "var(--color-background-warning)",
+                  color: "var(--color-text-warning)",
+                  padding: "10px 14px",
+                  borderRadius: "var(--border-radius-md)",
+                  fontSize: 12,
+                  marginBottom: 10,
+                  lineHeight: 1.5,
+                }}>
+                  ⚠️ Docker 이미지가 아직 public publish 전입니다. 아래 명령은 미리보기용이며,
+                  안정 사용을 원하시면 <strong>자동 감지</strong> 또는 <strong>Ubuntu</strong> · <strong>RHEL</strong> 탭을 사용해주세요.
+                </div>
+              )}
+
+              {/* 명령어 박스 */}
               <pre style={{
                 background: "var(--color-background-secondary)", padding: "14px 16px",
                 borderRadius: "var(--border-radius-md)", fontSize: 12,
-                overflowX: "auto", lineHeight: 1.6,
-              }}>{`curl -sSL ${API_BASE}/install-agent.sh | \\
-  bash -s -- \\
-  --token=${apiKey} \\
-  --tenant=${tenantId}`}</pre>
+                overflowX: "auto", lineHeight: 1.6, margin: 0,
+              }}>{installCommand(osTab, apiKey, tenantId, API_BASE)}</pre>
+
+              {/* OS별 짧은 힌트 */}
+              <p style={{
+                fontSize: 11, color: "var(--color-text-tertiary)",
+                marginTop: 6, marginBottom: 0,
+              }}>
+                {osHint(osTab)}
+              </p>
+
+              {/* 펼침: 이 명령이 무엇을 하나요 */}
+              <details style={{ marginTop: 12, fontSize: 12 }}>
+                <summary style={{
+                  cursor: "pointer", color: "var(--color-text-secondary)",
+                  padding: "6px 0", userSelect: "none",
+                }}>
+                  이 명령이 무엇을 하나요?
+                </summary>
+                <ol style={{
+                  paddingLeft: 20, marginTop: 6,
+                  color: "var(--color-text-secondary)", lineHeight: 1.7,
+                }}>
+                  <li><strong>설치 스크립트 다운로드</strong> — InfraRed 서버에서 <code>install-agent.sh</code> 를 가져옵니다.</li>
+                  <li><strong>실행 환경 결정</strong> — Docker가 이미 깔려 있으면 컨테이너 모드, 아니면 Python venv 모드로 자동 선택.</li>
+                  <li><strong>의존성 설치</strong> — 패키지 매니저(apt / yum)로 필요한 도구를 자동 설치.</li>
+                  <li><strong>환경 파일 작성</strong> — <code>/opt/infrared-agent/.env</code> 에 토큰·테넌트·서버 주소 저장 (권한 600).</li>
+                  <li><strong>systemd 서비스 등록</strong> — <code>infrared-agent</code> 가 자동 시작·재시작되도록 설정.</li>
+                  <li><strong>첫 heartbeat 전송</strong> — 보통 30초 안에 이 화면이 자동으로 "✅ 연결 완료" 로 바뀝니다.</li>
+                </ol>
+              </details>
+
+              {/* 펼침: 트러블슈팅 */}
+              <details style={{ marginTop: 4, fontSize: 12 }}>
+                <summary style={{
+                  cursor: "pointer", color: "var(--color-text-secondary)",
+                  padding: "6px 0", userSelect: "none",
+                }}>
+                  설치가 안 되거나 5분 넘게 연결이 안 될 때
+                </summary>
+                <div style={{
+                  paddingLeft: 8, marginTop: 6,
+                  color: "var(--color-text-secondary)", lineHeight: 1.7,
+                }}>
+                  <p style={{ margin: "4px 0" }}>1. 에이전트 로그 확인:</p>
+                  <pre style={{
+                    background: "var(--color-background-secondary)", padding: "8px 12px",
+                    borderRadius: "var(--border-radius-md)", fontSize: 11, margin: "4px 0",
+                  }}>sudo journalctl -u infrared-agent -n 80 --no-pager</pre>
+                  <p style={{ margin: "4px 0" }}>2. 서비스 상태:</p>
+                  <pre style={{
+                    background: "var(--color-background-secondary)", padding: "8px 12px",
+                    borderRadius: "var(--border-radius-md)", fontSize: 11, margin: "4px 0",
+                  }}>sudo systemctl status infrared-agent</pre>
+                  <p style={{ margin: "4px 0" }}>3. 백엔드 도달 가능 여부:</p>
+                  <pre style={{
+                    background: "var(--color-background-secondary)", padding: "8px 12px",
+                    borderRadius: "var(--border-radius-md)", fontSize: 11, margin: "4px 0",
+                  }}>{`curl -I ${displayBase(API_BASE)}/heartbeat`}</pre>
+                  <p style={{ margin: "8px 0 0 0", fontSize: 11 }}>
+                    그래도 막히면 위 로그를 첨부해서 알려주세요.
+                  </p>
+                </div>
+              </details>
             </div>
           )}
 
@@ -286,6 +430,7 @@ X-Tenant-Token: ${apiKey}
                 marginBottom: "1rem",
               }}>
                 <CheckCircle2 size={36} strokeWidth={2} />
+
               </div>
               <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Agent 연결 완료</h2>
               <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: "2rem" }}>

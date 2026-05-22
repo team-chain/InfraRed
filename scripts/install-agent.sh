@@ -2,19 +2,21 @@
 # InfraRed Agent 설치 스크립트 (one-liner installer)
 #
 # 사용법:
-#   curl -fsSL https://infrared.kr/install.sh | sudo bash -s -- \
+#   curl -fsSL https://api.infrared.kr/install-agent.sh | sudo bash -s -- \
 #     --token "<AGENT_TOKEN>" \
 #     --tenant "<TENANT_ID>" \
 #     --server "https://api.infrared.kr"
 #
 # 환경변수로 동일 인자 전달 가능:
 #   INFRARED_TOKEN, INFRARED_TENANT_ID, INFRARED_SERVER_URL,
-#   INFRARED_AGENT_IMAGE, INFRARED_INSTALL_MODE (auto|docker|native),
-#   INFRARED_AGENT_REPO (native 모드용 git URL)
+#   INFRARED_AGENT_IMAGE, INFRARED_INSTALL_MODE (auto|docker|native)
 #
 # 두 가지 설치 모드:
-#   docker  → 컨테이너로 실행 (권장, 기본)
-#   native  → git clone + venv (Docker 없을 때 폴백)
+#   docker  → 컨테이너로 실행 (이미지 publish 후 활성화 예정)
+#   native  → 백엔드에서 agent tarball 다운로드 + Python venv 실행
+#
+# Agent 소스: ${SERVER_URL}/agent-source.tar.gz 에서 다운로드.
+# GitHub 의존성 없음 — 우리 백엔드 도메인 하나만 접근 가능하면 됨.
 #
 # 멱등(idempotent): 재실행 시 환경/서비스가 안전하게 업데이트됨.
 set -euo pipefail
@@ -26,8 +28,10 @@ AGENT_TOKEN="${INFRARED_TOKEN:-}"
 TENANT_ID="${INFRARED_TENANT_ID:-}"
 SERVER_URL="${INFRARED_SERVER_URL:-https://api.infrared.kr}"
 AGENT_IMAGE="${INFRARED_AGENT_IMAGE:-ghcr.io/infrared-kr/agent:latest}"
-INSTALL_MODE="${INFRARED_INSTALL_MODE:-auto}"
-AGENT_REPO="${INFRARED_AGENT_REPO:-https://github.com/infrared-kr/infrared.git}"
+# Docker image가 아직 public publish 전 — auto 모드는 우선 native로 폴백.
+INSTALL_MODE="${INFRARED_INSTALL_MODE:-native}"
+# Agent 소스 tarball URL (백엔드가 직접 서빙). 환경 변수로 override 가능 — 폐쇄망 미러 등.
+AGENT_TARBALL_URL="${INFRARED_AGENT_TARBALL_URL:-${SERVER_URL}/agent-source.tar.gz}"
 
 INSTALL_DIR="/opt/infrared-agent"
 SERVICE_NAME="infrared-agent"
@@ -48,10 +52,13 @@ while [[ $# -gt 0 ]]; do
     --image=*)         AGENT_IMAGE="${1#*=}"; shift ;;
     --mode)            INSTALL_MODE="$2"; shift 2 ;;
     --mode=*)          INSTALL_MODE="${1#*=}"; shift ;;
-    --repo)            AGENT_REPO="$2";   shift 2 ;;
-    --repo=*)          AGENT_REPO="${1#*=}";  shift ;;
+    --tarball)         AGENT_TARBALL_URL="$2"; shift 2 ;;
+    --tarball=*)       AGENT_TARBALL_URL="${1#*=}"; shift ;;
+    --repo|--repo=*)
+      # 구버전 호환 — git 모드는 더 이상 지원하지 않음 (silent ignore)
+      [[ "$1" == --repo ]] && shift 2 || shift ;;
     -h|--help)
-      sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -116,7 +123,8 @@ pkg_install() {
 have_docker() { command -v docker >/dev/null 2>&1; }
 
 if [[ "$INSTALL_MODE" == "auto" ]]; then
-  if have_docker; then
+  # Docker 이미지가 public publish 되면 docker 우선 — 현재는 native로 폴백.
+  if [[ "${INFRARED_ALLOW_DOCKER_AUTO:-0}" == "1" ]] && have_docker; then
     INSTALL_MODE="docker"
   else
     INSTALL_MODE="native"
@@ -190,24 +198,38 @@ EOF
 # Native 모드 (Python venv + git clone)
 # ────────────────────────────────────────────────────────────────────────────
 install_native_mode() {
-  echo "[InfraRed] 의존성 설치 (python3, pip, git, curl)..."
-  pkg_install python3 python3-pip python3-venv git curl iptables
+  echo "[InfraRed] 의존성 설치 (python3, pip, curl, tar)..."
+  pkg_install python3 python3-pip python3-venv curl tar iptables
 
-  if [[ ! -d "$INSTALL_DIR/src/.git" ]]; then
-    echo "[InfraRed] Agent 소스 clone..."
-    rm -rf "$INSTALL_DIR/src"
-    git clone --depth 1 "$AGENT_REPO" "$INSTALL_DIR/src"
-  else
-    echo "[InfraRed] Agent 소스 업데이트 (git pull)..."
-    git -C "$INSTALL_DIR/src" pull --ff-only || true
+  echo "[InfraRed] Agent 소스 다운로드: $AGENT_TARBALL_URL"
+  rm -rf "$INSTALL_DIR/src"
+  mkdir -p "$INSTALL_DIR/src"
+
+  # 스트리밍 다운로드 + 압축 해제. tarball 안에 agent/ 디렉토리가 있다고 가정.
+  if ! curl -fsSL "$AGENT_TARBALL_URL" | tar -xz -C "$INSTALL_DIR/src"; then
+    echo "[InfraRed] 오류: agent tarball 다운로드/해제 실패" >&2
+    echo "         URL: $AGENT_TARBALL_URL" >&2
+    echo "         백엔드가 도달 가능한지 확인:  curl -I $AGENT_TARBALL_URL" >&2
+    exit 7
+  fi
+
+  if [[ ! -d "$INSTALL_DIR/src/agent" ]]; then
+    echo "[InfraRed] 오류: tarball에 agent/ 디렉토리가 없습니다." >&2
+    exit 8
   fi
 
   if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
     python3 -m venv "$INSTALL_DIR/venv"
   fi
   "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
-  "$INSTALL_DIR/venv/bin/pip" install --quiet \
-    httpx pydantic pydantic-settings aiosqlite asyncio-throttle PyJWT
+
+  # requirements.txt가 있으면 우선 사용, 없으면 최소 의존성만 설치.
+  if [[ -f "$INSTALL_DIR/src/agent/requirements.txt" ]]; then
+    "$INSTALL_DIR/venv/bin/pip" install --quiet -r "$INSTALL_DIR/src/agent/requirements.txt"
+  else
+    "$INSTALL_DIR/venv/bin/pip" install --quiet \
+      httpx pydantic pydantic-settings aiosqlite asyncio-throttle PyJWT
+  fi
 
   cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
 [Unit]
@@ -234,40 +256,4 @@ EOF
   sed -i 's|^AGENT_AUTH_LOG_PATH=.*|AGENT_AUTH_LOG_PATH=/var/log/auth.log|' "$ENV_FILE"
 }
 
-case "$INSTALL_MODE" in
-  docker) install_docker_mode ;;
-  native) install_native_mode ;;
-  *)
-    echo "[InfraRed] 오류: 알 수 없는 INSTALL_MODE: $INSTALL_MODE" >&2
-    exit 5
-    ;;
-esac
-
-# ────────────────────────────────────────────────────────────────────────────
-# 서비스 등록 + 시작
-# ────────────────────────────────────────────────────────────────────────────
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-systemctl restart "$SERVICE_NAME"
-
-sleep 4
-if systemctl is-active --quiet "$SERVICE_NAME"; then
-  cat <<EOF
-
-✅ InfraRed Agent 설치 완료
-   모드      : $INSTALL_MODE
-   테넌트    : $TENANT_ID
-   서버      : $HOSTNAME_VAL
-   백엔드    : $SERVER_URL
-   상태      : 실행 중
-
-대시보드에서 이 호스트가 '온라인'으로 표시될 때까지 약 30초 기다려 주세요.
-로그 확인:  journalctl -u $SERVICE_NAME -f
-EOF
-else
-  cat >&2 <<EOF
-❌ Agent 시작 실패
-   로그 확인:  journalctl -u $SERVICE_NAME -n 80 --no-pager
-EOF
-  exit 6
-fi
+c

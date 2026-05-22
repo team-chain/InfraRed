@@ -85,9 +85,29 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ── Backend bundle prep ────────────────────────────────
+      # install-agent.sh + agent/ tarball을 backend 컨테이너에 동봉.
+      # 사용자가 `curl api.infrared.kr/install-agent.sh | bash` 실행할 때
+      # 백엔드가 직접 두 파일을 서빙 → GitHub 의존성 제거.
+      # agent/ 변경만 일어나도 backend 이미지를 다시 굽는 이유 = tarball 갱신 필요.
+      - name: Prepare backend bundle (install.sh + agent tarball)
+        if: steps.changed.outputs.backend == 'true' || steps.changed.outputs.agent == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p backend/_static
+          # CRLF가 섞여 있어도 Linux에서 깨지지 않도록 안전망 — bash가 \r 해석 못함
+          tr -d '\r' < scripts/install-agent.sh > backend/_static/install-agent.sh
+          chmod +x backend/_static/install-agent.sh
+          # tarball에 agent/ 디렉토리가 그대로 들어가도록 루트에서 패키징
+          tar --exclude='__pycache__' --exclude='*.pyc' \
+              -czf backend/_static/agent-source.tar.gz agent/
+          ls -lh backend/_static/
+          # syntax sanity check — install.sh가 깨졌으면 빌드 실패시킴
+          bash -n backend/_static/install-agent.sh
+
       # ── Backend ────────────────────────────────────────────
       - name: Build & push backend
-        if: steps.changed.outputs.backend == 'true'
+        if: steps.changed.outputs.backend == 'true' || steps.changed.outputs.agent == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./backend

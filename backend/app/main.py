@@ -88,6 +88,7 @@ from app.ingestion.forensic_routes import router as forensic_router
 # v7 GDPR 삭제 충돌 해결 라우터
 from app.ingestion.gdpr_routes import router as gdpr_router
 from app.ingestion.health_routes import router as health_router
+from app.ingestion.install_routes import router as install_router
 from app.ingestion.ops_metrics_routes import router as ops_metrics_router
 from app.ingestion.status_routes import router as status_router
 from app.ingestion.honey_key_routes import router as honey_key_router
@@ -274,6 +275,7 @@ app.include_router(sse_router)
 # Phase 1~5 고도화 라우터
 app.include_router(incident_workflow_router)
 app.include_router(health_router)
+app.include_router(install_router)  # 인증 없는 public — install-agent.sh + agent-source.tar.gz
 app.include_router(status_router)
 app.include_router(ops_metrics_router)
 app.include_router(rule_mgmt_router)
