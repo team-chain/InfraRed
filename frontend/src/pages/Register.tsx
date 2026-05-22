@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { UserPlus, MailCheck } from "lucide-react";
+import { AuthSidePanel } from "../components/AuthSidePanel";
 import { Logo } from "../components/Logo";
 import { register, type AuthUser } from "../lib/api";
 
@@ -19,7 +20,6 @@ type Props = {
  */
 function parseInviteFromUrl() {
   const search = new URLSearchParams(window.location.search);
-  // hash에 ?가 있을 수도 있음 (#/register?invite_email=...)
   const hashIdx = window.location.hash.indexOf("?");
   const hashSearch = hashIdx >= 0
     ? new URLSearchParams(window.location.hash.slice(hashIdx + 1))
@@ -38,23 +38,18 @@ export function RegisterPage({ onRegister, onGoToLogin }: Props) {
   const invite = useMemo(parseInviteFromUrl, []);
   const isInvited = Boolean(invite.inviteEmail);
 
-  const [tenantId, setTenantId] = useState(invite.inviteTenantId || "company-a");
+  const [tenantId, setTenantId] = useState(invite.inviteTenantId || "");
   const [email, setEmail] = useState(invite.inviteEmail || "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  // 초대된 사용자는 invited role을 표시만 함 (서버에서 pending_invitations로 적용).
-  // self-register는 기본 analyst.
   const [role, setRole] = useState(invite.inviteRole || "analyst");
   const [error, setError] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
 
-  // 초대 모드면 이메일/테넌트는 read-only로 잠금
   const lockEmail = isInvited;
   const lockTenant = isInvited && Boolean(invite.inviteTenantId);
 
   useEffect(() => {
-    // 보안: 초대받지 않은 사용자가 임의로 admin/owner로 스스로 가입 못하도록
-    // RegisterRequest pydantic에서 analyst|viewer만 허용하므로 frontend도 동일하게 제한
     if (!isInvited && !["analyst", "viewer"].includes(role)) {
       setRole("analyst");
     }
@@ -73,117 +68,143 @@ export function RegisterPage({ onRegister, onGoToLogin }: Props) {
     setLoading(true);
     setError(undefined);
     try {
-      // 초대 모드여도 self-register에서는 role은 analyst/viewer만 허용 (백엔드 검증).
-      // 초대된 owner/security_manager 역할은 pending_invitations로 자동 부여됨.
       const safeRole = ["analyst", "viewer"].includes(role) ? role : "analyst";
       const result = await register(tenantId, email, password, safeRole);
       onRegister(result.user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(err instanceof Error ? err.message : "회원가입에 실패했습니다.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="login-shell">
-      <form className="login-panel" onSubmit={submit}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-          <Logo height={48} />
-        </div>
-        <h1 style={{ textAlign: "center" }}>계정 만들기</h1>
+    <main className="auth-split">
+      <AuthSidePanel variant="register" />
 
-        {isInvited && (
-          <div
-            className="notice"
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "flex-start",
-              padding: "10px 12px",
-              marginBottom: 10,
-              borderRadius: 8,
-              background: "var(--c-blue-50, #eff6ff)",
-              border: "1px solid var(--c-blue-200, #bfdbfe)",
-              fontSize: 13,
-            }}
-          >
-            <MailCheck size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                {invite.inviteTenantId ? `${invite.inviteTenantId} 테넌트` : "InfraRed"}에 초대받으셨습니다
-              </div>
-              <div style={{ color: "var(--text-3)", fontSize: 12 }}>
-                가입을 완료하면 자동으로 합류됩니다
-                {invite.inviteRole ? ` · 역할: ${invite.inviteRole}` : ""}.
+      <section className="auth-form-side">
+        <form className="auth-form-panel" onSubmit={submit}>
+          <div style={{ marginBottom: 12 }}>
+            <Logo height={36} />
+          </div>
+          <div>
+            <h1>계정 만들기</h1>
+            <p className="auth-form-panel-sub">
+              {isInvited
+                ? "초대받은 조직에 합류하세요."
+                : "조직 ID와 이메일만 있으면 1분 만에 시작할 수 있습니다."}
+            </p>
+          </div>
+
+          {isInvited && (
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                padding: "12px 14px",
+                borderRadius: "var(--r-md)",
+                background: "var(--c-blue-50)",
+                border: "1px solid var(--c-blue-200)",
+                fontSize: 13,
+              }}
+            >
+              <MailCheck size={16} style={{ flexShrink: 0, marginTop: 2, color: "var(--c-blue-600)" }} />
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                  {invite.inviteTenantId ? `${invite.inviteTenantId} 조직` : "InfraRed"}에 초대받으셨습니다
+                </div>
+                <div style={{ color: "var(--text-2)", fontSize: 12 }}>
+                  가입을 완료하면 자동으로 합류됩니다
+                  {invite.inviteRole ? ` · 역할: ${invite.inviteRole}` : ""}.
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {error && <div className="alert">{error}</div>}
+          {error && <div className="auth-form-error">{error}</div>}
 
-        <label>
-          Tenant
-          <input
-            value={tenantId}
-            onChange={(e) => setTenantId(e.target.value)}
-            readOnly={lockTenant}
-            style={lockTenant ? { background: "var(--surface-2)", cursor: "not-allowed" } : undefined}
-            required
-          />
-        </label>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            readOnly={lockEmail}
-            style={lockEmail ? { background: "var(--surface-2)", cursor: "not-allowed" } : undefined}
-            required
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="8자 이상"
-            required
-          />
-        </label>
-        <label>
-          Password 확인
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
-        </label>
-        {!isInvited && (
           <label>
-            Role
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="analyst">Analyst</option>
-              <option value="viewer">Viewer</option>
-            </select>
+            조직 ID
+            <input
+              value={tenantId}
+              onChange={(e) => setTenantId(e.target.value)}
+              readOnly={lockTenant}
+              placeholder="my-company"
+              style={lockTenant ? { background: "var(--c-gray-50)", cursor: "not-allowed" } : undefined}
+              required
+            />
           </label>
-        )}
-        <button className="primary-button" disabled={loading} type="submit">
-          <UserPlus size={18} />
-          {loading ? "Creating account..." : "계정 만들기"}
-        </button>
-        <p style={{ textAlign: "center", marginTop: "0.75rem", fontSize: "0.875rem" }}>
-          이미 계정이 있으신가요?{" "}
-          <button type="button" onClick={onGoToLogin}
-            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontWeight: 600 }}>
-            로그인
+          <label>
+            이메일
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              readOnly={lockEmail}
+              placeholder="you@company.com"
+              style={lockEmail ? { background: "var(--c-gray-50)", cursor: "not-allowed" } : undefined}
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label>
+            비밀번호
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="8자 이상"
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          <label>
+            비밀번호 확인
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="다시 입력"
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          {!isInvited && (
+            <label>
+              역할
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                style={{
+                  padding: "11px 14px",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--r-md)",
+                  background: "var(--surface)",
+                  fontSize: 14,
+                  color: "var(--text)",
+                }}
+              >
+                <option value="analyst">Analyst — 인시던트 조사·대응</option>
+                <option value="viewer">Viewer — 읽기 전용</option>
+              </select>
+            </label>
+          )}
+
+          <button className="auth-form-btn" disabled={loading} type="submit">
+            <UserPlus size={16} />
+            {loading ? "계정 생성 중..." : "계정 만들기"}
           </button>
-        </p>
-      </form>
+
+          <div className="auth-form-divider" />
+          <p className="auth-form-muted">
+            이미 계정이 있으신가요?{" "}
+            <button type="button" onClick={onGoToLogin} className="auth-form-link">
+              로그인
+            </button>
+          </p>
+        </form>
+      </section>
     </main>
   );
 }

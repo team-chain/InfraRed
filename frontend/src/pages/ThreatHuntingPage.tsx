@@ -5,7 +5,7 @@
  * - 이벤트 재생: BAS 시나리오 수동 주입 (dev/staging 전용)
  */
 import { useState } from "react";
-import { Search, Shield, Play, RefreshCw, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { Search, Shield, Play, RefreshCw, AlertTriangle, CheckCircle, Info, Database, Wifi, AlertOctagon, ShieldCheck } from "lucide-react";
 
 /* ─── API 호출 헬퍼 ───────────────────────────────────────────────────── */
 
@@ -233,8 +233,8 @@ function SignalExplorer() {
                   </td>
                   <td style={{ textAlign: "center" }}>
                     {s.cti_result?.abuse_score
-                      ? <span style={{ fontSize: 12, fontWeight: 600, color: "var(--c-red-500)" }}>
-                          🔴 {s.cti_result.abuse_score}
+                      ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: "var(--c-red-500)" }}>
+                          <AlertOctagon size={12} /> {s.cti_result.abuse_score}
                         </span>
                       : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                   </td>
@@ -322,8 +322,8 @@ function CtiLookup() {
               )}
               <div>
                 <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: 16 }}>{result.ip}</div>
-                <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
-                  {result.cache_hit ? "📦 캐시에서 반환됨" : "🔍 OTX 실시간 조회"}
+                <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  {result.cache_hit ? <><Database size={11} /> 캐시에서 반환됨</> : <><Search size={11} /> OTX 실시간 조회</>}
                 </div>
               </div>
             </div>
@@ -344,18 +344,22 @@ function CtiLookup() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {[
-              { label: "위협 여부",  value: result.is_known_malicious ? "🔴 알려진 악성 IP" : "🟢 위협 미탐지",
-                color: result.is_known_malicious ? "var(--c-red-500)" : "var(--c-green-500)" },
+              { label: "위협 여부",  value: result.is_known_malicious ? "알려진 악성 IP" : "위협 미탐지",
+                color: result.is_known_malicious ? "var(--c-red-500)" : "var(--c-green-500)",
+                icon: result.is_known_malicious ? <AlertOctagon size={13} /> : <ShieldCheck size={13} /> },
               { label: "남용 점수", value: `${result.abuse_score} / 100` },
               { label: "OTX Pulse", value: `${result.pulse_count}개` },
               { label: "국가",      value: result.country ?? "—" },
-              { label: "Tor 출구",  value: result.is_tor_exit_node ? "⚠️ Tor Exit Node" : "아니오" },
+              { label: "Tor 출구",  value: result.is_tor_exit_node ? "Tor Exit Node" : "아니오",
+                icon: result.is_tor_exit_node ? <Wifi size={13} /> : undefined },
               { label: "태그",      value: result.tags.length > 0 ? result.tags.join(", ") : "—" },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{ background: "var(--c-gray-50)", borderRadius: 8,
+            ].map((it: { label: string; value: string; color?: string; icon?: React.ReactNode }) => (
+              <div key={it.label} style={{ background: "var(--c-gray-50)", borderRadius: 8,
                                         border: "1px solid var(--border)", padding: "10px 14px" }}>
-                <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: color ?? "var(--text-1)" }}>{value}</div>
+                <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 4 }}>{it.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: it.color ?? "var(--text-1)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  {it.icon}{it.value}
+                </div>
               </div>
             ))}
           </div>

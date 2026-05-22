@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Server, Globe, Code2, CheckCircle2 } from "lucide-react";
 import {
   createApiKey,
   completeOnboardingStep,
@@ -131,23 +132,36 @@ export function OnboardingPage({ tenantId, onDone }: Props) {
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[
-              { value: "server", icon: "🖥", label: "Linux 서버", desc: "Auth.log, Nginx 로그 수집" },
-              { value: "web", icon: "🌐", label: "웹사이트", desc: "방문자 보안 감지 (JS SDK)" },
-              { value: "api", icon: "⚙️", label: "앱 / 백엔드 API", desc: "직접 이벤트 전송" },
-            ].map(opt => (
-              <button key={opt.value} onClick={() => setEnv(opt.value as Env)} style={{
-                display: "flex", alignItems: "center", gap: 14,
-                padding: "14px 16px", cursor: "pointer", textAlign: "left",
-                border: env === opt.value ? "1.5px solid var(--color-border-primary)" : "0.5px solid var(--color-border-tertiary)",
-                borderRadius: "var(--border-radius-lg)", background: "var(--color-background-primary)",
-              }}>
-                <span style={{ fontSize: 24 }}>{opt.icon}</span>
-                <div>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>{opt.label}</div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>{opt.desc}</div>
-                </div>
-              </button>
-            ))}
+              { value: "server" as Env, Icon: Server, label: "Linux 서버", desc: "Auth.log, Nginx 로그 수집" },
+              { value: "web" as Env, Icon: Globe, label: "웹사이트", desc: "방문자 보안 감지 (JS SDK)" },
+              { value: "api" as Env, Icon: Code2, label: "앱 / 백엔드 API", desc: "직접 이벤트 전송" },
+            ].map(opt => {
+              const Icon = opt.Icon;
+              const active = env === opt.value;
+              return (
+                <button key={opt.value} onClick={() => setEnv(opt.value)} style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "14px 16px", cursor: "pointer", textAlign: "left",
+                  border: active ? "1.5px solid var(--brand-primary)" : "1px solid var(--border)",
+                  borderRadius: "var(--r-lg)", background: "var(--surface)",
+                  transition: "border-color .15s, background .15s",
+                }}>
+                  <span style={{
+                    width: 40, height: 40, borderRadius: "var(--r-md)",
+                    background: active ? "var(--c-orange-50)" : "var(--c-gray-50)",
+                    color: active ? "var(--brand-primary-dark)" : "var(--text-2)",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <Icon size={20} strokeWidth={1.75} />
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{opt.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>{opt.desc}</div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
           <button onClick={generateKey} disabled={generating} style={{
             marginTop: "1.5rem", width: "100%", padding: "12px",
@@ -265,7 +279,14 @@ X-Tenant-Token: ${apiKey}
             </>
           ) : (
             <>
-              <div style={{ fontSize: 48, marginBottom: "1rem" }}>✅</div>
+              <div style={{
+                width: 64, height: 64, borderRadius: "50%",
+                background: "var(--c-green-50)", color: "var(--c-green-600)",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                marginBottom: "1rem",
+              }}>
+                <CheckCircle2 size={36} strokeWidth={2} />
+              </div>
               <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Agent 연결 완료</h2>
               <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: "2rem" }}>
                 첫 heartbeat 수신됨. 이제부터 이벤트가 자동으로 수집되고 분석됩니다.

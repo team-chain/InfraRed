@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Bot, Bell, BellOff, CheckCircle, Cpu, SlidersHorizontal, ShieldCheck, Key,
   Copy, Check, Trash2, Plus, Link2, Send, CreditCard, ShieldAlert, QrCode,
+  XCircle,
 } from "lucide-react";
 import {
   fetchSettings, updateSettings, fetchApiKeys, createApiKey, revokeApiKey,
@@ -728,9 +729,9 @@ function NotifyField({
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      setTestResult(data.ok ? "✓ 전송 성공 — 채널 확인" : `✗ 실패: ${data.error ?? "unknown"}`);
+      setTestResult(data.ok ? "OK: 전송 성공 — 채널 확인" : `ERR: 실패: ${data.error ?? "unknown"}`);
     } catch (e) {
-      setTestResult(`✗ 네트워크 오류: ${e instanceof Error ? e.message : String(e)}`);
+      setTestResult(`ERR: 네트워크 오류: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setTesting(false);
     }
@@ -772,9 +773,13 @@ function NotifyField({
       {testResult && (
         <div style={{
           fontSize: 12,
-          color: testResult.startsWith("✓") ? "var(--c-green-600, #16a34a)" : "var(--c-red-600, #dc2626)",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          color: testResult.startsWith("OK") ? "var(--c-green-600, #16a34a)" : "var(--c-red-600, #dc2626)",
         }}>
-          {testResult}
+          {testResult.startsWith("OK") ? <CheckCircle size={13} /> : <XCircle size={13} />}
+          {testResult.replace(/^(OK|ERR): /, "")}
         </div>
       )}
     </div>
@@ -892,8 +897,8 @@ function IntegrationCard({
           >
             <Send size={13} />
             {testStatus === "testing" ? "전송 중…"
-              : testStatus === "ok" ? "✅ 성공"
-              : testStatus === "fail" ? "❌ 실패"
+              : testStatus === "ok" ? <><CheckCircle size={13} /> 성공</>
+              : testStatus === "fail" ? <><XCircle size={13} /> 실패</>
               : "테스트 전송"}
           </button>
         )}
@@ -1222,8 +1227,8 @@ function MfaSsoSection() {
               <button className="btn btn-primary" onClick={verifyMfa} disabled={verifyToken.length < 6} style={{ flexShrink: 0 }}>
                 검증
               </button>
-              {verifyStatus === "ok" && <span style={{ color: "var(--c-green-600)", fontSize: 13 }}>✅ 성공</span>}
-              {verifyStatus === "fail" && <span style={{ color: "var(--c-red-600)", fontSize: 13 }}>❌ 실패</span>}
+              {verifyStatus === "ok" && <span style={{ color: "var(--c-green-600)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }}><CheckCircle size={13} /> 성공</span>}
+              {verifyStatus === "fail" && <span style={{ color: "var(--c-red-600)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }}><XCircle size={13} /> 실패</span>}
             </div>
           </div>
         )}
@@ -1449,7 +1454,7 @@ function BillingSection() {
                       {new Date(u.reported_at).toLocaleDateString("ko-KR")}
                     </td>
                     <td><strong>{u.agent_count}</strong></td>
-                    <td>{u.stripe_reported ? "✅" : "—"}</td>
+                    <td>{u.stripe_reported ? <Check size={14} color="var(--c-green-600)" /> : "—"}</td>
                   </tr>
                 ))}
               </tbody>

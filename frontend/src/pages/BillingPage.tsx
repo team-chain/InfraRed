@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CreditCard, CheckCircle2, AlertTriangle, RefreshCw, TrendingUp } from "lucide-react";
+import { CreditCard, CheckCircle2, AlertTriangle, RefreshCw, TrendingUp, Check } from "lucide-react";
 import type { AuthUser } from "../lib/api";
 
 type Props = { user: AuthUser };
@@ -285,7 +285,7 @@ export function BillingPage({ user }: Props) {
                 <tr key={i}>
                   <td style={{ fontSize: 12 }}>{new Date(row.reported_at).toLocaleDateString("ko-KR")}</td>
                   <td><strong>{row.agent_count}</strong></td>
-                  <td>{row.stripe_reported ? "✓" : "—"}</td>
+                  <td>{row.stripe_reported ? <Check size={14} color="var(--c-green-600)" /> : "—"}</td>
                 </tr>
               ))}
             </tbody>

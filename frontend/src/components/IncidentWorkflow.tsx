@@ -7,6 +7,7 @@
  * - 상태 이력
  */
 import { useState, useEffect } from "react";
+import { MessageSquare, History } from "lucide-react";
 import {
   transitionIncidentStatus,
   fetchComments,
@@ -344,7 +345,7 @@ export function IncidentWorkflow({ incidentId, currentStatus, userRole, onStatus
                 marginBottom: -2,
               }}
             >
-              {tab === "comments" ? `💬 코멘트 (${comments.length})` : `📋 상태 이력 (${history.length})`}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{tab === "comments" ? <MessageSquare size={14} /> : <History size={14} />}{tab === "comments" ? `코멘트 (${comments.length})` : `상태 이력 (${history.length})`}</span>
             </button>
           ))}
         </div>
