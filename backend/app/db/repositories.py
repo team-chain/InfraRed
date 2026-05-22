@@ -578,12 +578,22 @@ async def register_user(
     자동으로 tenant_memberships에 적용. 적용된 pending은 삭제.
     """
     async with get_session() as session:
-        tenant_result = await session.execute(
-            text("SELECT 1 FROM tenants WHERE tenant_id = :tenant_id"),
+        # Self-serve 가입 — tenant가 없으면 자동 생성 (첫 사용자가 곧 그 조직 owner).
+        # 기존 tenant에 두 번째 사용자가 합류하는 경우엔 ON CONFLICT로 no-op.
+        # 신규 tenant 생성 시에만 role을 "owner"로 강제 (페이로드의 role 무시).
+        is_new_tenant_result = await session.execute(
+            text(
+                """
+                INSERT INTO tenants (tenant_id, name, plan)
+                VALUES (:tenant_id, :tenant_id, 'mvp')
+                ON CONFLICT (tenant_id) DO NOTHING
+                RETURNING tenant_id
+                """
+            ),
             {"tenant_id": tenant_id},
         )
-        if tenant_result.first() is None:
-            return None
+        is_new_tenant = is_new_tenant_result.first() is not None
+        effective_role = "owner" if is_new_tenant else role
 
         result = await session.execute(
             text(
@@ -598,11 +608,12 @@ async def register_user(
                 "tenant_id": tenant_id,
                 "email": email,
                 "password": password,
-                "role": role,
+                "role": effective_role,
             },
         )
         row = result.mappings().first()
         if not row:
+            # tenant는 있지만 동일 (tenant_id, email)이 이미 존재.
             return None
 
         user_id = row["user_id"]
@@ -616,7 +627,7 @@ async def register_user(
                 ON CONFLICT (tenant_id, user_id) DO NOTHING
                 """
             ),
-            {"tenant_id": tenant_id, "user_id": user_id, "role": role},
+            {"tenant_id": tenant_id, "user_id": user_id, "role": effective_role},
         )
 
         # pending_invitations 적용 (만료되지 않은 모든 테넌트의 초대)
