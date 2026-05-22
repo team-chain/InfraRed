@@ -15,7 +15,7 @@ import { useState } from "react";
 import { ArrowLeft, Mail } from "lucide-react";
 import { Logo } from "../components/Logo";
 
-type Variant = "docs" | "changelog" | "privacy" | "terms" | "security" | "faq";
+type Variant = "docs" | "changelog" | "privacy" | "terms" | "security" | "faq" | "features";
 
 const META: Record<Variant, { eyebrow: string; title: string }> = {
   docs:      { eyebrow: "Docs", title: "문서" },
@@ -24,6 +24,7 @@ const META: Record<Variant, { eyebrow: string; title: string }> = {
   terms:     { eyebrow: "Terms", title: "이용약관" },
   security:  { eyebrow: "Security", title: "보안 실천사항" },
   faq:       { eyebrow: "FAQ", title: "자주 묻는 질문" },
+  features:  { eyebrow: "Features", title: "기능" },
 };
 
 export function InfoPage({ variant }: { variant: Variant }) {
@@ -49,6 +50,7 @@ export function InfoPage({ variant }: { variant: Variant }) {
           {variant === "terms" && <TermsContent />}
           {variant === "security" && <SecurityContent />}
           {variant === "faq" && <FaqContent />}
+          {variant === "features" && <FeaturesContent />}
         </div>
       </article>
 
@@ -409,3 +411,93 @@ function FaqContent() {
   );
 }
 
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+
+function FeaturesContent() {
+  const features = [
+    {
+      group: "탐지",
+      items: [
+        { title: "28개 MITRE ATT&CK 탐지 룰", desc: "AUTH (SSH brute, 권한 상승) · WEB (웹쉘, SQLi, scanner) · FIM (sudoers 변조) · EXEC (/tmp 실행). 모두 MITRE 매핑." },
+        { title: "다중 로그 소스", desc: "auth.log · nginx access.log · docker events · 파일 무결성 (FIM) · 프로세스 실행 (EXEC) 자동 감지." },
+        { title: "5초 스트리밍", desc: "에이전트는 호스트 자원의 1% 미만 사용. 로그는 압축 후 mTLS로 백엔드로 즉시 전송." },
+      ],
+    },
+    {
+      group: "분석",
+      items: [
+        { title: "AI 인시던트 분석", desc: "AWS Bedrock Claude가 자산 컨텍스트·과거 인시던트·외부 CTI(AlienVault OTX)와 결합해 위협도 및 근본 원인을 산출." },
+        { title: "confidence 기반 자동화", desc: "0~1 스코어로 위협의 확신도를 평가. ≥ 0.85 인시던트만 자동 대응이 발화됨 (False positive 최소화)." },
+        { title: "MITRE 매핑 시각화", desc: "각 인시던트는 ATT&CK Tactic·Technique·Subtechnique까지 매핑. Kill chain 단계별 분포 대시보드." },
+      ],
+    },
+    {
+      group: "대응",
+      items: [
+        { title: "iptables 자동 차단", desc: "공격 출처 IP를 INPUT 체인에 DROP 규칙으로 등록. 24시간 후 자동 해제. dry-run 모드 지원." },
+        { title: "컨테이너 네트워크 격리", desc: "Docker network disconnect로 침해된 컨테이너를 즉시 분리. 데이터·이미지 손실 없음." },
+        { title: "JWT 토큰 폐기", desc: "탈취 의심 세션을 Redis denylist로 폐기. 모든 활성 토큰 즉시 무효화." },
+      ],
+    },
+    {
+      group: "운영",
+      items: [
+        { title: "멀티 채널 알림", desc: "Slack · Discord · Email. 채널별로 심각도 라우팅 (예: critical만 Slack #security, medium 이상은 Email)." },
+        { title: "변조 불가 감사 로그", desc: "모든 owner/admin 액션을 hash-chain으로 검증되는 로그에 기록. SOC 2·ISMS 감사 대비." },
+        { title: "멀티 테넌트 · RBAC", desc: "조직별 데이터 격리. Owner / Admin / Analyst / Viewer 4단계 권한. SAML SSO · TOTP MFA." },
+      ],
+    },
+  ];
+
+  return (
+    <>
+      <p className="info-lead">
+        InfraRed가 제공하는 기능을 영역별로 정리했습니다.
+        탐지에서 운영 자동화까지, 한 플랫폼에서 처리됩니다.
+      </p>
+      {features.map((group) => (
+        <section key={group.group} style={{ marginTop: 40 }}>
+          <h2>{group.group}</h2>
+          <div className="info-feature-grid">
+            {group.items.map((f) => (
+              <div key={f.title} className="info-feature-cell">
+                <h3>{f.title}</h3>
+                <p>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <section style={{ marginTop: 48 }}>
+        <h2>설치 흐름</h2>
+        <ol className="info-howto-steps">
+          <li>
+            <strong>에이전트 설치</strong>
+            <pre className="info-code">curl -sSL infrared.kr/install | sh</pre>
+            단일 바이너리 · systemd 자동 등록 · 의존성 없음.
+          </li>
+          <li>
+            <strong>로그 소스 자동 감지</strong>
+            <p>auth.log · nginx access.log · docker.events · /etc/&#123;passwd,shadow,sudoers&#125; · /tmp 실행. 추가 설정 불필요.</p>
+          </li>
+          <li>
+            <strong>탐지·분석</strong>
+            <p>28개 룰 매칭 후 AI 분석. 위협도·근본 원인·권장 대응이 대시보드에 표시됩니다.</p>
+          </li>
+          <li>
+            <strong>자동 대응</strong>
+            <p>confidence ≥ 0.85 인시던트는 iptables·컨테이너 격리·JWT 폐기로 즉시 차단. 모든 액션은 감사 로그에 기록.</p>
+          </li>
+        </ol>
+      </section>
+
+      <div className="info-cta-box" style={{ marginTop: 36 }}>
+        <Mail size={16} />
+        <span>전체 기능을 베타 기간 동안 사용할 수 있습니다. <a href="/">홈에서 시작하기 →</a></span>
+      </div>
+    </>
+  );
+}

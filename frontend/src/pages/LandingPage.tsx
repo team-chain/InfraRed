@@ -52,8 +52,6 @@ export function LandingPage({ onGoToLogin, onGoToRegister }: Props) {
       <Hero onGoToRegister={onGoToRegister} />
       <StatsBand />
       <WhatIsSection />
-      <HowItWorksSection />
-      <FeaturesSection />
       <ProductPreviewSection />
       <PricingSection onGoToRegister={onGoToRegister} />
       <FinalCta onGoToRegister={onGoToRegister} />
@@ -74,8 +72,7 @@ function LandingNav({ onGoToLogin, onGoToRegister }: Props) {
           <span className="ln-nav-tag">SOC Platform</span>
         </div>
         <nav className="ln-nav-links">
-          <a href="#features">제품</a>
-          <a href="#how">동작</a>
+          <a href="/features">기능</a>
           <a href="#pricing">요금</a>
           <a href="/docs">문서</a>
           <a href="/faq">FAQ</a>
@@ -117,8 +114,8 @@ function Hero({ onGoToRegister }: { onGoToRegister: () => void }) {
             <button className="ln-btn ln-btn-primary" onClick={onGoToRegister}>
               베타 시작하기 <ArrowRight size={14} />
             </button>
-            <a href="#how" className="ln-btn ln-btn-ghost">
-              동작 원리 보기
+            <a href="/features" className="ln-btn ln-btn-ghost">
+              기능 자세히 보기
             </a>
           </div>
           <div className="ln-hero-meta">
@@ -683,8 +680,8 @@ function Footer() {
           </div>
         </div>
         <FooterCol title="제품">
-          <a href="#features">기능</a>
-          <a href="#how">동작 방식</a>
+          <a href="/features">기능</a>
+          <a href="/docs">동작 방식</a>
           <a href="#pricing">요금</a>
           <a href="/changelog">Changelog</a>
         </FooterCol>

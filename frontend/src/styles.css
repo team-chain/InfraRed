@@ -4485,3 +4485,82 @@ input[type=range]::-moz-range-thumb {
   line-height: 1.65;
   max-width: 660px;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   INFO FEATURES (info-feature-*) — /features 페이지용
+═══════════════════════════════════════════════════════════════════ */
+.info-feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+.info-feature-cell {
+  padding: 18px 0 0;
+  border-top: 0.5px solid var(--border, #E5E7EB);
+}
+.info-feature-cell h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: #0A0A0A;
+  letter-spacing: -0.005em;
+}
+.info-feature-cell p {
+  font-size: 13.5px;
+  color: #4B5260;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.info-howto-steps {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  counter-reset: step;
+}
+.info-howto-steps li {
+  position: relative;
+  padding: 14px 0 18px 36px;
+  border-top: 0.5px solid var(--border, #E5E7EB);
+  counter-increment: step;
+}
+.info-howto-steps li:last-child { border-bottom: 0.5px solid var(--border, #E5E7EB); }
+.info-howto-steps li::before {
+  content: counter(step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #E07000;
+  letter-spacing: 0.04em;
+}
+.info-howto-steps li strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0A0A0A;
+  margin-bottom: 6px;
+}
+.info-howto-steps li p {
+  margin: 0;
+  font-size: 13.5px;
+  color: #4B5260;
+  line-height: 1.6;
+}
+.info-code {
+  background: #0F1419;
+  color: #6EE7B7;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin: 4px 0 8px;
+  overflow-x: auto;
+}
+
+@media (max-width: 600px) {
+  .info-feature-grid { grid-template-columns: 1fr; }
+}
