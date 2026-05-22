@@ -4303,3 +4303,15 @@ input[type=range]::-moz-range-thumb {
   .ln-stat-value { font-size: 36px; }
   .ln-stat-unit { font-size: 17px; }
 }
+
+/* Footer 비즈니스 정보 박스 (Hero footer 안 .ln-footer-brand 안에) */
+.ln-footer-biz {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #EFEFF1;
+  font-size: 11.5px;
+  color: #6E6E78;
+  line-height: 1.6;
+}
+.ln-footer-biz div { margin-bottom: 2px; }
+.ln-footer-biz-muted { color: #898E9A; font-size: 11px; margin-top: 4px !important; }

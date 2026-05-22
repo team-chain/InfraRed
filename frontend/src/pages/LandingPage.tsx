@@ -105,13 +105,13 @@ function Hero({ onGoToRegister }: { onGoToRegister: () => void }) {
             <ArrowUpRight size={12} />
           </a>
           <h1 className="ln-h1">
-            서버 로그가 침해 신호를 보내면,
+            실시간 탐지.
             <br />
-            <span className="ln-accent">자동으로 차단</span>합니다.
+            <span className="ln-accent">1초 자동 차단.</span>
           </h1>
           <p className="ln-lead">
-            로그 한 줄에서 침해를 발견하고, 사람 개입 없이 1초 안에 차단합니다.
-            28개 MITRE ATT&amp;CK 룰 + AI 인시던트 분석.
+            Linux · 웹 · 컨테이너 로그 실시간 분석. 28개 MITRE ATT&amp;CK 패턴 매칭.
+            검증된 위협은 iptables · 컨테이너 격리 · 토큰 폐기로 자동 격리.
           </p>
           <div className="ln-hero-cta">
             <button className="ln-btn ln-btn-primary" onClick={onGoToRegister}>
@@ -122,11 +122,11 @@ function Hero({ onGoToRegister }: { onGoToRegister: () => void }) {
             </a>
           </div>
           <div className="ln-hero-meta">
-            <span>공개 베타 진행 중</span>
+            <span>AWS Seoul 리전</span>
             <span className="ln-meta-sep">·</span>
-            <span>한 줄 설치</span>
+            <span>ISMS-P 준비 중</span>
             <span className="ln-meta-sep">·</span>
-            <span>Self-host 가능</span>
+            <span>Self-host 옵션</span>
           </div>
         </div>
 
@@ -256,27 +256,27 @@ function WhatIsSection() {
       <div className="ln-container">
         <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">What is InfraRed</span>
-          <h2 className="ln-h2">작은 팀도 직접 운영할 수 있는<br /><span className="ln-accent">현대적 SOC 플랫폼.</span></h2>
+          <h2 className="ln-h2">엔지니어링 팀을 위한<br /><span className="ln-accent">SOC 자동화.</span></h2>
           <p className="ln-section-lead">
-            엔터프라이즈급 보안을 작은 팀이 직접 운영할 수 있게.
+            라이선스 비용 없이. 컨설팅 없이. 즉시 배포.
           </p>
         </div>
 
         <div className="ln-three ln-three-dark">
           <ThreeItem
             num="01"
-            title="실시간 로그 분석"
-            desc="auth.log · nginx · docker · FIM · EXEC를 5초 이내 스트리밍."
+            title="실시간 분석"
+            desc="auth.log · nginx · docker · FIM · EXEC. 5초 스트리밍."
           />
           <ThreeItem
             num="02"
-            title="규칙 + AI 분석"
-            desc="28 MITRE 룰 매칭 후 Bedrock LLM이 위협도·원인·대응 산출."
+            title="AI 평가"
+            desc="28 MITRE 룰 + Bedrock LLM. 위협도 · 원인 · 권장 대응."
           />
           <ThreeItem
             num="03"
             title="자동 격리"
-            desc="confidence ≥ 0.85 인시던트 즉시 차단·격리·폐기."
+            desc="confidence ≥ 0.85. iptables · 컨테이너 · JWT denylist."
           />
         </div>
       </div>
@@ -304,7 +304,7 @@ function HowItWorksSection() {
           <span className="ln-section-tag">How it works</span>
           <h2 className="ln-h2">설치 4분, 첫 인시던트 감지 30초.</h2>
           <p className="ln-section-lead">
-            한 줄 설치. 컨설팅 0건.
+            한 줄 설치. 컨설팅 없음.
           </p>
         </div>
 
@@ -412,8 +412,8 @@ function FeaturesSection() {
       <div className="ln-container">
         <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Features</span>
-          <h2 className="ln-h2">SOC 운영에 필요한<br />모든 것.</h2>
-          <p className="ln-section-lead">한 플랫폼에서 탐지부터 감사까지.</p>
+          <h2 className="ln-h2">탐지 · 분석 · 대응<br />· 알림 · 감사.</h2>
+          <p className="ln-section-lead">한 플랫폼. 6개 핵심 영역.</p>
         </div>
 
         <div className="ln-features">
@@ -438,8 +438,8 @@ function ProductPreviewSection() {
       <div className="ln-container">
         <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Product</span>
-          <h2 className="ln-h2">실제 대시보드.</h2>
-          <p className="ln-section-lead">인시던트 스트림 · MTTR · 자동 대응 이력.</p>
+          <h2 className="ln-h2">운영자 화면.</h2>
+          <p className="ln-section-lead">실시간 인시던트 · MTTR · 자동 대응 이력.</p>
         </div>
 
         <div className="ln-preview">
@@ -531,7 +531,7 @@ function PreviewIncidentRow({
 
 function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
   const included = [
-    "에이전트 대수 제한 없음 (베타 기간 한정)",
+    "에이전트 대수 무제한 (베타 기간)",
     "28개 MITRE ATT&CK 탐지 룰 전체",
     "AI 인시던트 분석 (AWS Bedrock)",
     "자동 대응 — iptables · 컨테이너 격리 · 토큰 폐기",
@@ -548,7 +548,7 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
           <span className="ln-section-tag">Pricing</span>
           <h2 className="ln-h2">공개 베타 진행 중.</h2>
           <p className="ln-section-lead">
-            정식 출시까지 무상. 베타 사용자에게는 Founding 요금 혜택.
+            베타 기간 무상. 정식 출시 후 Founding 요금 적용.
           </p>
         </div>
 
@@ -556,9 +556,9 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
           <div className="ln-beta-card-head">
             <div>
               <span className="ln-beta-eyebrow">Public Beta</span>
-              <h3 className="ln-beta-title">전체 기능 · 베타 액세스</h3>
+              <h3 className="ln-beta-title">전체 기능 · 베타 액세스.</h3>
               <p className="ln-beta-desc">
-                전체 기능 사용 가능. 정식 출시 시점부터 과금.
+                전체 기능 활성. 정식 출시 후 과금.
               </p>
             </div>
             <button className="ln-btn ln-btn-primary ln-btn-lg" onClick={onGoToRegister}>
@@ -571,10 +571,8 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
             ))}
           </ul>
           <div className="ln-beta-footer">
-            정식 출시 일정과 가격 정책은 가입한 사용자에게 먼저 안내됩니다.
-            대규모 인프라 · 규제 산업 도입 문의는{" "}
+            정식 출시 일정 · 가격은 베타 사용자에게 사전 안내. 대규모 인프라 도입 문의:{" "}
             <a href="mailto:sales@infrared.kr">sales@infrared.kr</a>
-            로 연락 부탁드립니다.
           </div>
         </div>
       </div>
@@ -649,10 +647,10 @@ function FinalCta({ onGoToRegister }: { onGoToRegister: () => void }) {
     <section className="ln-final">
       <div className="ln-container ln-final-inner">
         <h2 className="ln-final-title">
-          지금 인프라를 보호하세요.
+          프로덕션 환경에<br />InfraRed 배포.
         </h2>
         <p className="ln-final-sub">
-          공개 베타 진행 중. 5분 설치로 즉시 운영을 시작하세요.
+          공개 베타. 한 줄 설치. 즉시 운영.
         </p>
         <div className="ln-final-cta">
           <button className="ln-btn ln-btn-primary ln-btn-lg" onClick={onGoToRegister}>
@@ -677,6 +675,11 @@ function Footer() {
           <Logo height={22} />
           <p className="ln-footer-tag">SOC platform for modern teams.</p>
           <p className="ln-footer-copy">(C) {new Date().getFullYear()} InfraRed. MIT Licensed.</p>
+          <div className="ln-footer-biz">
+            <div>InfraRed · Seoul, Republic of Korea</div>
+            <div>support@infrared.kr · sales@infrared.kr</div>
+            <div className="ln-footer-biz-muted">사업자 등록 진행 중 · 정식 출시 시 공개</div>
+          </div>
         </div>
         <FooterCol title="제품">
           <a href="#features">기능</a>

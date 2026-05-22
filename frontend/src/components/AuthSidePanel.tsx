@@ -16,12 +16,12 @@ const COPY = {
   login: {
     eyebrow: "InfraRed",
     title: "다시 만나서 반갑습니다.",
-    sub: "실시간 침해 탐지와 자동 차단으로 인프라를 보호하는 SOC 플랫폼.",
+    sub: "실시간 탐지 · 자동 차단 SOC 플랫폼.",
   },
   register: {
     eyebrow: "Get started",
-    title: "5분이면 시작할 수 있습니다.",
-    sub: "공개 베타 진행 중. 한 줄 설치로 24시간 자동 방어를 시작하세요.",
+    title: "5분 설치.",
+    sub: "공개 베타. 한 줄 설치. 24/7 자동 방어.",
   },
 } as const;
 
