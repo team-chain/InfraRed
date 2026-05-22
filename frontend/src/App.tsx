@@ -6,10 +6,11 @@ import { OnboardingPage } from "./pages/OnboardingPage";
 import { VerifyEmailPage } from "./pages/VerifyEmail";
 import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
+import { LandingPage } from "./pages/LandingPage";
 import type { AuthUser } from "./lib/api";
 
 type AppView = "dashboard" | "onboarding";
-type AuthView = "login" | "register" | "forgot" | "verify_email" | "reset_password";
+type AuthView = "landing" | "login" | "register" | "forgot" | "verify_email" | "reset_password";
 
 function getUrlParam(key: string): string | null {
   const search = new URLSearchParams(window.location.search);
@@ -27,7 +28,12 @@ function initialAuthView(): AuthView {
   if (getUrlParam("verify_email")) return "verify_email";
   if (getUrlParam("reset_token")) return "reset_password";
   if (getUrlParam("invite_email")) return "register";
-  return "login";
+  // 명시적으로 /login 경로 또는 ?view=login 파라미터로 직접 진입 시
+  const path = typeof window !== "undefined" ? window.location.pathname : "";
+  const viewParam = getUrlParam("view");
+  if (path === "/login" || viewParam === "login") return "login";
+  if (path === "/register" || viewParam === "register") return "register";
+  return "landing";
 }
 
 function clearUrlParams() {
@@ -88,11 +94,19 @@ export function App() {
         />
       );
     }
+    if (authView === "login") {
+      return (
+        <LoginPage
+          onLogin={handleLogin}
+          onGoToRegister={() => setAuthView("register")}
+          onForgotPassword={() => setAuthView("forgot")}
+        />
+      );
+    }
     return (
-      <LoginPage
-        onLogin={handleLogin}
+      <LandingPage
+        onGoToLogin={() => setAuthView("login")}
         onGoToRegister={() => setAuthView("register")}
-        onForgotPassword={() => setAuthView("forgot")}
       />
     );
   }
