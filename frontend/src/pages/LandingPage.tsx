@@ -50,6 +50,7 @@ export function LandingPage({ onGoToLogin, onGoToRegister }: Props) {
     <div className="ln-root">
       <LandingNav onGoToLogin={onGoToLogin} onGoToRegister={onGoToRegister} />
       <Hero onGoToRegister={onGoToRegister} />
+      <StatsBand />
       <WhatIsSection />
       <HowItWorksSection />
       <FeaturesSection />
@@ -109,10 +110,8 @@ function Hero({ onGoToRegister }: { onGoToRegister: () => void }) {
             <span className="ln-accent">자동으로 차단</span>합니다.
           </h1>
           <p className="ln-lead">
-            InfraRed는 Linux 서버·웹·컨테이너의 실시간 로그를 분석해
-            SSH 무차별 공격·웹쉘·SQL 인젝션 등 28개 MITRE ATT&amp;CK 패턴을 탐지하고,
-            고신뢰도 위협은 iptables 차단·컨테이너 격리·세션 폐기까지 자동으로 실행하는
-            오픈소스 SOC 플랫폼입니다.
+            로그 한 줄에서 침해를 발견하고, 사람 개입 없이 1초 안에 차단합니다.
+            28개 MITRE ATT&amp;CK 룰 + AI 인시던트 분석.
           </p>
           <div className="ln-hero-cta">
             <button className="ln-btn ln-btn-primary" onClick={onGoToRegister}>
@@ -198,6 +197,32 @@ function HeroTerminal() {
   );
 }
 
+
+/* ─────────────────────────────────────────────────────────────────── */
+
+function StatsBand() {
+  const stats = [
+    { value: "28", unit: "", label: "MITRE ATT&CK 탐지 룰" },
+    { value: "<1", unit: "초", label: "위협 차단 응답 시간" },
+    { value: "5", unit: "분", label: "에이전트 설치 시간" },
+    { value: "99.9", unit: "%", label: "감사 로그 무결성" },
+  ];
+  return (
+    <section className="ln-stats">
+      <div className="ln-container ln-stats-grid">
+        {stats.map((s) => (
+          <div key={s.label} className="ln-stat">
+            <div className="ln-stat-value">
+              {s.value}<span className="ln-stat-unit">{s.unit}</span>
+            </div>
+            <div className="ln-stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /* ─────────────────────────────────────────────────────────────────── */
 
 function TechStrip() {
@@ -233,8 +258,7 @@ function WhatIsSection() {
           <span className="ln-section-tag">What is InfraRed</span>
           <h2 className="ln-h2">작은 팀도 직접 운영할 수 있는<br /><span className="ln-accent">현대적 SOC 플랫폼.</span></h2>
           <p className="ln-section-lead">
-            엔터프라이즈 보안 도구는 강력하지만 도입과 운영에 적지 않은 비용·인력이 필요합니다.
-            InfraRed는 5분 안에 설치되고, 작은 팀이 직접 운영할 수 있게 설계됐습니다.
+            엔터프라이즈급 보안을 작은 팀이 직접 운영할 수 있게.
           </p>
         </div>
 
@@ -242,17 +266,17 @@ function WhatIsSection() {
           <ThreeItem
             num="01"
             title="실시간 로그 분석"
-            desc="에이전트가 auth.log · nginx · docker · systemd 출력을 5초 이내 스트리밍합니다."
+            desc="auth.log · nginx · docker · FIM · EXEC를 5초 이내 스트리밍."
           />
           <ThreeItem
             num="02"
-            title="규칙 기반 + AI 분석"
-            desc="28개 MITRE ATT&CK 룰 + AWS Bedrock LLM이 위협도·근본 원인·권장 대응을 산출합니다."
+            title="규칙 + AI 분석"
+            desc="28 MITRE 룰 매칭 후 Bedrock LLM이 위협도·원인·대응 산출."
           />
           <ThreeItem
             num="03"
-            title="고신뢰 위협 자동 격리"
-            desc="confidence ≥ 0.85 인시던트는 즉시 자동 대응. 모든 액션은 변조 불가 감사 로그에 기록됩니다."
+            title="자동 격리"
+            desc="confidence ≥ 0.85 인시던트 즉시 차단·격리·폐기."
           />
         </div>
       </div>
@@ -280,7 +304,7 @@ function HowItWorksSection() {
           <span className="ln-section-tag">How it works</span>
           <h2 className="ln-h2">설치 4분, 첫 인시던트 감지 30초.</h2>
           <p className="ln-section-lead">
-            컨설팅·전담 인력 필요 없습니다. 명령어 한 줄로 에이전트가 설치되면 즉시 동작합니다.
+            한 줄 설치. 컨설팅 0건.
           </p>
         </div>
 
@@ -288,7 +312,7 @@ function HowItWorksSection() {
           <StepRow
             num={1}
             title="에이전트 설치"
-            desc="서버에서 한 줄. 의존성 없는 단일 바이너리. systemd 자동 등록."
+            desc="단일 바이너리. systemd 자동 등록."
             visual={
               <pre className="ln-code">
                 <span className="ln-code-prompt">$</span> curl -sSL infrared.kr/install | sh
@@ -302,7 +326,7 @@ function HowItWorksSection() {
           <StepRow
             num={2}
             title="로그 수집"
-            desc="auth.log, nginx access.log, docker events, FIM(/etc/passwd 등), 프로세스 실행을 자동 수집. 추가 설정 불필요."
+            desc="auth.log · nginx · docker · FIM · EXEC 자동 감지."
             visual={
               <pre className="ln-code">
                 <span className="ln-code-muted"># 자동 감지되는 소스</span>
@@ -317,7 +341,7 @@ function HowItWorksSection() {
           <StepRow
             num={3}
             title="탐지 · AI 분석"
-            desc="28개 룰 매칭 + LLM이 위협도/근본 원인/권장 대응을 산출. 대시보드 또는 Slack/Discord/Email로 전송."
+            desc="룰 매칭 + LLM 분석. Slack · Discord · Email 즉시 알림."
             visual={
               <div className="ln-incident-mini">
                 <div className="ln-incident-mini-head">
@@ -334,7 +358,7 @@ function HowItWorksSection() {
           <StepRow
             num={4}
             title="자동 대응"
-            desc="confidence ≥ 0.85면 즉시 차단. iptables, Docker network, JWT denylist 세 가지 액션 지원. 모든 액션은 감사 로그에 기록됩니다."
+            desc="iptables · 컨테이너 격리 · JWT 폐기. 모든 액션 감사 로그 기록."
             visual={
               <pre className="ln-code">
                 <span className="ln-code-ok">RESPOND</span> 15:42:09
@@ -376,12 +400,12 @@ function StepRow({
 
 function FeaturesSection() {
   const features = [
-    { icon: <Activity size={18} />, title: "28개 탐지 룰", desc: "AUTH (SSH brute, 권한 상승) · WEB (웹쉘, SQLi, scanner) · FIM (sudoers 변조) · EXEC (/tmp 실행) — 모두 MITRE ATT&CK 매핑." },
-    { icon: <FileSearch size={18} />, title: "AI 인시던트 분석", desc: "AWS Bedrock Claude가 자산 컨텍스트·과거 인시던트·CTI(OTX)와 결합해 위협도와 근본 원인을 산출." },
-    { icon: <Zap size={18} />, title: "3종 자동 대응", desc: "iptables 차단 · 컨테이너 네트워크 격리 · JWT 토큰 폐기. 사람 개입 없이 1초 이내 실행." },
-    { icon: <Bell size={18} />, title: "멀티 채널 알림", desc: "Slack · Discord · Email. 채널별로 심각도 라우팅(예: critical만 Slack). 알림에는 LLM 요약 포함." },
-    { icon: <Lock size={18} />, title: "변조 불가 감사 로그", desc: "모든 owner/admin 액션은 hash chain으로 검증되는 감사 로그에 기록. SOC 2 · ISMS 대비." },
-    { icon: <Users size={18} />, title: "멀티 테넌트 · RBAC", desc: "조직별 데이터 격리 · Owner/Admin/Analyst/Viewer 4단계 권한 · SAML SSO · TOTP MFA 지원." },
+    { icon: <Activity size={18} />, title: "28 탐지 룰", desc: "AUTH · WEB · FIM · EXEC. MITRE ATT&CK 매핑." },
+    { icon: <FileSearch size={18} />, title: "AI 인시던트 분석", desc: "Bedrock LLM · 자산 컨텍스트 · CTI(OTX) 결합." },
+    { icon: <Zap size={18} />, title: "3종 자동 대응", desc: "iptables · 컨테이너 격리 · JWT 폐기. 1초 이내." },
+    { icon: <Bell size={18} />, title: "멀티 채널 알림", desc: "Slack · Discord · Email. 심각도 라우팅 + LLM 요약." },
+    { icon: <Lock size={18} />, title: "변조 불가 감사", desc: "Hash-chain 감사 로그. SOC 2 · ISMS 대비." },
+    { icon: <Users size={18} />, title: "멀티 테넌트 · RBAC", desc: "4단계 권한 · SAML SSO · TOTP MFA." },
   ];
   return (
     <section id="features" className="ln-section ln-section-dark">
@@ -389,7 +413,7 @@ function FeaturesSection() {
         <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Features</span>
           <h2 className="ln-h2">SOC 운영에 필요한<br />모든 것.</h2>
-          <p className="ln-section-lead">탐지 · 분석 · 대응 · 알림 · 감사까지 한 플랫폼에서.</p>
+          <p className="ln-section-lead">한 플랫폼에서 탐지부터 감사까지.</p>
         </div>
 
         <div className="ln-features">
@@ -415,7 +439,7 @@ function ProductPreviewSection() {
         <div className="ln-section-head ln-section-head-center">
           <span className="ln-section-tag">Product</span>
           <h2 className="ln-h2">실제 대시보드.</h2>
-          <p className="ln-section-lead">실시간 인시던트 스트림 · MTTR · 자산별 위험도 · 자동 대응 액션 이력.</p>
+          <p className="ln-section-lead">인시던트 스트림 · MTTR · 자동 대응 이력.</p>
         </div>
 
         <div className="ln-preview">
@@ -524,8 +548,7 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
           <span className="ln-section-tag">Pricing</span>
           <h2 className="ln-h2">공개 베타 진행 중.</h2>
           <p className="ln-section-lead">
-            InfraRed는 현재 공개 베타 단계입니다.
-            정식 출시 시 가격을 발표하며, 베타 사용자에게는 Founding 요금 혜택을 제공할 예정입니다.
+            정식 출시까지 무상. 베타 사용자에게는 Founding 요금 혜택.
           </p>
         </div>
 
@@ -535,8 +558,7 @@ function PricingSection({ onGoToRegister }: { onGoToRegister: () => void }) {
               <span className="ln-beta-eyebrow">Public Beta</span>
               <h3 className="ln-beta-title">전체 기능 · 베타 액세스</h3>
               <p className="ln-beta-desc">
-                정식 출시 전까지 InfraRed의 모든 기능을 사용할 수 있습니다.
-                과금은 정식 출시 시점부터 시작됩니다.
+                전체 기능 사용 가능. 정식 출시 시점부터 과금.
               </p>
             </div>
             <button className="ln-btn ln-btn-primary ln-btn-lg" onClick={onGoToRegister}>
