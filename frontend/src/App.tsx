@@ -8,6 +8,7 @@ import { ForgotPasswordPage } from "./pages/ForgotPassword";
 import { ResetPasswordPage } from "./pages/ResetPassword";
 import { LandingPage } from "./pages/LandingPage";
 import { StatusPage } from "./pages/StatusPage";
+import { InfoPage } from "./pages/InfoPages";
 import type { AuthUser } from "./lib/api";
 
 type AppView = "dashboard" | "onboarding";
@@ -53,10 +54,25 @@ export function App() {
   const [view, setView] = useState<AppView>("dashboard");
   const [authView, setAuthView] = useState<AuthView>(initialAuthView);
 
-  // /status 는 인증 여부와 무관하게 항상 공개
+  // /status, /docs, /changelog, /privacy, /terms, /security 는 인증 여부와 무관하게 항상 공개
   const path = typeof window !== "undefined" ? window.location.pathname : "";
   if (path === "/status" || path.startsWith("/status/")) {
     return <StatusPage />;
+  }
+  if (path === "/docs" || path.startsWith("/docs/")) {
+    return <InfoPage variant="docs" />;
+  }
+  if (path === "/changelog") {
+    return <InfoPage variant="changelog" />;
+  }
+  if (path === "/privacy") {
+    return <InfoPage variant="privacy" />;
+  }
+  if (path === "/terms") {
+    return <InfoPage variant="terms" />;
+  }
+  if (path === "/security") {
+    return <InfoPage variant="security" />;
   }
 
   // URL 파라미터에서 토큰 추출 (page에 props로 전달)
