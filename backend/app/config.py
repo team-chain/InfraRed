@@ -166,6 +166,14 @@ class Settings(BaseSettings):
     tls_keyfile: str = ""                   # 서버 개인키 경로
     tls_ca_certs: str = ""                  # 클라이언트 인증서 검증용 CA 경로
 
+    # ── 데모용 자동차단 안전망 예외 (설계서 6.7 안전장치 토글) ──────────────
+    # 평소엔 사설/루프백 IP를 절대 차단하지 않는다(자기/내부망 보호). 그러나
+    # 데모(핫스팟·강의실 LAN)에서는 공격자도 사설 IP라 자동차단이 스킵된다.
+    # 아래에 CIDR을 넣으면 그 대역은 "사설이어도 차단 허용"된다.
+    # 루프백(127/8, ::1)은 이 목록과 무관하게 항상 보호된다(자기 차단 방지).
+    # 비우면(기본) 원래 운영 동작 그대로. 예:
+    #   RESPONSE_DEMO_BLOCK_CIDRS="172.20.10.0/28,192.168.0.0/16"
+    response_demo_block_cidrs: str = ""
 
     def model_post_init(self, __context: object) -> None:
         # JWT secret default value warning
@@ -177,6 +185,22 @@ class Settings(BaseSettings):
             if self.env == "prod":
                 raise ValueError(msg)
             warnings.warn(msg, stacklevel=2)
+
+    @property
+    def demo_block_networks(self) -> list:
+        """RESPONSE_DEMO_BLOCK_CIDRS 파싱 → 자동차단 안전망 예외 대역 목록."""
+        import ipaddress
+
+        nets: list = []
+        for raw in self.response_demo_block_cidrs.split(","):
+            cidr = raw.strip()
+            if not cidr:
+                continue
+            try:
+                nets.append(ipaddress.ip_network(cidr, strict=False))
+            except ValueError:
+                _log.warning("Invalid RESPONSE_DEMO_BLOCK_CIDRS entry ignored: %s", cidr)
+        return nets
 
     @property
     def cors_origin_list(self) -> list[str]:

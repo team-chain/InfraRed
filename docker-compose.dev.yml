@@ -1,0 +1,152 @@
+# =============================================================================
+#  InfraRed — 로컬 개발/데모용 Compose (AWS 불필요, 완전 오프라인)
+# -----------------------------------------------------------------------------
+#  프로덕션 docker-compose.yml 과 차이:
+#    - ECR pull 대신 infra/docker/*.Dockerfile 에서 직접 빌드
+#    - postgres 컨테이너 포함 (프로덕션은 RDS)
+#    - 같은 오리진 쿠키 인증을 위한 dev 리버스 프록시(:3000) 포함
+#    - 프록시 웹 액세스 로그를 에이전트가 tail → 웹 스캔/카나리 탐지
+#    - step-ca/mTLS 제외 (로컬 데모 불필요)
+#    - env_file 은 레포 루트의 ./.env  (run-local.sh 가 생성)
+#
+#  실행:  ./run-local.sh        (권장)
+#     또는 docker compose -f docker-compose.dev.yml up --build -d
+# =============================================================================
+
+x-backend: &backend
+  build:
+    context: ./backend
+    dockerfile: ../infra/docker/backend.Dockerfile
+  image: infrared-backend:dev
+  env_file: ./.env
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: infrared-postgres
+    environment:
+      POSTGRES_USER: infrared
+      POSTGRES_PASSWORD: infrared-dev-pw
+      POSTGRES_DB: infrared
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infrared -d infrared"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: infrared-redis
+    command: redis-server --requirepass infrared-redis-pw --maxmemory 200mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "infrared-redis-pw", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  ingestion:
+    <<: *backend
+    container_name: infrared-ingestion
+    command: ["sh", "-c", "python -m app.db.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  detection-worker:
+    <<: *backend
+    container_name: infrared-detection
+    command: ["python", "-m", "app.workers.detection.worker"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      ingestion: { condition: service_started }
+
+  enrichment-worker:
+    <<: *backend
+    container_name: infrared-enrichment
+    command: ["python", "-m", "app.workers.enrichment.worker"]
+
+  incident-worker:
+    <<: *backend
+    container_name: infrared-incident
+    command: ["python", "-m", "app.workers.correlation.worker"]
+
+  campaign-worker:
+    <<: *backend
+    container_name: infrared-campaign
+    command: ["python", "-m", "app.workers.campaign.worker"]
+
+  cleanup-worker:
+    <<: *backend
+    container_name: infrared-cleanup
+    command: ["python", "-m", "app.workers.cleanup.worker"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/docker/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
+    image: infrared-frontend:dev
+    container_name: infrared-frontend
+    depends_on:
+      - ingestion
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: infrared-proxy
+    ports:
+      - "3000:80"
+    volumes:
+      - ./infra/docker/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+      - proxy-logs:/var/log/nginx
+    depends_on:
+      - frontend
+      - ingestion
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: ../infra/docker/agent.Dockerfile
+    image: infrared-agent:dev
+    container_name: infrared-agent
+    env_file: ./.env
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - /var/log:/host/var/log:ro
+      - proxy-logs:/host/var/log/nginx:ro
+      - agent-state:/var/lib/infrared
+    depends_on:
+      - ingestion
+    restart: on-failure
+
+  watchdog:
+    image: infrared-agent:dev
+    container_name: infrared-watchdog
+    command: ["python", "-m", "infrared_agent.watchdog"]
+    env_file: ./.env
+    depends_on:
+      - ingestion
+      - agent
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  agent-state:
+  proxy-logs:
