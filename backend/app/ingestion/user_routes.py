@@ -521,16 +521,19 @@ async def generate_install_command(
     """
     tenant_id = claims["tenant_id"]
 
-    # 에이전트용 토큰 생성 (별도 짧은 TTL)
+    from app.config import get_settings  # noqa: PLC0415
+    settings = get_settings()
+
+    # 에이전트용 장기 토큰 — 설치형 에이전트는 토큰 갱신 로직이 없으므로
+    # 만료로 끊기지 않도록 enroll 전용 장기 TTL(기본 1년)을 사용한다.
     token = create_token(
-        subject=f"agent-setup-{tenant_id}",
+        subject=f"agent-{tenant_id}",
         tenant_id=tenant_id,
         role="agent",
+        ttl_seconds=settings.jwt_agent_enroll_ttl_seconds,
     )
 
     # 설치 명령 생성
-    from app.config import get_settings  # noqa: PLC0415
-    settings = get_settings()
     api_base = settings.internal_api_base_url.replace("http://ingestion:", "https://api.")
 
     install_cmd = (
@@ -542,5 +545,5 @@ async def generate_install_command(
         "command": install_cmd,
         "token": token,
         "tenant_id": tenant_id,
-        "note": "이 명령은 10분간 유효합니다. 안전한 환경에서 실행하세요.",
+        "note": "이 토큰은 설치형 에이전트용 장기 토큰입니다. 안전한 환경에서 실행하세요.",
     }

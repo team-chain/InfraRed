@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     jwt_audience: str = "infrared-ingest"
     jwt_agent_ttl_seconds: int = 86400
     jwt_user_ttl_seconds: int = 3600
+    # install-agent 온보딩 발급용 장기 토큰 (기본 1년) — 에이전트는 토큰 갱신 로직이
+    # 없으므로, 설치형 에이전트가 만료로 끊기지 않도록 별도의 긴 TTL 사용.
+    jwt_agent_enroll_ttl_seconds: int = 31_536_000
 
     redis_url: str = "redis://redis:6379/0"
     redis_stream_maxlen: int = 100_000

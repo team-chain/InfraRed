@@ -241,6 +241,12 @@ export async function createApiKey(name: string, source: string): Promise<{ api_
   return apiFetch("/api-keys", { method: "POST", body: JSON.stringify({ name, source }) });
 }
 
+// Linux 서버 에이전트용 장기 JWT(role=agent) 발급. ir_ API 키로는 /ingest 인증이 안 되므로
+// 서버 온보딩 탭은 반드시 이 토큰을 install 명령에 사용해야 한다.
+export async function generateAgentInstall(): Promise<{ command: string; token: string; tenant_id: string; note: string }> {
+  return apiFetch("/onboarding/generate-install-command", { method: "POST" });
+}
+
 export async function revokeApiKey(keyId: string): Promise<void> {
   await apiFetch(`/api-keys/${keyId}`, { method: "DELETE" });
 }
@@ -336,7 +342,9 @@ export type Asset = {
 };
 
 export async function fetchAssets(): Promise<Asset[]> {
-  const data = await apiFetch<{ items: Asset[] }>("/assets");
+  // 백엔드에 /assets GET 라우터는 없고, agents 테이블과 assets 테이블이 JOIN되어
+  // /agents 가 동일한 형식(items: [{asset_id, hostname, os, status, last_heartbeat}])으로 반환된다.
+  const data = await apiFetch<{ items: Asset[] }>("/agents");
   return data.items ?? [];
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Server, Globe, Code2, CheckCircle2 } from "lucide-react";
 import {
   createApiKey,
+  generateAgentInstall,
   completeOnboardingStep,
   fetchOnboardingStatus,
 } from "../lib/api";
@@ -75,14 +76,22 @@ export function OnboardingPage({ tenantId, onDone }: Props) {
     setGenerating(true);
     setError(undefined);
     try {
-      const res = await createApiKey(`${env} 연동 키`, env);
-      setApiKey(res.api_key);
+      let key: string;
+      if (env === "server") {
+        // Linux 서버 에이전트는 JWT(role=agent)가 필요 — ir_ API 키로는 /ingest 인증 불가
+        const res = await generateAgentInstall();
+        key = res.token;
+      } else {
+        const res = await createApiKey(`${env} 연동 키`, env);
+        key = res.api_key;
+      }
+      setApiKey(key);
       // 백엔드에 step 1/2 완료 기록 (실패해도 흐름은 진행 — backend 미세팅 환경 대비)
       void completeOnboardingStep(1).catch(() => {});
       void completeOnboardingStep(2).catch(() => {});
       setStep("install");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "API Key 발급 실패");
+      setError(e instanceof Error ? e.message : "토큰 발급 실패");
     } finally {
       setGenerating(false);
     }
