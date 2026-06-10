@@ -25,7 +25,6 @@ from app.autoresponse.actions import (
     should_queue_approval,
 )
 from app.common.logging import get_logger
-from app.config import get_settings
 from app.db.connection import get_session
 from app.db.repositories import save_auto_response_log
 from app.models.auto_response import AutoResponseLog
@@ -50,20 +49,9 @@ def _is_safe_ip(ip: str | None) -> bool:
         return True
     try:
         addr = ipaddress.ip_address(ip)
+        return any(addr in net for net in _SAFE_NETWORKS)
     except ValueError:
         return True  # 파싱 불가 시 안전하게 차단 안 함
-
-    # 루프백/자기 자신은 데모 토글과 무관하게 항상 보호 (self-block 방지)
-    if addr.is_loopback:
-        return True
-
-    # 데모 토글: RESPONSE_DEMO_BLOCK_CIDRS 에 든 대역은 사설이어도 차단 허용.
-    # (핫스팟·강의실 LAN 공격자를 라이브로 끊기 위함. 비우면 아래 안전망 그대로.)
-    for net in get_settings().demo_block_networks:
-        if addr in net:
-            return False
-
-    return any(addr in net for net in _SAFE_NETWORKS)
 
 
 async def _get_tenant_settings(tenant_id: str) -> dict:
@@ -384,4 +372,14 @@ async def run_autoresponse(
         "source_ip": source_ip,
         # v3.0 확장
         "action_level": v3_action_level,
-        "ttl_seconds": 
+        "ttl_seconds": v3_ttl_seconds,
+        "expires_at": v3_expires_at.isoformat() if v3_expires_at else None,
+        "approval_required": v3_approval_required,
+        "confidence_snapshot": detection_confidence,
+        "scenario_id": scenario_id,
+    }
+
+
+async def rollback_denylist(tenant_id: str, ip: str, actor: str = "system") -> bool:
+    """Denylist에서 IP 제거 (롤백). auto_response_logs에 reversed=true 기록은 호출자가 처리."""
+    return await _denylist_remove(tenant_id, ip)
