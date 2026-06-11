@@ -95,6 +95,20 @@ class Commander:
         log.info("command_executed action=%s target=%s success=%s msg=%s", action_type, target, success, message)
         await self._report_result(action_type, target, success, message)
 
+    def _in_demo_cidrs(self, addr) -> bool:
+        """DEMO_BLOCK_CIDRS 에 addr 가 속하는지. 데모 자동차단 안전망 예외."""
+        raw = getattr(self.settings, "demo_block_cidrs", "") or ""
+        for cidr in raw.split(","):
+            cidr = cidr.strip()
+            if not cidr:
+                continue
+            try:
+                if addr in ipaddress.ip_network(cidr, strict=False):
+                    return True
+            except ValueError:
+                continue
+        return False
+
     def _block_ip(self, ip: str, ttl_seconds: int | None = None) -> tuple[bool, str]:
         """iptables로 IP 차단 (TTL 지원). 사설/루프백 IP 차단 금지."""
         # 1. 입력 검증 — ipaddress 모듈로 파싱
@@ -103,9 +117,12 @@ class Commander:
         except ValueError:
             return False, f"invalid ip address: {ip!r}"
 
-        # 2. 사설/루프백 IP 차단 금지
-        if addr.is_private or addr.is_loopback:
-            return False, f"refusing to block private/loopback ip: {ip}"
+        # 2. 루프백은 항상 보호(자기 차단 방지). 사설 IP는 기본 차단 금지하되,
+        #    DEMO_BLOCK_CIDRS 에 든 대역은 사설이어도 차단 허용(핫스팟·강의실 데모).
+        if addr.is_loopback:
+            return False, f"refusing to block loopback ip: {ip}"
+        if addr.is_private and not self._in_demo_cidrs(addr):
+            return False, f"refusing to block private ip: {ip}"
 
         # 3. TTL 결정 (기본 1800초 = 30분)
         effective_ttl = int(ttl_seconds) if ttl_seconds else 1800

@@ -49,9 +49,18 @@ def _is_safe_ip(ip: str | None) -> bool:
         return True
     try:
         addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in _SAFE_NETWORKS)
     except ValueError:
         return True  # 파싱 불가 시 안전하게 차단 안 함
+    # 루프백(127/8, ::1)은 항상 보호 — 자기 자신 차단 방지. 데모 토글과 무관.
+    if addr.is_loopback:
+        return True
+    # 데모 안전망 예외: RESPONSE_DEMO_BLOCK_CIDRS 에 든 대역은 사설이어도 차단 허용
+    # (핫스팟·강의실 LAN 데모용). 비우면(기본) 원래 운영 동작 그대로 사설망 보호.
+    from app.config import get_settings  # noqa: PLC0415
+    demo_nets = get_settings().demo_block_networks
+    if demo_nets and any(addr in net for net in demo_nets):
+        return False
+    return any(addr in net for net in _SAFE_NETWORKS)
 
 
 async def _get_tenant_settings(tenant_id: str) -> dict:

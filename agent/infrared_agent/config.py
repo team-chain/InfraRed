@@ -42,6 +42,11 @@ class AgentSettings(BaseSettings):
     fim_state_path: str = "/var/lib/infrared/fim_state.json"
     auditd_log_path: str = "/var/log/audit/audit.log"
 
+    # 데모 자동차단 안전망 예외: 이 대역(예: 핫스팟 192.168.0.0/16)은 사설이어도
+    # 차단 허용. 루프백은 항상 보호. 비우면(기본) 원래대로 사설망 보호.
+    #   예: DEMO_BLOCK_CIDRS="192.168.0.0/16"
+    demo_block_cidrs: str = ""
+
     # v3.0: 실행 탐지 모니터 설정
     agent_exec_monitor_enabled: bool = True
     agent_exec_monitor_interval_seconds: int = 10
