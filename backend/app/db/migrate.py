@@ -277,9 +277,24 @@ async def run_migration(database_url: str) -> None:
             print("[migrate] applying migrate_v12_email_verification.sql (이메일 인증 + 비번 재설정)")
             await _execute_script(conn, MIGRATE_V12_SQL.read_text(encoding="utf-8"), "migrate_v12_email_verification.sql")
 
-        seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
-        print("[migrate] applying seed.sql")
-        await _execute_script(conn, seed, "seed.sql", skip_errors=True)
+        # 데모 시드(데모 테넌트·기본비번 관리자·샘플 인시던트 등)는 프로덕션에 깔리면 안 되므로
+        # SEED_DEMO_DATA=true 일 때만 적용한다. 실관리자/룰 카탈로그는 아래 bootstrap_* 가
+        # 보장하므로 프로덕션 배포엔 데모 시드가 전혀 필요 없다.
+        if os.getenv("SEED_DEMO_DATA", "").strip().lower() in ("1", "true", "yes"):
+            seed = SEED_SQL.read_text(encoding="utf-8") if SEED_SQL.exists() else DEFAULT_SEED_SQL
+            print("[migrate] applying demo seed.sql (SEED_DEMO_DATA=on)")
+            await _execute_script(conn, seed, "seed.sql", skip_errors=True)
+        else:
+            print("[migrate] seed.sql skipped — production clean (set SEED_DEMO_DATA=true for demo seed)")
+
+        # 탐지 룰 카탈로그 보장 (코드 기반, 항상 실행) — SQL 시드 로딩이 불안정해
+        # detection_rules 가 비어 탐지가 막히는 문제 방지. 멱등.
+        try:
+            from .bootstrap_rules import bootstrap_rules_on
+            _total = await bootstrap_rules_on(conn)
+            print(f"[migrate] detection_rules 카탈로그 보장: {_total}종")
+        except Exception as e:
+            print(f"[migrate] WARN bootstrap_rules failed: {e}", file=sys.stderr)
 
         # First-admin bootstrap (env-driven, idempotent).
         # 매번 fresh deploy 후에도 즉시 로그인 가능하도록 보장.

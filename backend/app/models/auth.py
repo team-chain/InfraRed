@@ -5,13 +5,13 @@ from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
-    tenant_id: str = "company-a"
+    tenant_id: str = "default"
     email: str
     password: str
 
 
 class RegisterRequest(BaseModel):
-    tenant_id: str = "company-a"
+    tenant_id: str = "default"
     email: str
     password: str = Field(..., min_length=8)
     role: str = Field(default="analyst", pattern="^(analyst|viewer)$")

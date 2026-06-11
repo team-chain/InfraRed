@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AgentSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    tenant_id: str = "company-a"
+    tenant_id: str = "default"
     agent_id: str = "agent-001"
     asset_id: str = "asset-001"
     agent_token: str = ""

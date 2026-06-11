@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     tz: str = "Asia/Seoul"
 
-    tenant_id: str = "company-a"
+    tenant_id: str = "default"
     agent_id: str = "agent-001"
     asset_id: str = "asset-001"
 
