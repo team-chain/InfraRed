@@ -127,11 +127,11 @@ async def ops_metrics(
         ev_result = await session.execute(
             text("""
                 SELECT
-                    COUNT(*) FILTER (WHERE ingested_at >= :cutoff_24h) AS last_24h,
-                    COUNT(*) FILTER (WHERE ingested_at >= :cutoff_7d)  AS last_7d
-                FROM events
+                    COUNT(*) FILTER (WHERE created_at >= :cutoff_24h) AS last_24h,
+                    COUNT(*) FILTER (WHERE created_at >= :cutoff_7d)  AS last_7d
+                FROM normalized_events
                 WHERE tenant_id = :tenant_id
-                  AND ingested_at >= :cutoff_7d
+                  AND created_at >= :cutoff_7d
             """),
             {"tenant_id": tenant_id, "cutoff_24h": cutoff_24h, "cutoff_7d": cutoff_7d},
         )

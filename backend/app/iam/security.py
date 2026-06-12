@@ -23,6 +23,7 @@ def create_token(
     agent_id: str | None = None,
     role: str = "agent",
     ttl_seconds: int | None = None,
+    email: str | None = None,
 ) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
@@ -43,6 +44,8 @@ def create_token(
     }
     if agent_id:
         payload["agent_id"] = agent_id
+    if email:
+        payload["email"] = email
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_alg)
 
 

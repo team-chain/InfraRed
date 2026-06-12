@@ -7,13 +7,25 @@ import hmac
 import os
 import secrets as _secrets
 
+from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
+
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from pydantic import BaseModel
 from sqlalchemy import text as _text
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
+# ── Pydantic v2 IPv4Address/INET 직렬화 핫픽스 ─────────────────────────────
+# PostgreSQL INET 컬럼이 ipaddress.IPv4Address 객체로 반환되면 Pydantic 이 직렬화하지 못해
+# 응답 도중 PydanticSerializationError 가 raise 되고, 그 결과 nginx 가 502 를 반환한다.
+# FastAPI 의 jsonable_encoder 에 IPv4/IPv6 Address/Network → str 변환을 글로벌 등록.
+ENCODERS_BY_TYPE[IPv4Address] = str
+ENCODERS_BY_TYPE[IPv6Address] = str
+ENCODERS_BY_TYPE[IPv4Network] = str
+ENCODERS_BY_TYPE[IPv6Network] = str
 
 # v4.0 엔터프라이즈 인증 라우터 (SSO/MFA)
 from app.auth.routes import router as auth_enterprise_router
@@ -367,7 +379,7 @@ async def login(
         ip=request.client.host if request.client else None,
         metadata={"role": user["role"]},
     )
-    token = create_token(subject=user["user_id"], tenant_id=user["tenant_id"], role=user["role"])
+    token = create_token(subject=user["user_id"], tenant_id=user["tenant_id"], role=user["role"], email=user.get("email"))
     response = JSONResponse(content={"access_token": token, "user": user})
     response.set_cookie(
         key="infrared_token", value=token, httponly=True,
@@ -416,7 +428,7 @@ async def register(
         ip=request.client.host if request.client else None,
         metadata={"role": user["role"]},
     )
-    token = create_token(subject=user["user_id"], tenant_id=user["tenant_id"], role=user["role"])
+    token = create_token(subject=user["user_id"], tenant_id=user["tenant_id"], role=user["role"], email=user.get("email"))
     response = JSONResponse(content={"access_token": token, "user": user}, status_code=status.HTTP_201_CREATED)
     response.set_cookie(
         key="infrared_token", value=token, httponly=True,
@@ -448,7 +460,7 @@ async def logout(claims: dict = Depends(verify_user_token)) -> Response:
 
 @app.get("/auth/me")
 async def me(claims: dict = Depends(verify_user_token)) -> dict[str, object]:
-    return {"subject": claims.get("sub"), "tenant_id": claims.get("tenant_id"), "role": claims.get("role")}
+    return {"subject": claims.get("sub"), "tenant_id": claims.get("tenant_id"), "role": claims.get("role"), "email": claims.get("email")}
 
 
 class RevokeTokenRequest(BaseModel):

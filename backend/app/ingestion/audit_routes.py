@@ -72,7 +72,7 @@ async def list_audit_logs(
             "actor": r["actor"],
             "action": r["action"],
             "resource": r["resource"],
-            "ip": r["ip"],
+            "ip": str(r["ip"]) if r["ip"] is not None else None,
             "timestamp": r["timestamp"].isoformat() if r["timestamp"] else None,
             "metadata": r["metadata"],
         })

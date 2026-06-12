@@ -161,6 +161,7 @@ export async function restoreSession(): Promise<AuthUser | undefined> {
     const claims = await response.json();
     return {
       user_id: claims.subject ?? claims.sub,
+      email: claims.email,
       tenant_id: claims.tenant_id,
       role: claims.role,
     } as AuthUser;
