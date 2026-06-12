@@ -150,6 +150,25 @@ export async function logout(): Promise<void> {
   });
 }
 
+// 새로고침/뒤로가기 시 httpOnly 쿠키로 세션 복원.
+// 로그인돼 있으면 AuthUser, 아니면 undefined.
+export async function restoreSession(): Promise<AuthUser | undefined> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      credentials: "include",
+    });
+    if (!response.ok) return undefined;
+    const claims = await response.json();
+    return {
+      user_id: claims.subject ?? claims.sub,
+      tenant_id: claims.tenant_id,
+      role: claims.role,
+    } as AuthUser;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function fetchIncidents(): Promise<IncidentListItem[]> {
   const data = await apiFetch<{ items: IncidentListItem[] }>("/incidents");
   return data.items ?? [];

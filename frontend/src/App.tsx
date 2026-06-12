@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LoginPage } from "./pages/Login";
 import { RegisterPage } from "./pages/Register";
 import { Dashboard } from "./pages/Dashboard";
@@ -10,6 +10,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { StatusPage } from "./pages/StatusPage";
 import { InfoPage } from "./pages/InfoPages";
 import type { AuthUser } from "./lib/api";
+import { restoreSession } from "./lib/api";
 
 type AppView = "dashboard" | "onboarding";
 type AuthView = "landing" | "login" | "register" | "forgot" | "verify_email" | "reset_password";
@@ -53,6 +54,22 @@ export function App() {
   const [user, setUser] = useState<AuthUser | undefined>(undefined);
   const [view, setView] = useState<AppView>("dashboard");
   const [authView, setAuthView] = useState<AuthView>(initialAuthView);
+  // 새로고침/뒤로가기 시 쿠키로 세션 복원 (복원 끝날 때까지 로그인 화면 깜빡임 방지)
+  const [bootstrapping, setBootstrapping] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    restoreSession()
+      .then((restored) => {
+        if (alive && restored) setUser(restored);
+      })
+      .finally(() => {
+        if (alive) setBootstrapping(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // /status, /docs, /changelog, /privacy, /terms, /security 는 인증 여부와 무관하게 항상 공개
   const path = typeof window !== "undefined" ? window.location.pathname : "";
@@ -104,6 +121,15 @@ export function App() {
   function goToLogin() {
     clearUrlParams();
     setAuthView("login");
+  }
+
+  // 세션 복원 중에는 로그인/대시보드 판단을 보류 (로그아웃 깜빡임 방지)
+  if (bootstrapping) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#86868B", fontSize: 14 }}>
+        불러오는 중…
+      </div>
+    );
   }
 
   if (!user) {
