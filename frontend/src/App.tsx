@@ -10,7 +10,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { StatusPage } from "./pages/StatusPage";
 import { InfoPage } from "./pages/InfoPages";
 import type { AuthUser } from "./lib/api";
-import { restoreSession } from "./lib/api";
+import { restoreSession, logout } from "./lib/api";
 
 type AppView = "dashboard" | "onboarding";
 type AuthView = "landing" | "login" | "register" | "forgot" | "verify_email" | "reset_password";
@@ -112,7 +112,9 @@ export function App() {
     setView("onboarding");
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    // 서버 세션 종료(쿠키 삭제 + 토큰 revoke) 먼저 — 안 하면 새로고침 시 쿠키로 재로그인됨
+    try { await logout(); } catch { /* 네트워크 실패해도 로컬 상태는 정리 */ }
     setUser(undefined);
     setView("dashboard");
     setAuthView("login");
