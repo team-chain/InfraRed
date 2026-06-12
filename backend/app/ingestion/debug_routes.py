@@ -193,6 +193,7 @@ async def get_recent_signals(
         "signals": [
             {
                 **s,
+                "source_ip": str(s["source_ip"]) if s.get("source_ip") is not None else None,
                 "created_at": s["created_at"].isoformat() if s.get("created_at") else None,
                 "cti_result": s.get("cti_result"),
             }
