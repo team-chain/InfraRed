@@ -128,7 +128,7 @@ jobs:
           file: ./infra/docker/frontend.Dockerfile
           push: true
           build-args: |
-            VITE_API_BASE_URL=https://api.infrared.kr
+            VITE_API_BASE_URL=
           tags: |
             ${{ env.ECR_BASE }}/infrared-dev-frontend:latest
             ${{ env.ECR_BASE }}/infrared-dev-frontend:${{ github.sha }}
