@@ -976,8 +976,8 @@ function IntegrationHubSection({
     try {
       const res = await fetch("/api/v1/integrations/slack/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json",
-                   "Authorization": `Bearer ${localStorage.getItem("ir_token") ?? ""}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ webhook_url: url }),
       });
       if (res.ok) {
@@ -1004,8 +1004,8 @@ function IntegrationHubSection({
     try {
       const res = await fetch("/api/v1/integrations/pagerduty/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json",
-                   "Authorization": `Bearer ${localStorage.getItem("ir_token") ?? ""}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ routing_key: pdValues.pagerduty_routing_key }),
       });
       setPdTestStatus(res.ok ? "ok" : "fail");
@@ -1129,7 +1129,7 @@ function MfaSsoSection() {
   const [loading, setLoading] = useState(false);
   const [ssoEnabled, setSsoEnabled] = useState(false);
 
-  const token = localStorage.getItem("ir_token") ?? "";
+  // HttpOnly 쿠키 인증을 사용하므로 별도 Bearer 토큰은 불필요
 
   async function setupMfa() {
     if (!mfaEmail) return;
@@ -1137,7 +1137,8 @@ function MfaSsoSection() {
     try {
       const res = await fetch("/auth/mfa/setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_email: mfaEmail }),
       });
       if (res.ok) setMfaSetup(await res.json());
@@ -1149,7 +1150,8 @@ function MfaSsoSection() {
     if (!mfaSetup || !verifyToken) return;
     const res = await fetch("/auth/mfa/verify", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ encrypted_secret: mfaSetup.encrypted_secret, token: verifyToken }),
     });
     setVerifyStatus(res.ok ? "ok" : "fail");
@@ -1157,7 +1159,7 @@ function MfaSsoSection() {
 
   async function initiateSso() {
     const res = await fetch(`/auth/sso/authorize?tenant_id=current`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
     });
     if (res.ok) {
       const { authorization_url } = await res.json();
@@ -1294,16 +1296,16 @@ function BillingSection() {
   const [selectedPlan, setSelectedPlan] = useState("growth");
   const [canceling, setCanceling] = useState(false);
 
-  const token = localStorage.getItem("ir_token") ?? "";
-  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  // HttpOnly 쿠키 인증 사용 — credentials: 'include' 만 필요
+  const headers = { "Content-Type": "application/json" };
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
         const [statusRes, usageRes] = await Promise.all([
-          fetch("/api/v1/billing/status", { headers }),
-          fetch("/api/v1/billing/usage", { headers }),
+          fetch("/api/v1/billing/status", { credentials: "include", headers }),
+          fetch("/api/v1/billing/usage", { credentials: "include", headers }),
         ]);
         if (statusRes.ok) setStatus(await statusRes.json());
         if (usageRes.ok) {
@@ -1322,6 +1324,7 @@ function BillingSection() {
     try {
       const res = await fetch("/api/v1/billing/subscribe", {
         method: "POST",
+        credentials: "include",
         headers,
         body: JSON.stringify({ plan: selectedPlan, email }),
       });
@@ -1337,7 +1340,7 @@ function BillingSection() {
     if (!confirm("구독을 취소하시겠습니까? 현재 결제 기간 종료 후 서비스가 중단됩니다.")) return;
     setCanceling(true);
     try {
-      const res = await fetch("/api/v1/billing/cancel", { method: "POST", headers });
+      const res = await fetch("/api/v1/billing/cancel", { method: "POST", credentials: "include", headers });
       if (res.ok) setStatus(await res.json());
     } catch { /* ignore */ }
     setCanceling(false);

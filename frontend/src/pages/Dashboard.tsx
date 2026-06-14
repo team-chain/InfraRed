@@ -185,7 +185,8 @@ export function Dashboard({ user, onLogout, onOpenOnboarding }: Props) {
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
   useEffect(() => {
     if (tab === "rules" && !rules.length) { setRulesLoading(true); fetchDetectionRules().then(setRules).catch(() => {}).finally(() => setRulesLoading(false)); }
-    if (tab === "audit") { setAuditLoading(true); fetchAuditLogs().then(setAuditLogs).catch(() => {}).finally(() => setAuditLoading(false)); }
+    // 감사 로그는 AuditLogPage가 /audit-logs/{tenant}로 직접 조회함.
+    // 여기서 테넌트 없는 /audit-logs(404 유발) 중복 호출은 제거.
   }, [tab]);
 
   // SSE 실시간 Push

@@ -256,4 +256,52 @@ EOF
   sed -i 's|^AGENT_AUTH_LOG_PATH=.*|AGENT_AUTH_LOG_PATH=/var/log/auth.log|' "$ENV_FILE"
 }
 
-c
+# ────────────────────────────────────────────────────────────────────────────
+# 설치 실행
+# ────────────────────────────────────────────────────────────────────────────
+case "$INSTALL_MODE" in
+  docker)
+    install_docker_mode
+    ;;
+  native)
+    install_native_mode
+    ;;
+  *)
+    echo "[InfraRed] 오류: 알 수 없는 설치 모드: $INSTALL_MODE (docker|native 만 지원)" >&2
+    exit 9
+    ;;
+esac
+
+# ────────────────────────────────────────────────────────────────────────────
+# systemd 서비스 등록 + 시작
+# ────────────────────────────────────────────────────────────────────────────
+echo "[InfraRed] systemd 서비스 등록 및 시작 중..."
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME" >/dev/null 2>&1 || true
+systemctl restart "$SERVICE_NAME"
+
+# 시작 확인 (최대 30초 대기)
+echo "[InfraRed] 에이전트 시작 대기 중..."
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if systemctl is-active --quiet "$SERVICE_NAME"; then
+    break
+  fi
+  sleep 3
+done
+
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+  echo ""
+  echo "[InfraRed] ✅ 설치 완료!"
+  echo "    서비스 상태:   systemctl status $SERVICE_NAME"
+  echo "    실시간 로그:   journalctl -u $SERVICE_NAME -f"
+  echo "    환경 파일:     $ENV_FILE"
+  echo "    중지/재시작:   systemctl {stop|restart} $SERVICE_NAME"
+  echo ""
+  echo "    InfraRed 대시보드에서 '${HOSTNAME_VAL}' 자산이 30초 안에 표시됩니다."
+else
+  echo ""
+  echo "[InfraRed] ⚠️  서비스가 시작되지 않았습니다. 로그를 확인하세요:" >&2
+  echo "    journalctl -u $SERVICE_NAME -n 50 --no-pager" >&2
+  systemctl status "$SERVICE_NAME" --no-pager || true
+  exit 10
+fi

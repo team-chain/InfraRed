@@ -2,7 +2,7 @@
 
 > **대상 독자**: 이 프로젝트를 이어받는 AI / 팀원  
 > **기준 문서**: `InfraRed_고도화_설계서_v2.0.docx`  
-> **최종 업데이트**: 2026-05-14
+> **최종 업데이트**: 2026-05-22
 
 ---
 
@@ -211,81 +211,140 @@ frontend/src/pages/OnboardingPage.tsx
 ## 🏗️ AWS 인프라 (Terraform) — 현재 상태
 
 > **리전**: `ap-northeast-2` (서울) | **계정**: `139139347353` | **환경**: `dev`  
-> **Terraform 버전**: 1.15.3 | **상태 파일**: `infra/terraform/terraform.tfstate` (serial: 81)
+> **Terraform 버전**: 1.15.3 | **상태 파일 serial**: 112  
+> **tf 파일 목록**: `vpc` `ec2` `rds` `s3` `ecr` `iam` `security_groups` `ssm` `cloudwatch` `sqs` `lambda` `github_oidc` `backup` `cloudflare`
 
-### ✅ 배포 완료 리소스
+### ✅ 전체 배포 완료 — 모든 리소스 운영 중
 
-| 리소스 | 이름 / ID | 상태 |
-|--------|-----------|------|
-| **VPC** | `infrared-dev-vpc` (`vpc-0f19d15a770b4a3dd`) | ✅ 운영 중 |
-| **퍼블릭 서브넷** | `infrared-dev-public-1` (ap-northeast-2a) | ✅ 운영 중 |
-| **퍼블릭 서브넷** | `infrared-dev-public-2` (ap-northeast-2b) | ✅ 운영 중 |
-| **Internet Gateway** | `infrared-dev-igw` | ✅ 운영 중 |
-| **Route Table** | `infrared-dev-public-rt` | ✅ 운영 중 |
-| **Security Group (EC2)** | `infrared-dev-ec2-sg` (`sg-...`) | ✅ 운영 중 |
-| **Security Group (RDS)** | `infrared-dev-rds-sg` (`sg-0566dbcb06db40266`) | ✅ 운영 중 |
-| **RDS PostgreSQL 16** | `infrared-dev-postgres` (`db.t3.micro`, 20GB gp2) | ✅ **available** |
-| **RDS 엔드포인트** | `infrared-dev-postgres.cvkc42qecy3z.ap-northeast-2.rds.amazonaws.com:5432` | ✅ 접속 가능 |
-| **ECR (backend)** | `139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-backend` | ✅ 생성 완료 |
-| **ECR (frontend)** | `139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-frontend` | ✅ 생성 완료 |
-| **ECR (agent)** | `139139347353.dkr.ecr.ap-northeast-2.amazonaws.com/infrared-dev-agent` | ✅ 생성 완료 |
-| **S3 (logs)** | `infrared-dev-logs-139139347353` | ✅ 생성 완료 |
-| **S3 (reports)** | `infrared-dev-reports-139139347353` | ✅ 생성 완료 |
-| **IAM Role** | `infrared-dev-ec2-role` (ECR+SSM+S3+Bedrock+CW 권한) | ✅ 생성 완료 |
-| **IAM Instance Profile** | `infrared-dev-ec2-profile` | ✅ 생성 완료 |
-| **SSM Parameters** | `jwt-secret`, `db-password`, `agent-token`, `discord-webhook-url`, `slack-webhook-url`, `abuseipdb-api-key`, `otx-api-key`, `agent-command-secret` | ✅ 저장 완료 |
-| **CloudWatch Log Groups** | `/infrared/dev/{ingestion,frontend,detection-worker,enrichment-worker,incident-worker,campaign-worker,llm-worker,cleanup-worker,agent,ec2-init}` (보존 7일) | ✅ 생성 완료 |
+#### 네트워크
+| 리소스 | ID / 값 |
+|--------|---------|
+| VPC | `vpc-0c1b5b3f9b53ce2dd` (10.0.0.0/16) |
+| 퍼블릭 서브넷 1 | `subnet-094e941f784e1fb38` (ap-northeast-2a) |
+| 퍼블릭 서브넷 2 | (ap-northeast-2b) |
+| Internet Gateway | `igw-09d80ff0daab9754d` |
 
-### ❌ 미배포 리소스 (다음 단계)
+#### EC2
+| 항목 | 값 |
+|------|-----|
+| Instance ID | `i-0b892250dd96ab1b1` |
+| 상태 | **running** ✅ |
+| 타입 | `t3.small` ⚠️ (프리티어 아님, ~$17/월) |
+| AMI | `ami-018a3ccc2c9aca078` (Amazon Linux 2023) |
+| Private IP | `10.0.1.10` |
+| EIP (고정) | **`3.39.58.44`** ✅ 연결됨 |
+| 키페어 | `infrared-dev-key` |
+| 볼륨 | 20GB gp2 |
 
-| 리소스 | 파일 | 비고 |
-|--------|------|------|
-| **EC2 t2.micro** | `infra/terraform/ec2.tf` | `terraform apply` 필요 |
-| **Elastic IP** | `infra/terraform/ec2.tf` | EC2 생성 후 자동 연결 |
+#### RDS
+| 항목 | 값 |
+|------|-----|
+| 상태 | **available** ✅ |
+| 엔드포인트 | `infrared-dev-postgres.cvkc42qecy3z.ap-northeast-2.rds.amazonaws.com:5432` |
+| 엔진 | PostgreSQL 16.13 |
+| 타입 | `db.t3.micro` (프리티어) |
 
-> EC2/EIP가 없어서 `outputs.tf`의 `ec2_public_ip`, `dashboard_url`, `ingestion_api_url`, `ssh_command`, `healthz_url`이 현재 `null`로 출력됨.
+#### ECR (3개 레포, 수명주기 정책 적용)
+- `infrared-dev-backend` / `infrared-dev-frontend` / `infrared-dev-agent`
 
-### 📋 인프라 아키텍처 요약
+#### S3 (2개 버킷, 퍼블릭 차단 + SSE + 30일 수명주기)
+- `infrared-dev-logs-139139347353` / `infrared-dev-reports-139139347353`
+
+#### SQS FIFO 큐 (신규 — Redis Streams 대체)
+| 큐 이름 | 용도 | 보존 |
+|---------|------|------|
+| `infrared-dev-events.fifo` | 주 이벤트 버스 (탐지 파이프라인) | 1일 |
+| `infrared-dev-events-dlq.fifo` | 이벤트 DLQ (3회 실패 격리) | 14일 |
+| `infrared-dev-ai-tasks.fifo` | Lambda AI Worker 트리거 전용 | 1시간 |
+| `infrared-dev-ai-tasks-dlq.fifo` | AI Tasks DLQ | 14일 |
+| `infrared-dev-spillover.fifo` | EPS 초과 이벤트 임시 보관 | 1시간 |
+
+#### Lambda (신규)
+| 함수 | 트리거 | 용도 |
+|------|--------|------|
+| `infrared-dev-ai-worker` | SQS `ai-tasks.fifo` | Bedrock Claude 분석 (EC2 llm-worker 대체) |
+| `infrared-dev-step-ca-backup` | EventBridge (매주 일요일 18:00 UTC) | step-ca 볼륨 S3 백업 |
+
+#### IAM (신규 추가)
+- `infrared-dev-github-actions-deploy` — GitHub Actions OIDC 배포 역할 (keyless)
+- `infrared-dev-backup-lambda-role` — 백업 Lambda 실행 역할
+- `infrared-dev-lambda-ai-worker` — AI Worker Lambda 실행 역할
+- EC2 Role에 SQS 접근 정책 추가 (`ec2_sqs`)
+- EC2 Role에 Honey Key 정책 추가 (`ec2_honey_key`)
+
+#### GitHub Actions OIDC (신규)
+- Provider: `token.actions.githubusercontent.com`
+- Role ARN: `arn:aws:iam::139139347353:role/infrared-dev-github-actions-deploy`
+- 허용 브랜치: `main`, `develop`, `environment:*`
+- 권한: ECR push/pull (long-lived key 불필요)
+
+#### SNS
+- `infrared-dev-alarms` — CloudWatch 알람 알림 토픽
+
+#### CloudWatch 알람 (신규)
+| 알람 | 대상 |
+|------|------|
+| `ec2_cpu` | EC2 CPU 사용률 |
+| `ec2_status` | EC2 상태 체크 |
+| `rds_cpu` | RDS CPU 사용률 |
+| `rds_connections` | RDS 연결 수 |
+| `rds_storage` | RDS 스토리지 잔량 |
+| `s3_bucket_size` | S3 버킷 크기 |
+| `sqs_depth` | SQS 큐 깊이 |
+| `sqs_dlq` | SQS DLQ 메시지 수 |
+| `lambda_errors` | Lambda 오류율 |
+| `lambda_concurrency` | Lambda 동시 실행 수 |
+
+#### SSM Parameter Store (10개 → 12개로 증가)
+기존 8개 + 신규: `sqs-events-url`, `sqs-ai-tasks-url`, `step-ca-password`
+
+> ⚠️ **SSM 시크릿 미설정 주의**: `jwt-secret`, `db-password`, `agent-token`, `agent-command-secret` 값이 아직 example 기본값(`change-me-...`, `replace-with-...`)으로 저장되어 있음. 실제 운영 전 반드시 교체 필요.
+
+#### Cloudflare DNS (tf 파일 존재, 배포 여부 별도 확인 필요)
+- `cloudflare.tf` 작성 완료 — `infrared.kr`, `app.infrared.kr`, `api.infrared.kr` A 레코드
+- Cloudflare provider가 `main.tf`의 `required_providers`에 추가되어야 적용 가능
+- `cloudflare_api_token`, `cloudflare_zone_id` 변수 설정 필요
+
+### 📋 현재 아키텍처
 
 ```
-EC2 t2.micro (미배포) ← 다음 단계
-└── Docker Compose (User Data로 자동 설치)
-    ├── ingestion        (FastAPI :8000)
-    ├── detection-worker
-    ├── enrichment-worker
-    ├── incident-worker
-    ├── campaign-worker  (v3.0 신규)
-    ├── llm-worker
-    ├── cleanup-worker
-    ├── frontend         (:3000)
-    ├── redis            (:6379, 컨테이너)
-    └── agent            (자체 모니터링)
+인터넷
+  └── Cloudflare (infrared.kr) → EC2 EIP 3.39.58.44
+        └── EC2 t3.small (i-0b892250dd96ab1b1) ✅ running
+            └── Docker Compose
+                ├── ingestion        (FastAPI :8000)
+                ├── detection-worker
+                ├── enrichment-worker
+                ├── incident-worker
+                ├── campaign-worker
+                ├── cleanup-worker
+                ├── frontend         (:3000)
+                ├── redis            (:6379, 컨테이너)
+                └── agent
 
-RDS PostgreSQL 16 ✅ (infrared-dev-postgres.cvkc42qecy3z.ap-northeast-2.rds.amazonaws.com)
+SQS FIFO ✅ → Lambda ai-worker ✅ (Bedrock Claude)
+RDS PostgreSQL 16 ✅ (infrared-dev-postgres.cvkc42qecy3z...)
 S3 logs ✅ / S3 reports ✅
 ECR backend/frontend/agent ✅
+GitHub Actions OIDC ✅ (keyless deploy)
 ```
 
-### 🚀 다음 배포 단계
+### 🚀 접속 정보
 
-```bash
-# 1. EC2 + EIP 배포
-cd infra/terraform
-terraform apply   # EC2, EIP만 추가됨 (나머지는 이미 배포 완료)
-
-# 2. 이미지 빌드 & ECR 푸시 (EC2 배포 후)
-./scripts/aws-deploy.sh --push-only
-
-# 3. EC2 초기화 완료 확인 (약 3~5분)
-ssh -i infrared-key.pem ec2-user@<EC2_PUBLIC_IP>
-tail -f /var/log/infrared-init.log
-
-# 4. DB 마이그레이션 (EC2 내 ingestion 컨테이너가 자동 실행)
-# docker-compose.yml의 ingestion command에 migrate 포함됨
-
-# 5. pgvector 확장 수동 적용 (RAG 기능)
-psql $DATABASE_URL -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
+대시보드  : http://3.39.58.44:3000
+API       : http://3.39.58.44:8000/healthz
+SSH       : ssh -i ~/.ssh/infrared-dev-key.pem ec2-user@3.39.58.44
+```
+
+### ⚠️ 남은 작업
+
+1. **SSM 시크릿 실제 값으로 교체** — `jwt-secret`, `db-password`, `agent-token`, `agent-command-secret`
+2. **ECR 이미지 푸시** — `./scripts/aws-deploy.sh --push-only`
+3. **EC2 초기화 확인** — `tail -f /var/log/infrared-init.log`
+4. **pgvector 확장 적용** — `CREATE EXTENSION IF NOT EXISTS vector;`
+5. **Cloudflare 연동** — `main.tf`에 cloudflare provider 추가 후 `terraform apply`
+6. **GitHub Actions 워크플로우 업데이트** — `role-to-assume: arn:aws:iam::139139347353:role/infrared-dev-github-actions-deploy`
 
 ---
 

@@ -9,6 +9,9 @@
 resource "aws_s3_bucket" "logs" {
   bucket = "${local.name_prefix}-logs-${data.aws_caller_identity.current.account_id}"
 
+  # 반복 배포/삭제 사이클: 버킷에 객체가 있어도 destroy가 멈추지 않도록 강제 비우기
+  force_destroy = true
+
   tags = { Name = "${local.name_prefix}-logs", Purpose = "log-archive" }
 }
 
@@ -51,6 +54,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 # ── 리포트 버킷 ───────────────────────────────────────────────
 resource "aws_s3_bucket" "reports" {
   bucket = "${local.name_prefix}-reports-${data.aws_caller_identity.current.account_id}"
+
+  # 반복 배포/삭제 사이클: 버킷에 객체가 있어도 destroy가 멈추지 않도록 강제 비우기
+  force_destroy = true
 
   tags = { Name = "${local.name_prefix}-reports", Purpose = "pdf-reports" }
 }

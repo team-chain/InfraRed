@@ -9,16 +9,18 @@ import { Search, Shield, Play, RefreshCw, AlertTriangle, CheckCircle, Info, Data
 
 /* ─── API 호출 헬퍼 ───────────────────────────────────────────────────── */
 
-function getToken(): string {
-  return (typeof window !== "undefined" ? localStorage.getItem("ir_token") : null) ?? "";
-}
+// 백엔드는 HttpOnly 쿠키(`infrared_token`)로 JWT를 발급한다. 따라서 credentials: 'include'
+// 만으로 충분하며, localStorage("ir_token") 은 빈 값이라 Bearer 토큰을 보내봐야 401.
+const API_BASE = import.meta.env.DEV
+  ? ""
+  : (import.meta.env.VITE_API_BASE_URL ?? "");
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}`,
       ...(opts?.headers ?? {}),
     },
   });

@@ -48,6 +48,9 @@ const API_BASE = import.meta.env.DEV
   ? ""
   : (import.meta.env.VITE_API_BASE_URL ?? "");
 
+// 백엔드는 HttpOnly 쿠키(`infrared_token`)로 JWT를 발급하므로
+// credentials: 'include' 만 있으면 자동으로 인증된다.
+// localStorage 의 ir_token 은 옛 토큰 흐름의 잔재이며, 지금은 비어있어서 401을 유발한다.
 async function fetchSigmaRules(params: {
   category?: string;
   level?: string;
@@ -55,7 +58,6 @@ async function fetchSigmaRules(params: {
   keyword?: string;
   page?: number;
 }): Promise<{ rules: SigmaRule[]; total: number; page: number; pages: number }> {
-  const token = localStorage.getItem("ir_token") ?? "";
   const qs = new URLSearchParams();
   if (params.category) qs.set("category", params.category);
   if (params.level) qs.set("level", params.level);
@@ -65,55 +67,51 @@ async function fetchSigmaRules(params: {
   qs.set("page_size", "20");
 
   const resp = await fetch(`${API_BASE}/api/v1/sigma/marketplace?${qs}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
 async function fetchSyncStatus(): Promise<SyncStatus> {
-  const token = localStorage.getItem("ir_token") ?? "";
   const resp = await fetch(`${API_BASE}/api/v1/sigma/sync/status`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
 async function triggerSync(): Promise<{ ok: boolean; message: string }> {
-  const token = localStorage.getItem("ir_token") ?? "";
   const resp = await fetch(`${API_BASE}/api/v1/sigma/sync`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
 async function activateSigmaRule(sigmaRuleId: string): Promise<{ ok: boolean; ir_rule_id: string }> {
-  const token = localStorage.getItem("ir_token") ?? "";
   const resp = await fetch(`${API_BASE}/api/v1/sigma/activate/${sigmaRuleId}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
 async function deactivateSigmaRule(sigmaRuleId: string): Promise<{ ok: boolean }> {
-  const token = localStorage.getItem("ir_token") ?? "";
   const resp = await fetch(`${API_BASE}/api/v1/sigma/deactivate/${sigmaRuleId}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
 async function previewSigmaRule(sigmaRuleId: string): Promise<{ ir_rule: object; yaml: string }> {
-  const token = localStorage.getItem("ir_token") ?? "";
   const resp = await fetch(`${API_BASE}/api/v1/sigma/preview/${sigmaRuleId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
